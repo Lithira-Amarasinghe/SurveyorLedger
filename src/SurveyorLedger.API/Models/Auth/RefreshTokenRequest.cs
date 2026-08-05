@@ -11,6 +11,6 @@ public class RefreshTokenRequest
     /// The refresh token used to obtain a new access token.
     /// </summary>
     [Required(ErrorMessage = "RefreshToken is required.")]
-    [StringLength(int.MaxValue, MinimumLength = 1, ErrorMessage = "RefreshToken cannot be empty.")]
+    [StringLength(2048, MinimumLength = 1, ErrorMessage = "RefreshToken must not exceed 2048 characters.")]
     public required string RefreshToken { get; set; }
 }

@@ -15,10 +15,10 @@ public class RegisterRequest
     public required string Email { get; set; }
 
     /// <summary>
-    /// User's password. Minimum 8 characters.
+    /// User's password. Minimum 8 characters, maximum 256.
     /// </summary>
     [Required(ErrorMessage = "Password is required.")]
-    [StringLength(int.MaxValue, MinimumLength = 8, ErrorMessage = "Password must be at least 8 characters long.")]
+    [StringLength(256, MinimumLength = 8, ErrorMessage = "Password must be between 8 and 256 characters.")]
     public required string Password { get; set; }
 
     /// <summary>
