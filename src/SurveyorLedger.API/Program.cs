@@ -1,4 +1,6 @@
+using Azure.Communication.Email;
 using Microsoft.EntityFrameworkCore;
+using SurveyorLedger.API.Services;
 using SurveyorLedger.Data;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -9,6 +11,10 @@ builder.Services.AddOpenApi();
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString, b => b.MigrationsAssembly("SurveyorLedger.Data")));
+
+var acsConnectionString = builder.Configuration["AzureCommunicationServices:ConnectionString"]!;
+builder.Services.AddSingleton(new EmailClient(acsConnectionString));
+builder.Services.AddScoped<IEmailService, EmailService>();
 
 var app = builder.Build();
 

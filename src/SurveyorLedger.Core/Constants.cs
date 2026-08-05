@@ -24,6 +24,8 @@ public static class Constants
         public const string EmailNotVerified = "EMAIL_NOT_VERIFIED";
         public const string InternalServerError = "INTERNAL_SERVER_ERROR";
         public const string ValidationFailed = "VALIDATION_FAILED";
+        public const string EmailSendFailed = "EMAIL_SEND_FAILED";
+        public const string AuthorizationSetupFailed = "AUTHORIZATION_SETUP_FAILED";
     }
 
     public static class Permissions
