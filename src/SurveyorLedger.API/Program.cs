@@ -28,6 +28,9 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 // Register workspace service
 builder.Services.AddScoped<IWorkspaceService, WorkspaceService>();
 
+// Register RBAC service
+builder.Services.AddScoped<ICasbinService, CasbinService>();
+
 // Configure JWT Authentication
 var jwtKey = builder.Configuration["JwtSettings:Key"] ?? throw new InvalidOperationException("JwtSettings:Key not configured");
 var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? throw new InvalidOperationException("JwtSettings:Issuer not configured");
@@ -50,6 +53,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 var app = builder.Build();
+
+// Initialize Casbin after DB migration
+var casbinService = app.Services.GetRequiredService<ICasbinService>();
+await casbinService.InitializeAsync();
 
 if (app.Environment.IsDevelopment())
 {
