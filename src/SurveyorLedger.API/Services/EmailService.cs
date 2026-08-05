@@ -20,12 +20,18 @@ public class EmailService : IEmailService
     public EmailService(EmailClient emailClient, IConfiguration config, ILogger<EmailService> logger)
     {
         _emailClient = emailClient;
-        _senderEmail = config["AzureCommunicationServices:SenderEmail"]!;
+        _senderEmail = config["AzureCommunicationServices:SenderEmail"]
+            ?? throw new InvalidOperationException("AzureCommunicationServices:SenderEmail not configured");
         _logger = logger;
     }
 
     public async Task SendVerificationOtpAsync(string email, string otpCode)
     {
+        if (string.IsNullOrWhiteSpace(email))
+            throw new ValidationException("Email is required");
+        if (string.IsNullOrWhiteSpace(otpCode))
+            throw new ValidationException("OTP code is required");
+
         var subject = "Your OTP Code";
         var body = $"Your verification code is: {otpCode}. It expires in 10 minutes.";
         await SendEmailAsync(email, subject, body);
@@ -33,6 +39,11 @@ public class EmailService : IEmailService
 
     public async Task SendWelcomeEmailAsync(string email, string firstName)
     {
+        if (string.IsNullOrWhiteSpace(email))
+            throw new ValidationException("Email is required");
+        if (string.IsNullOrWhiteSpace(firstName))
+            throw new ValidationException("FirstName is required");
+
         var subject = "Welcome to SurveyorLedger";
         var body = $"Hello {firstName}, welcome to SurveyorLedger!";
         await SendEmailAsync(email, subject, body);
