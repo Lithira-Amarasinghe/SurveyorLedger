@@ -29,9 +29,11 @@ public class WorkspaceService : IWorkspaceService
         {
             Id = Guid.NewGuid(),
             Name = request.Name,
+            Description = request.Description,
             OwnerId = userId,
             IsActive = true,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         };
 
         await _context.Workspaces.AddAsync(workspace);

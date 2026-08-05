@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SurveyorLedger.API")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+cc4f3ab097f512b50737eb5ae61d7bd7eb468ca8")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c5d0bfd50004ee916418374f7cf51e17a6e1eb5f")]
 [assembly: System.Reflection.AssemblyProductAttribute("SurveyorLedger.API")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SurveyorLedger.API")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
