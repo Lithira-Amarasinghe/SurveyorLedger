@@ -1,0 +1,8 @@
+D:\Lithira\Projects\SurveyorLedger\src\SurveyorLedger.API\obj\Debug\net9.0\SurveyorLedger.API.csproj.AssemblyReference.cache
+D:\Lithira\Projects\SurveyorLedger\src\SurveyorLedger.API\obj\Debug\net9.0\rpswa.dswa.cache.json
+D:\Lithira\Projects\SurveyorLedger\src\SurveyorLedger.API\obj\Debug\net9.0\SurveyorLedger.API.GeneratedMSBuildEditorConfig.editorconfig
+D:\Lithira\Projects\SurveyorLedger\src\SurveyorLedger.API\obj\Debug\net9.0\SurveyorLedger.API.AssemblyInfoInputs.cache
+D:\Lithira\Projects\SurveyorLedger\src\SurveyorLedger.API\obj\Debug\net9.0\SurveyorLedger.API.AssemblyInfo.cs
+D:\Lithira\Projects\SurveyorLedger\src\SurveyorLedger.API\obj\Debug\net9.0\SurveyorLedger.API.csproj.CoreCompileInputs.cache
+D:\Lithira\Projects\SurveyorLedger\src\SurveyorLedger.API\obj\Debug\net9.0\SurveyorLedger.API.MvcApplicationPartsAssemblyInfo.cs
+D:\Lithira\Projects\SurveyorLedger\src\SurveyorLedger.API\obj\Debug\net9.0\SurveyorLedger.API.MvcApplicationPartsAssemblyInfo.cache

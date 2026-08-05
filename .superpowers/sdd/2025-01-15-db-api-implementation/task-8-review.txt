@@ -1,0 +1,129 @@
+5086719 feat: implement EmailService with Azure Communication Services integration
+diff --git a/src/SurveyorLedger.API/Program.cs b/src/SurveyorLedger.API/Program.cs
+index f506898..6f9271d 100644
+--- a/src/SurveyorLedger.API/Program.cs
++++ b/src/SurveyorLedger.API/Program.cs
+@@ -1,22 +1,28 @@
++using Azure.Communication.Email;
+ using Microsoft.EntityFrameworkCore;
++using SurveyorLedger.API.Services;
+ using SurveyorLedger.Data;
+ 
+ var builder = WebApplication.CreateBuilder(args);
+ 
+ builder.Services.AddControllers();
+ builder.Services.AddOpenApi();
+ 
+ var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+ builder.Services.AddDbContext<ApplicationDbContext>(options =>
+     options.UseSqlServer(connectionString, b => b.MigrationsAssembly("SurveyorLedger.Data")));
+ 
++var acsConnectionString = builder.Configuration["AzureCommunicationServices:ConnectionString"]!;
++builder.Services.AddSingleton(new EmailClient(acsConnectionString));
++builder.Services.AddScoped<IEmailService, EmailService>();
++
+ var app = builder.Build();
+ 
+ if (app.Environment.IsDevelopment())
+ {
+     app.MapOpenApi();
+     app.UseDeveloperExceptionPage();
+ }
+ 
+ app.UseHttpsRedirection();
+ app.UseRouting();
+diff --git a/src/SurveyorLedger.API/Services/EmailService.cs b/src/SurveyorLedger.API/Services/EmailService.cs
+new file mode 100644
+index 0000000..38134a3
+--- /dev/null
++++ b/src/SurveyorLedger.API/Services/EmailService.cs
+@@ -0,0 +1,62 @@
++using Azure;
++using Azure.Communication.Email;
++using SurveyorLedger.Core;
++using SurveyorLedger.Core.Exceptions;
++
++namespace SurveyorLedger.API.Services;
++
++public interface IEmailService
++{
++    Task SendVerificationOtpAsync(string email, string otpCode);
++    Task SendWelcomeEmailAsync(string email, string firstName);
++}
++
++public class EmailService : IEmailService
++{
++    private readonly EmailClient _emailClient;
++    private readonly string _senderEmail;
++    private readonly ILogger<EmailService> _logger;
++
++    public EmailService(EmailClient emailClient, IConfiguration config, ILogger<EmailService> logger)
++    {
++        _emailClient = emailClient;
++        _senderEmail = config["AzureCommunicationServices:SenderEmail"]!;
++        _logger = logger;
++    }
++
++    public async Task SendVerificationOtpAsync(string email, string otpCode)
++    {
++        var subject = "Your OTP Code";
++        var body = $"Your verification code is: {otpCode}. It expires in 10 minutes.";
++        await SendEmailAsync(email, subject, body);
++    }
++
++    public async Task SendWelcomeEmailAsync(string email, string firstName)
++    {
++        var subject = "Welcome to SurveyorLedger";
++        var body = $"Hello {firstName}, welcome to SurveyorLedger!";
++        await SendEmailAsync(email, subject, body);
++    }
++
++    private async Task SendEmailAsync(string toEmail, string subject, string body)
++    {
++        try
++        {
++            var message = new EmailMessage(
++                senderAddress: _senderEmail,
++                recipients: new EmailRecipients(new[] { new EmailAddress(toEmail) }),
++                content: new EmailContent(subject)
++                {
++                    PlainText = body
++                });
++
++            await _emailClient.SendAsync(WaitUntil.Completed, message);
++            _logger.LogInformation("Email sent to {Email}", toEmail);
++        }
++        catch (Exception ex)
++        {
++            _logger.LogError(ex, "Failed to send email to {Email}", toEmail);
++            throw new AppException(Constants.ErrorCodes.EmailSendFailed, "Failed to send email");
++        }
++    }
++}
+diff --git a/src/SurveyorLedger.Core/Constants.cs b/src/SurveyorLedger.Core/Constants.cs
+index e9a3fca..1e99894 100644
+--- a/src/SurveyorLedger.Core/Constants.cs
++++ b/src/SurveyorLedger.Core/Constants.cs
+@@ -17,20 +17,22 @@ public static class Constants
+         public const string UserNotFound = "USER_NOT_FOUND";
+         public const string UserAlreadyExists = "USER_ALREADY_EXISTS";
+         public const string WorkspaceNotFound = "WORKSPACE_NOT_FOUND";
+         public const string Unauthorized = "UNAUTHORIZED";
+         public const string Forbidden = "FORBIDDEN";
+         public const string TokenExpired = "TOKEN_EXPIRED";
+         public const string InvalidToken = "INVALID_TOKEN";
+         public const string EmailNotVerified = "EMAIL_NOT_VERIFIED";
+         public const string InternalServerError = "INTERNAL_SERVER_ERROR";
+         public const string ValidationFailed = "VALIDATION_FAILED";
++        public const string EmailSendFailed = "EMAIL_SEND_FAILED";
++        public const string AuthorizationSetupFailed = "AUTHORIZATION_SETUP_FAILED";
+     }
+ 
+     public static class Permissions
+     {
+         public const string CreateWorkspace = "workspace.create";
+         public const string ViewWorkspace = "workspace.view";
+         public const string EditWorkspace = "workspace.edit";
+         public const string DeleteWorkspace = "workspace.delete";
+         public const string ManageWorkspaceMembers = "workspace.manage_members";
+     }

@@ -1,5 +1,8 @@
 using Azure.Communication.Email;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 using SurveyorLedger.API.Services;
 using SurveyorLedger.Data;
 
@@ -16,7 +19,41 @@ var acsConnectionString = builder.Configuration["AzureCommunicationServices:Conn
 builder.Services.AddSingleton(new EmailClient(acsConnectionString));
 builder.Services.AddScoped<IEmailService, EmailService>();
 
+// Register TokenService
+builder.Services.AddScoped<ITokenService, TokenService>();
+
+// Register RBAC service
+builder.Services.AddScoped<ICasbinService, CasbinService>();
+
+// Configure JWT Authentication
+var jwtKey = builder.Configuration["JwtSettings:Key"] ?? throw new InvalidOperationException("JwtSettings:Key not configured");
+var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? throw new InvalidOperationException("JwtSettings:Issuer not configured");
+var jwtAudience = builder.Configuration["JwtSettings:Audience"] ?? throw new InvalidOperationException("JwtSettings:Audience not configured");
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+            ValidateIssuer = true,
+            ValidIssuer = jwtIssuer,
+            ValidateAudience = true,
+            ValidAudience = jwtAudience,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.Zero
+        };
+    });
+
 var app = builder.Build();
+
+// Initialize Casbin on startup
+using (var scope = app.Services.CreateScope())
+{
+    var casbinService = scope.ServiceProvider.GetRequiredService<ICasbinService>();
+    await casbinService.InitializeAsync();
+}
 
 if (app.Environment.IsDevelopment())
 {
@@ -26,6 +63,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 
 app.Run();

@@ -61,3 +61,33 @@ public async Task<ApiResponse<AuthResponse>> Register([FromBody] RegisterRequest
     // validation attributes will be checked automatically
 }
 ```
+
+---
+
+## Fix Round 1: StringLength Validator Improvements
+
+**Date:** 2025-08-05
+**Commit:** `fix: use realistic StringLength bounds for password and token fields`
+
+### Issues Fixed
+
+1. **RegisterRequest.cs (Password field)**
+   - Changed `StringLength(int.MaxValue, ...)` to `StringLength(256, MinimumLength = 8, ...)`
+   - Updated error message to "Password must be between 8 and 256 characters."
+   - Rationale: Using int.MaxValue defeats the validator purpose; 256 is realistic for password storage
+
+2. **RefreshTokenRequest.cs (RefreshToken field)**
+   - Changed `StringLength(int.MaxValue, ...)` to `StringLength(2048, MinimumLength = 1, ...)`
+   - Updated error message to "RefreshToken must not exceed 2048 characters."
+   - Rationale: JWT tokens typically max 2-4KB; 2048 is realistic upper bound
+
+### Files Modified
+- `src/SurveyorLedger.API/Models/Auth/RegisterRequest.cs`
+- `src/SurveyorLedger.API/Models/Auth/RefreshTokenRequest.cs`
+
+### Build Status After Fix
+- Build succeeded with 0 errors
+- All changes compile successfully
+
+### Deferred (Minor Finding)
+- **VerifyOtpRequest.cs:** Redundant `StringLength(6, MinimumLength=6)` + `RegularExpression(@"^\d{6}$")`. Both serve same purpose but provide defense-in-depth. Deferring redundancy cleanup to avoid over-engineering single validation layer.

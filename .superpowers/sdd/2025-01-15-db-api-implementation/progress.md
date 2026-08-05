@@ -7,9 +7,12 @@
 - Task 4: DbContext + configurations ✓
 - Task 5: Initial migration ✓
 
-## Pending Tasks (6-16)
+## Completed Tasks (6+)
 
-- [ ] Task 6: DTOs & API models
+- [x] Task 6: DTOs & API models (commits c41a3a8..4dedd88, fix round 1/1, review clean)
+
+## Pending Tasks (7-16)
+
 - [ ] Task 7: PasswordService & AuthService
 - [ ] Task 8: EmailService
 - [ ] Task 9: TokenService

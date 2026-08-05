@@ -1,0 +1,462 @@
+c41a3a8 feat: create DTOs and API models for auth, user, workspace endpoints
+diff --git a/.superpowers/sdd/2025-01-15-db-api-implementation/progress.md b/.superpowers/sdd/2025-01-15-db-api-implementation/progress.md
+new file mode 100644
+index 0000000..92c673a
+--- /dev/null
++++ b/.superpowers/sdd/2025-01-15-db-api-implementation/progress.md
+@@ -0,0 +1,22 @@
++# SDD ledger — plan: D:\Lithira\Projects\SurveyorLedger\docs\superpowers\plans\2025-01-15-db-api-implementation.md
++
++## Completed Tasks (1-5)
++- Task 1: Project setup + dependencies ✓
++- Task 2: Core models, constants, enums ✓
++- Task 3: Database entities ✓
++- Task 4: DbContext + configurations ✓
++- Task 5: Initial migration ✓
++
++## Pending Tasks (6-16)
++
++- [ ] Task 6: DTOs & API models
++- [ ] Task 7: PasswordService & AuthService
++- [ ] Task 8: EmailService
++- [ ] Task 9: TokenService
++- [ ] Task 10: CasbinService
++- [ ] Task 11: WorkspaceService (review gate)
++- [ ] Task 12: AuthController
++- [ ] Task 13: UserController
++- [ ] Task 14: WorkspaceController
++- [ ] Task 15: Middleware
++- [ ] Task 16: Tests (review gate + final)
+diff --git a/.superpowers/sdd/2025-01-15-db-api-implementation/task-6-report.md b/.superpowers/sdd/2025-01-15-db-api-implementation/task-6-report.md
+new file mode 100644
+index 0000000..ae7947b
+--- /dev/null
++++ b/.superpowers/sdd/2025-01-15-db-api-implementation/task-6-report.md
+@@ -0,0 +1,63 @@
++# Task 6: DTOs & API Models - Completion Report
++
++## Status: COMPLETED
++
++### Files Created
++
++1. **Response Wrapper**
++   - `src/SurveyorLedger.API/Models/Responses/ApiResponse.cs` - Generic success/error response wrapper
++
++2. **Auth Models**
++   - `src/SurveyorLedger.API/Models/Auth/RegisterRequest.cs` - User registration input
++   - `src/SurveyorLedger.API/Models/Auth/LoginRequest.cs` - User login input
++   - `src/SurveyorLedger.API/Models/Auth/VerifyOtpRequest.cs` - OTP verification input
++   - `src/SurveyorLedger.API/Models/Auth/RefreshTokenRequest.cs` - Token refresh input
++   - `src/SurveyorLedger.API/Models/Auth/AuthResponse.cs` - Authentication response output
++
++3. **User Models**
++   - `src/SurveyorLedger.API/Models/User/UserProfileResponse.cs` - User profile output
++   - `src/SurveyorLedger.API/Models/User/UpdateProfileRequest.cs` - Profile update input
++
++4. **Workspace Models**
++   - `src/SurveyorLedger.API/Models/Workspace/WorkspaceRequest.cs` - Workspace creation/update input
++   - `src/SurveyorLedger.API/Models/Workspace/WorkspaceResponse.cs` - Workspace output
++
++### Validation Attributes Used
++
++- `[Required]` - Marks fields as mandatory with custom error messages
++- `[EmailAddress]` - Validates email format
++- `[StringLength(max, MinimumLength = min)]` - Constrains string length with min/max bounds
++- `[RegularExpression(@"^\d{6}$")]` - Validates OTP as 6 digits only
++
++### Build Results
++
++**Build Status: PASSED**
++
++- No compilation errors
++- All 10 DTO files compile successfully
++- Pre-existing warnings from Data layer entities (not related to DTOs)
++- Total build time: 5.73 seconds
++
++### Design Notes
++
++- DTOs use `required` keyword for mandatory string properties (C# 11 nullable reference types)
++- Generic `ApiResponse<T>` wrapper with `Ok()` and `Fail()` static factory methods for clean usage
++- No business logic in DTOs - pure data containers
++- Validation attributes provide client-side and server-side contract enforcement
++- Folder structure: Models/{Feature}/{ClassName}.cs
++- All models include XML documentation comments for IDE IntelliSense
++
++### Concerns
++
++None. DTOs follow .NET 9 conventions and are ready for controller binding.
++
++### Next Steps
++
++Controllers can now use these DTOs for request/response handling. Example:
++```csharp
++[HttpPost("register")]
++public async Task<ApiResponse<AuthResponse>> Register([FromBody] RegisterRequest request)
++{
++    // validation attributes will be checked automatically
++}
++```
+diff --git a/src/SurveyorLedger.API/Models/Auth/AuthResponse.cs b/src/SurveyorLedger.API/Models/Auth/AuthResponse.cs
+new file mode 100644
+index 0000000..b8e69b2
+--- /dev/null
++++ b/src/SurveyorLedger.API/Models/Auth/AuthResponse.cs
+@@ -0,0 +1,42 @@
++namespace SurveyorLedger.API.Models.Auth;
++
++/// <summary>
++/// Response model for authentication endpoints (register, login, verify OTP).
++/// </summary>
++public class AuthResponse
++{
++    /// <summary>
++    /// The authenticated user's ID.
++    /// </summary>
++    public Guid UserId { get; set; }
++
++    /// <summary>
++    /// The authenticated user's email address.
++    /// </summary>
++    public required string Email { get; set; }
++
++    /// <summary>
++    /// The authenticated user's first name.
++    /// </summary>
++    public required string FirstName { get; set; }
++
++    /// <summary>
++    /// The authenticated user's last name.
++    /// </summary>
++    public required string LastName { get; set; }
++
++    /// <summary>
++    /// JWT access token for API requests.
++    /// </summary>
++    public required string AccessToken { get; set; }
++
++    /// <summary>
++    /// Refresh token to obtain new access tokens.
++    /// </summary>
++    public required string RefreshToken { get; set; }
++
++    /// <summary>
++    /// Access token expiration time in seconds.
++    /// </summary>
++    public int ExpiresIn { get; set; }
++}
+diff --git a/src/SurveyorLedger.API/Models/Auth/LoginRequest.cs b/src/SurveyorLedger.API/Models/Auth/LoginRequest.cs
+new file mode 100644
+index 0000000..361b000
+--- /dev/null
++++ b/src/SurveyorLedger.API/Models/Auth/LoginRequest.cs
+@@ -0,0 +1,22 @@
++using System.ComponentModel.DataAnnotations;
++
++namespace SurveyorLedger.API.Models.Auth;
++
++/// <summary>
++/// Request model for user login.
++/// </summary>
++public class LoginRequest
++{
++    /// <summary>
++    /// User's email address.
++    /// </summary>
++    [Required(ErrorMessage = "Email is required.")]
++    [EmailAddress(ErrorMessage = "Email must be a valid email address.")]
++    public required string Email { get; set; }
++
++    /// <summary>
++    /// User's password.
++    /// </summary>
++    [Required(ErrorMessage = "Password is required.")]
++    public required string Password { get; set; }
++}
+diff --git a/src/SurveyorLedger.API/Models/Auth/RefreshTokenRequest.cs b/src/SurveyorLedger.API/Models/Auth/RefreshTokenRequest.cs
+new file mode 100644
+index 0000000..d24e898
+--- /dev/null
++++ b/src/SurveyorLedger.API/Models/Auth/RefreshTokenRequest.cs
+@@ -0,0 +1,16 @@
++using System.ComponentModel.DataAnnotations;
++
++namespace SurveyorLedger.API.Models.Auth;
++
++/// <summary>
++/// Request model for token refresh.
++/// </summary>
++public class RefreshTokenRequest
++{
++    /// <summary>
++    /// The refresh token used to obtain a new access token.
++    /// </summary>
++    [Required(ErrorMessage = "RefreshToken is required.")]
++    [StringLength(int.MaxValue, MinimumLength = 1, ErrorMessage = "RefreshToken cannot be empty.")]
++    public required string RefreshToken { get; set; }
++}
+diff --git a/src/SurveyorLedger.API/Models/Auth/RegisterRequest.cs b/src/SurveyorLedger.API/Models/Auth/RegisterRequest.cs
+new file mode 100644
+index 0000000..6ec50cd
+--- /dev/null
++++ b/src/SurveyorLedger.API/Models/Auth/RegisterRequest.cs
+@@ -0,0 +1,37 @@
++using System.ComponentModel.DataAnnotations;
++
++namespace SurveyorLedger.API.Models.Auth;
++
++/// <summary>
++/// Request model for user registration.
++/// </summary>
++public class RegisterRequest
++{
++    /// <summary>
++    /// User's email address.
++    /// </summary>
++    [Required(ErrorMessage = "Email is required.")]
++    [EmailAddress(ErrorMessage = "Email must be a valid email address.")]
++    public required string Email { get; set; }
++
++    /// <summary>
++    /// User's password. Minimum 8 characters.
++    /// </summary>
++    [Required(ErrorMessage = "Password is required.")]
++    [StringLength(int.MaxValue, MinimumLength = 8, ErrorMessage = "Password must be at least 8 characters long.")]
++    public required string Password { get; set; }
++
++    /// <summary>
++    /// User's first name.
++    /// </summary>
++    [Required(ErrorMessage = "FirstName is required.")]
++    [StringLength(100, MinimumLength = 1, ErrorMessage = "FirstName must be between 1 and 100 characters.")]
++    public required string FirstName { get; set; }
++
++    /// <summary>
++    /// User's last name.
++    /// </summary>
++    [Required(ErrorMessage = "LastName is required.")]
++    [StringLength(100, MinimumLength = 1, ErrorMessage = "LastName must be between 1 and 100 characters.")]
++    public required string LastName { get; set; }
++}
+diff --git a/src/SurveyorLedger.API/Models/Auth/VerifyOtpRequest.cs b/src/SurveyorLedger.API/Models/Auth/VerifyOtpRequest.cs
+new file mode 100644
+index 0000000..d7449ab
+--- /dev/null
++++ b/src/SurveyorLedger.API/Models/Auth/VerifyOtpRequest.cs
+@@ -0,0 +1,24 @@
++using System.ComponentModel.DataAnnotations;
++
++namespace SurveyorLedger.API.Models.Auth;
++
++/// <summary>
++/// Request model for OTP verification.
++/// </summary>
++public class VerifyOtpRequest
++{
++    /// <summary>
++    /// User's email address.
++    /// </summary>
++    [Required(ErrorMessage = "Email is required.")]
++    [EmailAddress(ErrorMessage = "Email must be a valid email address.")]
++    public required string Email { get; set; }
++
++    /// <summary>
++    /// 6-digit OTP code sent to the user's email.
++    /// </summary>
++    [Required(ErrorMessage = "OtpCode is required.")]
++    [StringLength(6, MinimumLength = 6, ErrorMessage = "OtpCode must be exactly 6 digits.")]
++    [RegularExpression(@"^\d{6}$", ErrorMessage = "OtpCode must contain only digits.")]
++    public required string OtpCode { get; set; }
++}
+diff --git a/src/SurveyorLedger.API/Models/Responses/ApiResponse.cs b/src/SurveyorLedger.API/Models/Responses/ApiResponse.cs
+new file mode 100644
+index 0000000..3b0a38f
+--- /dev/null
++++ b/src/SurveyorLedger.API/Models/Responses/ApiResponse.cs
+@@ -0,0 +1,54 @@
++namespace SurveyorLedger.API.Models.Responses;
++
++/// <summary>
++/// Generic API response wrapper for all endpoints.
++/// </summary>
++/// <typeparam name="T">The type of the data payload.</typeparam>
++public class ApiResponse<T>
++{
++    /// <summary>
++    /// Indicates whether the request was successful.
++    /// </summary>
++    public bool Success { get; set; }
++
++    /// <summary>
++    /// The response data payload. Null if request failed or no data is returned.
++    /// </summary>
++    public T? Data { get; set; }
++
++    /// <summary>
++    /// Error message. Null on success.
++    /// </summary>
++    public string? Message { get; set; }
++
++    /// <summary>
++    /// Validation errors keyed by field name. Null if no validation errors.
++    /// </summary>
++    public Dictionary<string, string[]>? Errors { get; set; }
++
++    /// <summary>
++    /// Creates a successful response with data.
++    /// </summary>
++    public static ApiResponse<T> Ok(T data, string? message = null)
++    {
++        return new ApiResponse<T>
++        {
++            Success = true,
++            Data = data,
++            Message = message
++        };
++    }
++
++    /// <summary>
++    /// Creates a failure response with an error message.
++    /// </summary>
++    public static ApiResponse<T> Fail(string message, Dictionary<string, string[]>? errors = null)
++    {
++        return new ApiResponse<T>
++        {
++            Success = false,
++            Message = message,
++            Errors = errors
++        };
++    }
++}
+diff --git a/src/SurveyorLedger.API/Models/User/UpdateProfileRequest.cs b/src/SurveyorLedger.API/Models/User/UpdateProfileRequest.cs
+new file mode 100644
+index 0000000..19431cd
+--- /dev/null
++++ b/src/SurveyorLedger.API/Models/User/UpdateProfileRequest.cs
+@@ -0,0 +1,23 @@
++using System.ComponentModel.DataAnnotations;
++
++namespace SurveyorLedger.API.Models.User;
++
++/// <summary>
++/// Request model for updating user profile.
++/// </summary>
++public class UpdateProfileRequest
++{
++    /// <summary>
++    /// The updated first name.
++    /// </summary>
++    [Required(ErrorMessage = "FirstName is required.")]
++    [StringLength(100, MinimumLength = 1, ErrorMessage = "FirstName must be between 1 and 100 characters.")]
++    public required string FirstName { get; set; }
++
++    /// <summary>
++    /// The updated last name.
++    /// </summary>
++    [Required(ErrorMessage = "LastName is required.")]
++    [StringLength(100, MinimumLength = 1, ErrorMessage = "LastName must be between 1 and 100 characters.")]
++    public required string LastName { get; set; }
++}
+diff --git a/src/SurveyorLedger.API/Models/User/UserProfileResponse.cs b/src/SurveyorLedger.API/Models/User/UserProfileResponse.cs
+new file mode 100644
+index 0000000..3a12c01
+--- /dev/null
++++ b/src/SurveyorLedger.API/Models/User/UserProfileResponse.cs
+@@ -0,0 +1,32 @@
++namespace SurveyorLedger.API.Models.User;
++
++/// <summary>
++/// Response model for user profile endpoint.
++/// </summary>
++public class UserProfileResponse
++{
++    /// <summary>
++    /// The user's ID.
++    /// </summary>
++    public Guid UserId { get; set; }
++
++    /// <summary>
++    /// The user's email address.
++    /// </summary>
++    public required string Email { get; set; }
++
++    /// <summary>
++    /// The user's first name.
++    /// </summary>
++    public required string FirstName { get; set; }
++
++    /// <summary>
++    /// The user's last name.
++    /// </summary>
++    public required string LastName { get; set; }
++
++    /// <summary>
++    /// When the user account was created.
++    /// </summary>
++    public DateTime CreatedAt { get; set; }
++}
+diff --git a/src/SurveyorLedger.API/Models/Workspace/WorkspaceRequest.cs b/src/SurveyorLedger.API/Models/Workspace/WorkspaceRequest.cs
+new file mode 100644
+index 0000000..4bb9e03
+--- /dev/null
++++ b/src/SurveyorLedger.API/Models/Workspace/WorkspaceRequest.cs
+@@ -0,0 +1,22 @@
++using System.ComponentModel.DataAnnotations;
++
++namespace SurveyorLedger.API.Models.Workspace;
++
++/// <summary>
++/// Request model for creating or updating a workspace.
++/// </summary>
++public class WorkspaceRequest
++{
++    /// <summary>
++    /// The name of the workspace. Must be between 2 and 100 characters.
++    /// </summary>
++    [Required(ErrorMessage = "Name is required.")]
++    [StringLength(100, MinimumLength = 2, ErrorMessage = "Name must be between 2 and 100 characters.")]
++    public required string Name { get; set; }
++
++    /// <summary>
++    /// Optional description of the workspace. Maximum 500 characters.
++    /// </summary>
++    [StringLength(500, ErrorMessage = "Description cannot exceed 500 characters.")]
++    public string? Description { get; set; }
++}
+diff --git a/src/SurveyorLedger.API/Models/Workspace/WorkspaceResponse.cs b/src/SurveyorLedger.API/Models/Workspace/WorkspaceResponse.cs
+new file mode 100644
+index 0000000..2ef7817
+--- /dev/null
++++ b/src/SurveyorLedger.API/Models/Workspace/WorkspaceResponse.cs
+@@ -0,0 +1,32 @@
++namespace SurveyorLedger.API.Models.Workspace;
++
++/// <summary>
++/// Response model for workspace endpoints.
++/// </summary>
++public class WorkspaceResponse
++{
++    /// <summary>
++    /// The unique identifier of the workspace.
++    /// </summary>
++    public Guid WorkspaceId { get; set; }
++
++    /// <summary>
++    /// The name of the workspace.
++    /// </summary>
++    public required string Name { get; set; }
++
++    /// <summary>
++    /// The optional description of the workspace.
++    /// </summary>
++    public string? Description { get; set; }
++
++    /// <summary>
++    /// When the workspace was created.
++    /// </summary>
++    public DateTime CreatedAt { get; set; }
++
++    /// <summary>
++    /// Indicates whether the workspace is active.
++    /// </summary>
++    public bool IsActive { get; set; }
++}
