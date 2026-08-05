@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SurveyorLedger.Core")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5086719ef1b10686059e4d3876a207b7b44d6bcd")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+cc4f3ab097f512b50737eb5ae61d7bd7eb468ca8")]
 [assembly: System.Reflection.AssemblyProductAttribute("SurveyorLedger.Core")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SurveyorLedger.Core")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

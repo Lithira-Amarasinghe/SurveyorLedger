@@ -19,8 +19,10 @@ var acsConnectionString = builder.Configuration["AzureCommunicationServices:Conn
 builder.Services.AddSingleton(new EmailClient(acsConnectionString));
 builder.Services.AddScoped<IEmailService, EmailService>();
 
-// Register TokenService
+// Register authentication services
+builder.Services.AddScoped<IPasswordService, PasswordService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
 
 // Configure JWT Authentication
 var jwtKey = builder.Configuration["JwtSettings:Key"] ?? throw new InvalidOperationException("JwtSettings:Key not configured");

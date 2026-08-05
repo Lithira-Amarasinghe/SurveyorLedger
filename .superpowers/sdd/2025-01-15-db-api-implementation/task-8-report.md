@@ -62,3 +62,49 @@ Service is ready for:
 - [x] DI registration in Program.cs
 - [x] Build verification: `dotnet build` passes
 - [x] Error code constant added to Constants.cs
+
+---
+
+## Fix Round 1: Validation Hardening
+
+### Issues Found
+1. **Config Null-Reference Risk**: Constructor used null-forgiving operator `!` on config lookup
+2. **Missing Input Validation**: Public methods accepted email, otpCode, firstName without null/empty checks
+
+### Changes Applied
+**`src/SurveyorLedger.API/Services/EmailService.cs`**
+
+1. **Config validation** (Constructor, line 23-25):
+   ```csharp
+   _senderEmail = config["AzureCommunicationServices:SenderEmail"]
+       ?? throw new InvalidOperationException("AzureCommunicationServices:SenderEmail not configured");
+   ```
+   - Replaces unsafe null-forgiving operator with explicit throw
+   - Fails fast at startup if ACS email not configured
+
+2. **SendVerificationOtpAsync input validation**:
+   ```csharp
+   if (string.IsNullOrWhiteSpace(email))
+       throw new ValidationException("Email is required");
+   if (string.IsNullOrWhiteSpace(otpCode))
+       throw new ValidationException("OTP code is required");
+   ```
+
+3. **SendWelcomeEmailAsync input validation**:
+   ```csharp
+   if (string.IsNullOrWhiteSpace(email))
+       throw new ValidationException("Email is required");
+   if (string.IsNullOrWhiteSpace(firstName))
+       throw new ValidationException("FirstName is required");
+   ```
+
+### Validation Rationale
+- **Trust boundaries**: Public API methods validate at entry point (one guard beats many scattered checks)
+- **Fail-fast principle**: Validates before expensive async operations
+- **Consistent error handling**: Uses existing `ValidationException` from project conventions
+
+### Build Status
+```
+✅ Build succeeded (0 errors, 2 warnings)
+```
+Commit: `e265277` — "fix: add config validation and input validation to EmailService"
