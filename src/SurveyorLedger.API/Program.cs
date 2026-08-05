@@ -22,9 +22,6 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 // Register TokenService
 builder.Services.AddScoped<ITokenService, TokenService>();
 
-// Register RBAC service
-builder.Services.AddScoped<ICasbinService, CasbinService>();
-
 // Configure JWT Authentication
 var jwtKey = builder.Configuration["JwtSettings:Key"] ?? throw new InvalidOperationException("JwtSettings:Key not configured");
 var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? throw new InvalidOperationException("JwtSettings:Issuer not configured");
@@ -47,13 +44,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 var app = builder.Build();
-
-// Initialize Casbin on startup
-using (var scope = app.Services.CreateScope())
-{
-    var casbinService = scope.ServiceProvider.GetRequiredService<ICasbinService>();
-    await casbinService.InitializeAsync();
-}
 
 if (app.Environment.IsDevelopment())
 {
