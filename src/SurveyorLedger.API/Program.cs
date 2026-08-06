@@ -16,8 +16,11 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString, b => b.MigrationsAssembly("SurveyorLedger.Data")));
 
-var acsConnectionString = builder.Configuration["AzureCommunicationServices:ConnectionString"]!;
-builder.Services.AddSingleton(new EmailClient(acsConnectionString));
+builder.Services.AddSingleton(sp =>
+{
+    var acsConnectionString = sp.GetRequiredService<IConfiguration>()["AzureCommunicationServices:ConnectionString"]!;
+    return new EmailClient(acsConnectionString);
+});
 builder.Services.AddScoped<IEmailService, EmailService>();
 
 // Register authentication services
@@ -55,8 +58,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 var app = builder.Build();
 
 // Initialize Casbin after DB migration
-var casbinService = app.Services.GetRequiredService<ICasbinService>();
-await casbinService.InitializeAsync();
+using (var scope = app.Services.CreateScope())
+{
+    var casbinService = scope.ServiceProvider.GetRequiredService<ICasbinService>();
+    await casbinService.InitializeAsync();
+}
 
 if (app.Environment.IsDevelopment())
 {

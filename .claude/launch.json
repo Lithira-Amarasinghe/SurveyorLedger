@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "SurveyorLedger API",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "-p", "src/SurveyorLedger.API"],
+      "port": 5296,
+      "url": "http://localhost:5296"
+    }
+  ]
+}
