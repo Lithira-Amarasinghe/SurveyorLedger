@@ -12,9 +12,7 @@
       "name": "SurveyorLedger UI",
       "runtimeExecutable": "ng",
       "runtimeArgs": ["serve", "--poll", "2000"],
-      "port": 4200,
-      "autoPort": true,
-      "url": "http://localhost:{port}"
+      "port": 4200
     }
   ]
 }

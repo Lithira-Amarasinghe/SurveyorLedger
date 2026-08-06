@@ -83,65 +83,12 @@ ui/                           Frontend Angular project
 
 ## UI Scope (Phase 2)
 
-### Pages to Implement
+Pages: Auth (login, register, verify-otp), Workspace (list, create), Profile (view, edit).
+App shell: Sidebar, topbar, command palette (Cmd+K).
 
-**Auth Flow (no guards yet, all public)**
-- **Login** (`/auth/login`): Email input, password input, submit button, link to register
-- **Register** (`/auth/register`): Email, password, firstName, lastName inputs, submit, link to login
-- **Verify OTP** (`/auth/verify-otp`): Email display, OTP code input (6 digits), verify button
-- Success: redirect to `/app/workspace`, store JWT in localStorage
+Details: See [UI_IMPLEMENTATION_GUIDE.md](UI_IMPLEMENTATION_GUIDE.md)
 
-**App Shell** (layout wrapper for /app/*)
-- **Sidebar** (left, collapsible on mobile): Logo, navigation links (Workspace, Profile, Logout)
-- **Topbar** (fixed top): Logo/title, Cmd+K search input, user menu (profile icon → dropdown with logout)
-- **Command Palette** (Cmd+K modal): Route search (quick nav to pages)
-- **Main content area**: Route outlet for pages
-
-**Workspace** (`/app/workspace`)
-- **List view**: Table with workspace name, created date, action buttons (select)
-- **Create modal** (button on page): Form with name input, description textarea, submit
-- API calls: GET /api/workspaces (list), POST /api/workspaces (create)
-
-**Profile** (`/app/profile`)
-- **View section**: Display userId, email, firstName, lastName (read-only)
-- **Edit section** (below or tab): Form with firstName, lastName inputs, save button
-- API calls: GET /api/users/profile (load), PUT /api/users/profile (update)
-
-**HTTP + Auth**
-- JwtInterceptor: Attach Bearer token to all requests
-- AuthGuard: Redirect 401 to /auth/login
-- AuthService: Login/register/logout manage token in localStorage
-
-### NOT Implemented (API support missing)
-Jobs, Surveys, RBAC UI, Org management, Billing, password reset, social auth.
-
-### Component Structure
-```
-ui/src/app/
-├── pages/
-│   ├── auth/
-│   │   ├── login.component.ts
-│   │   ├── register.component.ts
-│   │   └── verify-otp.component.ts
-│   ├── workspace/
-│   │   ├── list/
-│   │   ├── create-modal/
-│   │   └── workspace.component.ts
-│   └── profile/
-│       ├── view/
-│       ├── edit/
-│       └── profile.component.ts
-├── shell/
-│   ├── sidebar.component.ts
-│   ├── topbar.component.ts
-│   ├── command-palette.component.ts
-│   └── app-shell.component.ts
-├── core/
-│   ├── auth.service.ts
-│   ├── http.interceptor.ts
-│   └── auth.guard.ts
-└── app.routes.ts
-```
+NOT implemented: Jobs, Surveys, RBAC UI, billing, password reset, social auth.
 
 ## Database
 
