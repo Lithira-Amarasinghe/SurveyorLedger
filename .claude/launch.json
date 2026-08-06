@@ -4,9 +4,17 @@
     {
       "name": "SurveyorLedger API",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["run", "-p", "src/SurveyorLedger.API"],
+      "runtimeArgs": ["run", "--project", "api/src/SurveyorLedger.API"],
       "port": 5296,
       "url": "http://localhost:5296"
+    },
+    {
+      "name": "SurveyorLedger UI",
+      "runtimeExecutable": "ng",
+      "runtimeArgs": ["serve", "--poll", "2000"],
+      "port": 4200,
+      "autoPort": true,
+      "url": "http://localhost:{port}"
     }
   ]
 }
