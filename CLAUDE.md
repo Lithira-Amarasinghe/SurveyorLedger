@@ -1,18 +1,26 @@
-# SurveyorLedger: Multi-Tenant SaaS API
+# SurveyorLedger: Multi-Tenant SaaS Platform
 
 ## Project
 
-Survey job management platform. Users register → verify email (OTP/password) → create workspace → manage jobs within workspace. API + database only (UI out of scope).
+Survey job management platform. Users register → verify email (OTP/password) → create workspace → manage jobs within workspace. **Phase 1: Backend API (complete). Phase 2: Angular UI (in progress).**
 
 ## Tech Stack
 
-- **.NET 9** (monolithic API)
-- **SQL Server 2022** (shared multi-tenant DB)
+**Backend (API)**
+- **.NET 9** (monolithic API, running on http://localhost:5296)
+- **SQL Server 2022 LocalDB** (shared multi-tenant DB)
 - **EF Core 9** (ORM, migrations)
-- **Casbin.NET** (RBAC enforcement)
+- **Casbin.NET 2.0.0** (RBAC enforcement)
 - **Azure Communication Services** (email OTP)
 - **JWT + httpOnly cookies** (hybrid auth)
-- **xUnit + Testcontainers** (testing)
+- **xUnit** (testing)
+
+**Frontend (UI)**
+- **Angular 21** (standalone components, signals)
+- **Angular Material** (base UI components)
+- **Tailwind CSS** (utility density, custom spacing)
+- **RxJS** (state management, HTTP)
+- **ng serve** (localhost:4200)
 
 ## Architecture
 
@@ -37,14 +45,51 @@ Multi-tenant: shared DB, tenant isolation via query filters + middleware. Worksp
 ## Folders
 
 ```
-src/
-  SurveyorLedger.API/         Controllers, Services, Models, Middleware
-  SurveyorLedger.Data/        DbContext, Entities, Migrations, Configurations
-  SurveyorLedger.Core/        Constants, Enums, Custom Exceptions
-tests/
-  SurveyorLedger.API.Tests/
-  SurveyorLedger.Data.Tests/
+api/                          Backend .NET project
+├── src/
+│   ├── SurveyorLedger.API/      Controllers, Services, Models, Middleware
+│   ├── SurveyorLedger.Data/     DbContext, Entities, Migrations
+│   └── SurveyorLedger.Core/     Constants, Enums, Exceptions
+├── tests/
+│   └── SurveyorLedger.API.Tests/
+└── SurveyorLedger.sln
+
+ui/                           Frontend Angular project
+├── src/
+│   ├── app/                     Components, pages, guards, interceptors
+│   ├── assets/
+│   └── styles.scss              Global Tailwind imports
+├── angular.json
+└── package.json
 ```
+
+## UI Design (Phase 2)
+
+**Style:** Strategic Minimalism via component libraries (no custom patterns).
+
+**Palette:**
+- Base: Grays (#f5f5f5 light, #1f1f1f dark)
+- Accent (primary buttons, focus): #9E0031 (vibrant wine red)
+- Secondary/danger variants: #8E0045, #770058, #600047, #44001A (muted burgundy scale)
+
+**Density:** High — tight typography, crisp functional borders, compact spacing.
+
+**Layout:**
+- Collapsible sidebar (left, hidden on mobile)
+- Global topbar (logo, user menu, Cmd+K search)
+- Command palette (Cmd+K) for navigation
+
+**Progressive Disclosure:** Settings in tabs/modals, not inline; hide optional fields.
+
+## UI Scope (Phase 2)
+
+Pages implemented:
+- **Auth:** Register, Verify OTP, Login (no social auth, no password reset)
+- **App Shell:** Sidebar, topbar, command palette skeleton
+- **Workspace:** List view, Create modal
+- **Profile:** User profile view/edit
+
+**NOT implemented** (API support missing): Jobs, Surveys, RBAC UI, Org management, Billing.
 
 ## Database
 
@@ -56,18 +101,33 @@ tests/
 
 ## Development
 
+**LocalDB Setup (one-time):**
 ```bash
-# Start SQL Server
-docker-compose up -d
+sqllocaldb create MSSQLLocalDB      # if needed
+sqllocaldb start MSSQLLocalDB
+```
 
-# Run migrations
-dotnet ef database update -p src/SurveyorLedger.Data -s src/SurveyorLedger.API
-
-# Start API (localhost:5001)
-dotnet run -p src/SurveyorLedger.API
-
-# Run tests
+**API (terminal 1):**
+```bash
+cd api
+dotnet build
 dotnet test
+dotnet run --project src/SurveyorLedger.API
+# Runs on http://localhost:5296
+```
+
+**UI (terminal 2):**
+```bash
+cd ui
+npm install                        # if node_modules missing
+ng serve
+# Runs on http://localhost:4200
+```
+
+**Migrations:**
+```bash
+cd api
+dotnet ef database update -p src/SurveyorLedger.Data -s src/SurveyorLedger.API
 ```
 
 ## Endpoints (By Task)
