@@ -46,6 +46,16 @@ import { CurrentWorkspaceService } from '../core/current-workspace.service';
           >
             Members
           </a>
+          @if (isAdmin()) {
+            <a
+              [routerLink]="['/app/workspace', ws.workspaceId, 'roles']"
+              routerLinkActive="bg-primary-50 text-primary-600"
+              class="flex items-center gap-sm px-md py-sm rounded text-sm text-neutral-700 hover:bg-neutral-100"
+              (click)="navigate.emit()"
+            >
+              Roles
+            </a>
+          }
         </div>
 
         <div class="px-sm space-y-xs">
@@ -103,6 +113,10 @@ export class SidebarComponent {
 
   navigate = output<void>();
   workspace = this.currentWorkspace.current;
+
+  isAdmin(): boolean {
+    return this.currentWorkspace.current()?.role === 'Admin';
+  }
 
   logout(): void {
     this.authService.logout();

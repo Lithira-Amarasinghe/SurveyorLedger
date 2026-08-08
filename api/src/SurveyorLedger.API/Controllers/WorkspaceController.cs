@@ -73,6 +73,31 @@ namespace SurveyorLedger.API.Controllers
             return Ok(ApiResponse<List<MemberResponse>>.Ok(response));
         }
 
+        [HttpGet("{id}/roles")]
+        public async Task<ActionResult<ApiResponse<List<RoleResponse>>>> GetRoles(Guid id)
+        {
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
+            var roles = await _workspaceService.GetWorkspaceRolesAsync(id, userId);
+
+            var response = roles.Select(r => new RoleResponse
+            {
+                Id = r.Id,
+                Name = r.Name,
+                Description = r.Description,
+                Permissions = r.Permissions
+                    .Select(p => new PermissionResponse
+                    {
+                        Name = p.Name,
+                        Resource = p.Resource,
+                        Action = p.Action,
+                        Description = p.Description
+                    })
+                    .ToList()
+            }).ToList();
+
+            return Ok(ApiResponse<List<RoleResponse>>.Ok(response));
+        }
+
         [HttpPut("{id}/members/{userId}")]
         public async Task<ActionResult<ApiResponse<object>>> UpdateMemberRole(Guid id, Guid userId, [FromBody] UpdateMemberRoleRequest request)
         {

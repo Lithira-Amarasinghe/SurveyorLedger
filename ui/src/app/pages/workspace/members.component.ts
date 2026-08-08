@@ -13,6 +13,7 @@ interface MemberRow {
   email: string;
   displayName: string;
   role: string;
+  pendingRole?: string;
   dateLabel: string;
   isPending: boolean;
   isOwner: boolean;
@@ -64,11 +65,16 @@ interface MemberRow {
                     }
                   </td>
                   <td class="px-lg py-sm">
-                    @if (isAdmin() && !row.isPending && !row.isOwner) {
+                    @if (isAdmin() && !row.isPending && !row.isOwner && row.pendingRole) {
+                      <span class="text-xs">Change to <strong>{{ row.pendingRole }}</strong>?
+                        <button class="text-primary-500 font-medium" (click)="confirmRoleChange(row)">Yes</button>
+                        <button class="text-neutral-500" (click)="cancelRoleChange(row)">No</button>
+                      </span>
+                    } @else if (isAdmin() && !row.isPending && !row.isOwner) {
                       <select
                         class="input-field py-xs"
                         [value]="row.role"
-                        (change)="changeRole(row, $any($event.target).value)"
+                        (change)="onRoleSelect(row, $any($event.target).value)"
                       >
                         <option value="Admin">Admin</option>
                         <option value="Manager">Manager</option>
@@ -211,9 +217,27 @@ export class MembersComponent implements OnInit {
     });
   }
 
-  changeRole(row: MemberRow, newRole: string): void {
+  onRoleSelect(row: MemberRow, newRole: string): void {
+    if (newRole === row.role) {
+      this.cancelRoleChange(row);
+      return;
+    }
+    this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, pendingRole: newRole } : r));
+  }
+
+  confirmRoleChange(row: MemberRow): void {
+    const newRole = row.pendingRole;
+    if (!newRole) return;
+    this.changeRole(row, newRole);
+  }
+
+  cancelRoleChange(row: MemberRow): void {
+    this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, pendingRole: undefined } : r));
+  }
+
+  private changeRole(row: MemberRow, newRole: string): void {
     const previousRole = row.role;
-    this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, role: newRole } : r));
+    this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, role: newRole, pendingRole: undefined } : r));
 
     this.workspaceService.updateMemberRole(this.workspaceId, row.key, newRole).subscribe({
       error: (err) => {

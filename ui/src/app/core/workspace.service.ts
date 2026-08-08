@@ -24,6 +24,20 @@ export interface Member {
   isOwner: boolean;
 }
 
+export interface Permission {
+  name: string;
+  resource: string;
+  action: string;
+  description: string;
+}
+
+export interface Role {
+  id: string;
+  name: string;
+  description: string | null;
+  permissions: Permission[];
+}
+
 interface ApiResponse<T> {
   success: boolean;
   data: T;
@@ -58,5 +72,9 @@ export class WorkspaceService {
 
   removeMember(workspaceId: string, userId: string): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/${workspaceId}/members/${userId}`);
+  }
+
+  getRoles(workspaceId: string): Observable<Role[]> {
+    return this.http.get<ApiResponse<Role[]>>(`${this.apiUrl}/${workspaceId}/roles`).pipe(map(res => res.data));
   }
 }

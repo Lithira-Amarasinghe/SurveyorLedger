@@ -12,6 +12,10 @@ public record WorkspaceWithAccess(Workspace Workspace, string Tier, string Role)
 
 public record WorkspaceMember(Guid UserId, string Email, string FirstName, string LastName, string Role, DateTime AssignedAt, bool IsOwner);
 
+public record PermissionInfo(string Name, string Resource, string Action, string Description);
+
+public record RoleWithPermissions(Guid Id, string Name, string? Description, List<PermissionInfo> Permissions);
+
 public interface IWorkspaceService
 {
     Task<WorkspaceWithAccess> CreateWorkspaceAsync(Guid userId, WorkspaceRequest request);
@@ -20,6 +24,7 @@ public interface IWorkspaceService
     Task<List<WorkspaceMember>> GetMembersAsync(Guid workspaceId, Guid callerUserId);
     Task<string> UpdateMemberRoleAsync(Guid workspaceId, Guid targetUserId, Guid callerUserId, string newRoleName);
     Task RemoveMemberAsync(Guid workspaceId, Guid targetUserId, Guid callerUserId);
+    Task<List<RoleWithPermissions>> GetWorkspaceRolesAsync(Guid workspaceId, Guid callerUserId);
 }
 
 public class WorkspaceService : IWorkspaceService
@@ -162,10 +167,41 @@ public class WorkspaceService : IWorkspaceService
             .Include(ua => ua.Role)
             .ToListAsync();
 
+        // Clients are guest-like: they can see their own membership row but not the
+        // rest of the roster. Every other role keeps the full-roster view.
+        var callerRole = accesses.FirstOrDefault(ua => ua.UserId == callerUserId)?.Role.Name;
+        if (callerRole == Constants.SystemRoles.Client)
+            accesses = accesses.Where(ua => ua.UserId == callerUserId).ToList();
+
         return accesses
             .Select(ua => new WorkspaceMember(
                 ua.UserId, ua.User.Email, ua.User.FirstName, ua.User.LastName,
                 ua.Role.Name, ua.AssignedAt, ua.UserId == workspace.OwnerId))
+            .ToList();
+    }
+
+    public async Task<List<RoleWithPermissions>> GetWorkspaceRolesAsync(Guid workspaceId, Guid callerUserId)
+    {
+        // Read-only, but mirrors the "manage members" gate so it lines up with the
+        // Admin-only Roles menu in the UI - non-admins can't reach it via direct API call either.
+        await EnsureManageMembersAsync(workspaceId, callerUserId);
+
+        var roles = await _context.Roles
+            .Where(r => r.IsSystem && r.WorkspaceId == null)
+            .Include(r => r.RolePermissions)
+                .ThenInclude(rp => rp.Permission)
+            .OrderBy(r => r.Name)
+            .ToListAsync();
+
+        return roles
+            .Select(r => new RoleWithPermissions(
+                r.Id,
+                r.Name,
+                r.Description,
+                r.RolePermissions
+                    .Select(rp => new PermissionInfo(rp.Permission.Name, rp.Permission.Resource, rp.Permission.Action, rp.Permission.Description))
+                    .OrderBy(p => p.Name)
+                    .ToList()))
             .ToList();
     }
 
