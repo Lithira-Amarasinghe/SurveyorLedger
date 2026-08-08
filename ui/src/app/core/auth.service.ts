@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { map, tap } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 
 export interface AuthResponse {
@@ -12,6 +12,12 @@ export interface AuthResponse {
   accessToken: string;
   refreshToken: string;
   expiresIn: number;
+}
+
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
 }
 
 @Injectable({
@@ -26,27 +32,31 @@ export class AuthService {
   constructor(private http: HttpClient) {}
 
   register(email: string, password: string, firstName: string, lastName: string): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${this.apiUrl}/register`, {
+    return this.http.post<ApiResponse<AuthResponse>>(`${this.apiUrl}/register`, {
       email,
       password,
       firstName,
       lastName,
     }).pipe(
+      map(res => res.data),
       tap(response => this.setToken(response.accessToken, response.refreshToken))
     );
   }
 
   login(email: string, password: string): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${this.apiUrl}/login`, {
+    return this.http.post<ApiResponse<AuthResponse>>(`${this.apiUrl}/login`, {
       email,
       password,
     }).pipe(
+      map(res => res.data),
       tap(response => this.setToken(response.accessToken, response.refreshToken))
     );
   }
 
-  verifyOtp(email: string, otpCode: string): Observable<any> {
-    return this.http.post(`${this.apiUrl}/verify-otp`, { email, otpCode });
+  verifyOtp(email: string, otpCode: string): Observable<void> {
+    return this.http.post<ApiResponse<unknown>>(`${this.apiUrl}/verify-otp`, { email, otpCode }).pipe(
+      map(() => undefined)
+    );
   }
 
   logout(): void {
@@ -63,5 +73,18 @@ export class AuthService {
 
   private hasToken(): boolean {
     return !!localStorage.getItem(environment.jwtTokenKey);
+  }
+
+  getCurrentEmail(): string | null {
+    const token = localStorage.getItem(environment.jwtTokenKey);
+    if (!token) return null;
+
+    try {
+      const payload = token.split('.')[1];
+      const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+      return decoded['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? decoded['email'] ?? null;
+    } catch {
+      return null;
+    }
   }
 }

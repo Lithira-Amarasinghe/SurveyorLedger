@@ -10,8 +10,8 @@
     },
     {
       "name": "SurveyorLedger UI",
-      "runtimeExecutable": "ng",
-      "runtimeArgs": ["serve", "--poll", "2000"],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "ui", "run", "start"],
       "port": 4200
     }
   ]

@@ -1,164 +1,48 @@
 # SurveyorLedger: Multi-Tenant SaaS Platform
 
-## Project
+Survey job management. Register → verify email → create workspace → manage jobs.
+**Phase 1: API (✅ complete). Phase 2: Angular UI (🏗️ in progress).**
 
-Survey job management platform. Users register → verify email (OTP/password) → create workspace → manage jobs within workspace. **Phase 1: Backend API (complete). Phase 2: Angular UI (in progress).**
+## Stack
 
-## Tech Stack
+**Backend:** .NET 9, SQL Server LocalDB, EF Core 9, Casbin.NET 2.0, Azure ACS, JWT
+**Frontend:** Angular 21, Material, Tailwind, RxJS
 
-**Backend (API)**
-- **.NET 9** (monolithic API, running on http://localhost:5296)
-- **SQL Server 2022 LocalDB** (shared multi-tenant DB)
-- **EF Core 9** (ORM, migrations)
-- **Casbin.NET 2.0.0** (RBAC enforcement)
-- **Azure Communication Services** (email OTP)
-- **JWT + httpOnly cookies** (hybrid auth)
-- **xUnit** (testing)
+Multi-tenant: shared DB, workspace = tenant, query filters + TenantMiddleware for isolation.
 
-**Frontend (UI)**
-- **Angular 21** (standalone components, signals)
-- **Angular Material** (base UI components)
-- **Tailwind CSS** (utility density, custom spacing)
-- **RxJS** (state management, HTTP)
-- **ng serve** (localhost:4200)
+## Quick Start
 
-## Architecture
+```bash
+# LocalDB (once)
+sqllocaldb start MSSQLLocalDB
 
-Single .NET 9 API, clean architecture layers:
-- **Controllers** → API endpoints
-- **Services** → business logic (Auth, Email, Token, RBAC)
-- **Data layer** → EF Core DbContext, entities, migrations
-- **Models** → DTOs, requests, responses
+# Terminal 1: API (localhost:5296)
+cd api && dotnet run --project src/SurveyorLedger.API
 
-Multi-tenant: shared DB, tenant isolation via query filters + middleware. Workspace = tenant.
-
-## Key Patterns
-
-**Authentication:** Register (OTP or password) → Email verification → Login → JWT token + refresh cookie.
-
-**RBAC:** Casbin enforces (user, role, permission, scope). Scopes: Workspace, Job, Organization (extensible). System roles: Admin, Manager, Surveyor, Client.
-
-**Data isolation:** TenantMiddleware extracts WorkspaceId from request header/token, queries filtered by scope. Users see only their workspaces + assigned jobs.
-
-**Error handling:** Custom AppException → ErrorHandlingMiddleware → JSON {code, message, details}.
+# Terminal 2: UI (localhost:4200)
+cd ui && ng serve
+```
 
 ## Folders
 
 ```
-api/                          Backend .NET project
-├── src/
-│   ├── SurveyorLedger.API/      Controllers, Services, Models, Middleware
-│   ├── SurveyorLedger.Data/     DbContext, Entities, Migrations
-│   └── SurveyorLedger.Core/     Constants, Enums, Exceptions
-├── tests/
-│   └── SurveyorLedger.API.Tests/
-└── SurveyorLedger.sln
-
-ui/                           Frontend Angular project
-├── src/
-│   ├── app/                     Components, pages, guards, interceptors
-│   ├── assets/
-│   └── styles.scss              Global Tailwind imports
-├── angular.json
-└── package.json
+api/src/
+  SurveyorLedger.API/         Controllers, Services, Middleware
+  SurveyorLedger.Data/        DbContext, Entities, Migrations
+  SurveyorLedger.Core/        Constants, Enums, Exceptions
+ui/src/app/
+  pages/                      Auth, Workspace, Profile
+  shell/                      Sidebar, Topbar, CommandPalette
+  core/                       Services, Guards, Interceptors
 ```
 
-## UI Design (Phase 2)
+## Auth
 
-**Style:** Strategic Minimalism via component libraries (no custom patterns).
+Register (OTP or password) → Email verification → Login → JWT + refresh cookie.
 
-**Palette:**
-- Base: Grays (#f5f5f5 light, #1f1f1f dark)
-- Accent (primary buttons, focus): #9E0031 (vibrant wine red)
-- Secondary/danger variants: #8E0045, #770058, #600047, #44001A (muted burgundy scale)
+## Detailed Docs
 
-**Density:** High — tight typography, crisp functional borders, compact spacing.
-
-**Layout:**
-- Collapsible sidebar (left, hidden on mobile)
-- Global topbar (logo, user menu, Cmd+K search)
-- Command palette (Cmd+K) for navigation
-
-**Progressive Disclosure:** Settings in tabs/modals, not inline; hide optional fields.
-
-## UI Scope (Phase 2)
-
-Pages: Auth (login, register, verify-otp), Workspace (list, create), Profile (view, edit).
-App shell: Sidebar, topbar, command palette (Cmd+K).
-
-Details: See [UI_IMPLEMENTATION_GUIDE.md](UI_IMPLEMENTATION_GUIDE.md)
-
-NOT implemented: Jobs, Surveys, RBAC UI, billing, password reset, social auth.
-
-## Database
-
-**Schema:** Users, Workspaces, Subscriptions, Roles, Permissions, RolePermissions, UserAccess (polymorphic scope), AuthTokens, EmailVerifications, AuditLogs.
-
-**Migrations:** EF Code-First, migrations tracked in `Migrations/` folder.
-
-**Query filters:** User.IsActive, Workspace.IsActive, UserAccess.IsActive soft-delete.
-
-## Development
-
-**LocalDB Setup (one-time):**
-```bash
-sqllocaldb create MSSQLLocalDB      # if needed
-sqllocaldb start MSSQLLocalDB
-```
-
-**API (terminal 1):**
-```bash
-cd api
-dotnet build
-dotnet test
-dotnet run --project src/SurveyorLedger.API
-# Runs on http://localhost:5296
-```
-
-**UI (terminal 2):**
-```bash
-cd ui
-npm install                        # if node_modules missing
-ng serve
-# Runs on http://localhost:4200
-```
-
-**Migrations:**
-```bash
-cd api
-dotnet ef database update -p src/SurveyorLedger.Data -s src/SurveyorLedger.API
-```
-
-## Endpoints (By Task)
-
-**Auth:** POST /api/auth/register, /api/auth/login, /api/auth/verify-otp, /api/auth/refresh-token
-
-**User:** GET /api/users/profile, PUT /api/users/profile
-
-**Workspace:** GET /api/workspaces, POST /api/workspaces/{id}, POST /api/workspaces
-
-**Subscription:** GET /api/workspaces/{id}/subscription
-
-## Config
-
-`appsettings.json`:
-- ConnectionStrings.DefaultConnection → SQL Server
-- JwtSettings → key, issuer, audience, expiration
-- AzureCommunicationServices → endpoint, key, sender email
-- OTP → expiration (minutes), max attempts
-
-## Testing
-
-Unit tests for Services (Auth, Email, Token, RBAC). Integration tests with Testcontainers.MsSql for real DB. All controllers tested.
-
-## Deployment
-
-API containerized (Dockerfile). DB migrations run on startup. Health check: GET /health. JWT secret + ACS key from environment variables (never in config).
-
-## Notes
-
-- No custom roles yet (v1 system roles only)
-- No payment gateway (skip payment flow)
-- Seed system roles + permissions on first run
-- Casbin rules loaded from DB at startup
-- Audit logs capture all workspace actions
+- **API endpoints & config:** See git history or ask
+- **UI specs:** See [UI_IMPLEMENTATION_GUIDE.md](UI_IMPLEMENTATION_GUIDE.md)
+- **Coding rules:** See [.claude/rules.md](.claude/rules.md)
+- **Architecture:** Clean layers (controllers → services → data layer)

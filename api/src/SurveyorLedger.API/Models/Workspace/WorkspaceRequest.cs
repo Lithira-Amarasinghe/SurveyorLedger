@@ -19,4 +19,10 @@ public class WorkspaceRequest
     /// </summary>
     [StringLength(500, ErrorMessage = "Description cannot exceed 500 characters.")]
     public string? Description { get; set; }
+
+    /// <summary>
+    /// Subscription tier for the new workspace. "Free" or "Pro".
+    /// </summary>
+    [RegularExpression("^(Free|Pro)$", ErrorMessage = "Tier must be 'Free' or 'Pro'.")]
+    public string Tier { get; set; } = "Free";
 }

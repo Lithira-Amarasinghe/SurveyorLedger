@@ -26,6 +26,12 @@ public static class Constants
         public const string ValidationFailed = "VALIDATION_FAILED";
         public const string EmailSendFailed = "EMAIL_SEND_FAILED";
         public const string AuthorizationSetupFailed = "AUTHORIZATION_SETUP_FAILED";
+        public const string InvitationNotFound = "INVITATION_NOT_FOUND";
+        public const string InvitationExpired = "INVITATION_EXPIRED";
+        public const string InvitationEmailMismatch = "INVITATION_EMAIL_MISMATCH";
+        public const string AlreadyMember = "ALREADY_MEMBER";
+        public const string LastAdminRequired = "LAST_ADMIN_REQUIRED";
+        public const string CannotModifyOwner = "CANNOT_MODIFY_OWNER";
     }
 
     public static class Permissions

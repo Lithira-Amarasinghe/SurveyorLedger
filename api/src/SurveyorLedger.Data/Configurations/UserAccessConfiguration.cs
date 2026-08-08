@@ -13,7 +13,12 @@ public class UserAccessConfiguration : IEntityTypeConfiguration<UserAccess>
         builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
         builder.Property(x => x.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
 
-        builder.HasIndex(x => new { x.UserId, x.RoleId, x.ScopeType, x.ScopeId }).IsUnique();
+        // Filtered to active rows only - a soft-deleted (IsActive = false) UserAccess from a
+        // prior role/removal must not permanently block a user from ever holding that exact
+        // (role, scope) combination again (e.g. promoted, removed, re-invited to the same role).
+        builder.HasIndex(x => new { x.UserId, x.RoleId, x.ScopeType, x.ScopeId })
+            .IsUnique()
+            .HasFilter("[IsActive] = 1");
         builder.HasIndex(x => x.UserId);
         builder.HasIndex(x => x.RoleId);
         builder.HasIndex(x => new { x.ScopeType, x.ScopeId });

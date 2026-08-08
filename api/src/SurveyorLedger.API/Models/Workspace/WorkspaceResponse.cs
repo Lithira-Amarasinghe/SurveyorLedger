@@ -29,4 +29,14 @@ public class WorkspaceResponse
     /// Indicates whether the workspace is active.
     /// </summary>
     public bool IsActive { get; set; }
+
+    /// <summary>
+    /// Subscription tier for this workspace ("Free" or "Pro").
+    /// </summary>
+    public required string Tier { get; set; }
+
+    /// <summary>
+    /// The caller's role name on this workspace.
+    /// </summary>
+    public required string Role { get; set; }
 }

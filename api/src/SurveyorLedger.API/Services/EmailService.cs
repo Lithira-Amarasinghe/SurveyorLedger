@@ -9,6 +9,7 @@ public interface IEmailService
 {
     Task SendVerificationOtpAsync(string email, string otpCode);
     Task SendWelcomeEmailAsync(string email, string firstName);
+    Task SendInviteEmailAsync(string email, string workspaceName, string inviteUrl);
 }
 
 public class EmailService : IEmailService
@@ -46,6 +47,20 @@ public class EmailService : IEmailService
 
         var subject = "Welcome to SurveyorLedger";
         var body = $"Hello {firstName}, welcome to SurveyorLedger!";
+        await SendEmailAsync(email, subject, body);
+    }
+
+    public async Task SendInviteEmailAsync(string email, string workspaceName, string inviteUrl)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+            throw new ValidationException("Email is required");
+        if (string.IsNullOrWhiteSpace(workspaceName))
+            throw new ValidationException("WorkspaceName is required");
+        if (string.IsNullOrWhiteSpace(inviteUrl))
+            throw new ValidationException("InviteUrl is required");
+
+        var subject = $"You've been invited to {workspaceName} on SurveyorLedger";
+        var body = $"You've been invited to join {workspaceName} on SurveyorLedger. Accept your invite: {inviteUrl}";
         await SendEmailAsync(email, subject, body);
     }
 

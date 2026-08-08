@@ -39,15 +39,12 @@ namespace SurveyorLedger.Data.Migrations
                         .HasDefaultValueSql("GETUTCDATE()");
 
                     b.Property<string>("IPAddress")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("NewValue")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("OldValue")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid?>("ResourceId")
@@ -170,6 +167,65 @@ namespace SurveyorLedger.Data.Migrations
                     b.ToTable("EmailVerifications");
                 });
 
+            modelBuilder.Entity("SurveyorLedger.Data.Entities.Invitation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("EmailFailed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("InvitedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Pending");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvitedBy");
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.HasIndex("WorkspaceId", "Email");
+
+                    b.ToTable("Invitations");
+                });
+
             modelBuilder.Entity("SurveyorLedger.Data.Entities.Permission", b =>
                 {
                     b.Property<Guid>("Id")
@@ -178,8 +234,8 @@ namespace SurveyorLedger.Data.Migrations
 
                     b.Property<string>("Action")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -188,8 +244,7 @@ namespace SurveyorLedger.Data.Migrations
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -198,12 +253,11 @@ namespace SurveyorLedger.Data.Migrations
 
                     b.Property<string>("Resource")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("Scope")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.HasKey("Id");
 
@@ -215,6 +269,44 @@ namespace SurveyorLedger.Data.Migrations
                         .HasFilter("[Scope] IS NOT NULL");
 
                     b.ToTable("Permissions");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000101"),
+                            Action = "view",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "View workspace details.",
+                            Name = "workspace.view",
+                            Resource = "workspace"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000102"),
+                            Action = "edit",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Edit workspace settings.",
+                            Name = "workspace.edit",
+                            Resource = "workspace"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000103"),
+                            Action = "delete",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Delete a workspace.",
+                            Name = "workspace.delete",
+                            Resource = "workspace"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000104"),
+                            Action = "manage_members",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Invite, remove, and change roles of workspace members.",
+                            Name = "workspace.manage_members",
+                            Resource = "workspace"
+                        });
                 });
 
             modelBuilder.Entity("SurveyorLedger.Data.Entities.Role", b =>
@@ -253,6 +345,44 @@ namespace SurveyorLedger.Data.Migrations
                     b.HasIndex("Name");
 
                     b.ToTable("Roles");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000001"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Full access to workspace settings, members, and data.",
+                            IsSystem = true,
+                            Name = "Admin",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000002"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Manages jobs and surveyors within a workspace.",
+                            IsSystem = true,
+                            Name = "Manager",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000003"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Performs assigned survey jobs.",
+                            IsSystem = true,
+                            Name = "Surveyor",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000004"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Views job status and results for their organization.",
+                            IsSystem = true,
+                            Name = "Client",
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        });
                 });
 
             modelBuilder.Entity("SurveyorLedger.Data.Entities.RolePermission", b =>
@@ -280,6 +410,57 @@ namespace SurveyorLedger.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("RolePermissions");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000201"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000101"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000202"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000102"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000203"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000103"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000204"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000104"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000205"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000101"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000002")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000206"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000101"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000207"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000101"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000004")
+                        });
                 });
 
             modelBuilder.Entity("SurveyorLedger.Data.Entities.Subscription", b =>
@@ -441,7 +622,8 @@ namespace SurveyorLedger.Data.Migrations
                     b.HasIndex("ScopeType", "ScopeId");
 
                     b.HasIndex("UserId", "RoleId", "ScopeType", "ScopeId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("[IsActive] = 1");
 
                     b.ToTable("UserAccesses");
                 });
@@ -520,6 +702,25 @@ namespace SurveyorLedger.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("SurveyorLedger.Data.Entities.Invitation", b =>
+                {
+                    b.HasOne("SurveyorLedger.Data.Entities.User", "InvitedByUser")
+                        .WithMany()
+                        .HasForeignKey("InvitedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SurveyorLedger.Data.Entities.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("InvitedByUser");
+
+                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("SurveyorLedger.Data.Entities.RolePermission", b =>

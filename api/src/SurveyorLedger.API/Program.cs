@@ -12,9 +12,37 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
+// Model validation failures ([Required], [RegularExpression], etc.) go through the same
+// ApiResponse envelope as every other error instead of ASP.NET's default ValidationProblemDetails.
+builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var errors = context.ModelState
+            .Where(kvp => kvp.Value?.Errors.Count > 0)
+            .ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value!.Errors.Select(e => e.ErrorMessage).ToArray());
+
+        return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(
+            SurveyorLedger.API.Models.Responses.ApiResponse<object>.Fail("Validation failed", errors));
+    };
+});
+
+const string UiCorsPolicy = "UiCorsPolicy";
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(UiCorsPolicy, policy =>
+        policy.WithOrigins("http://localhost:4200")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials());
+});
+
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(connectionString, b => b.MigrationsAssembly("SurveyorLedger.Data")));
+    options.UseSqlServer(connectionString, b =>
+        b.MigrationsAssembly("SurveyorLedger.Data").EnableRetryOnFailure(maxRetryCount: 5)));
 
 builder.Services.AddSingleton(sp =>
 {
@@ -31,8 +59,12 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 // Register workspace service
 builder.Services.AddScoped<IWorkspaceService, WorkspaceService>();
 
-// Register RBAC service
-builder.Services.AddScoped<ICasbinService, CasbinService>();
+// Register invitation service
+builder.Services.AddScoped<IInvitationService, InvitationService>();
+
+// Register RBAC service. Singleton: the enforcer is shared in-memory state that must
+// survive across requests, not per-request scoped state.
+builder.Services.AddSingleton<ICasbinService, CasbinService>();
 
 // Configure JWT Authentication
 var jwtKey = builder.Configuration["JwtSettings:Key"] ?? throw new InvalidOperationException("JwtSettings:Key not configured");
@@ -73,6 +105,7 @@ if (app.Environment.IsDevelopment())
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.UseHttpsRedirection();
 app.UseRouting();
+app.UseCors(UiCorsPolicy);
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<TenantMiddleware>();

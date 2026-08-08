@@ -1,6 +1,7 @@
 using Casbin;
 using Casbin.Model;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SurveyorLedger.Core;
 using SurveyorLedger.Core.Exceptions;
@@ -11,12 +12,12 @@ namespace SurveyorLedger.API.Services;
 public class CasbinService : ICasbinService
 {
     private IEnforcer? _enforcer;
-    private readonly ApplicationDbContext _context;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<CasbinService> _logger;
 
-    public CasbinService(ApplicationDbContext context, ILogger<CasbinService> logger)
+    public CasbinService(IServiceScopeFactory scopeFactory, ILogger<CasbinService> logger)
     {
-        _context = context;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -29,16 +30,16 @@ public class CasbinService : ICasbinService
 r = sub, obj, act, scp
 
 [policy_definition]
-p = sub, obj, act, scp
+p = sub, obj, act
 
 [role_definition]
-g = _, _
+g = _, _, _
 
 [policy_effect]
 e = some(where (p.eft == allow))
 
 [matchers]
-m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act && r.scp == p.scp
+m = g(r.sub, p.sub, r.scp) && r.obj == p.obj && r.act == p.act
 ";
 
             var model = DefaultModel.CreateFromText(modelText);
@@ -113,8 +114,11 @@ m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act && r.scp == p.scp
 
     private async Task LoadRulesFromDatabaseAsync()
     {
+        using var scope = _scopeFactory.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
         // Load permissions: role -> (resource, action, scope)
-        var permissions = await _context.RolePermissions
+        var permissions = await context.RolePermissions
             .Include(rp => rp.Role)
             .Include(rp => rp.Permission)
             .ToListAsync();
@@ -124,15 +128,14 @@ m = g(r.sub, p.sub) && r.obj == p.obj && r.act == p.act && r.scp == p.scp
             var role = rp.Role.Name;
             var resource = rp.Permission.Resource;
             var action = rp.Permission.Action;
-            var scope = rp.Permission.Scope ?? "*";
 
-            _enforcer!.AddPolicy(role, resource, action, scope);
+            _enforcer!.AddPolicy(role, resource, action);
         }
 
         _logger.LogInformation("Loaded {PermissionCount} permission rules", permissions.Count);
 
         // Load user roles: user -> (role, scope_id)
-        var userAccess = await _context.UserAccesses
+        var userAccess = await context.UserAccesses
             .Include(ua => ua.Role)
             .ToListAsync();
 
