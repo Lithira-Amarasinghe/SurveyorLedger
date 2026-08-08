@@ -1,0 +1,34 @@
+{
+  "outputStyle": "surveyorledger",
+  "permissions": {
+    "allow": [
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git branch*)",
+      "Bash(dotnet build*)",
+      "Bash(dotnet test*)",
+      "Bash(dotnet run*)",
+      "Bash(dotnet ef migrations list*)",
+      "Bash(dotnet ef migrations script*)",
+      "Bash(ng build*)",
+      "Bash(ng test*)",
+      "Bash(ng lint*)",
+      "Bash(sqllocaldb start*)",
+      "Bash(sqllocaldb info*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-migrations.ps1\""
+          }
+        ]
+      }
+    ]
+  }
+}
