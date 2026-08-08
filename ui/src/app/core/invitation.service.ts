@@ -66,4 +66,14 @@ export class InvitationService {
     return this.http.post<ApiResponse<AcceptInvitationResult>>(`${this.apiUrl}/invitations/${token}/accept`, {})
       .pipe(map(res => res.data));
   }
+
+  /** Creates a brand-new account for the invited email and auto-accepts the invite. No tokens returned - caller logs in separately. */
+  registerFromInvitation(token: string, password: string, confirmPassword: string, firstName: string, lastName: string): Observable<void> {
+    return this.http.post<ApiResponse<unknown>>(`${this.apiUrl}/invitations/${token}/register`, {
+      password,
+      confirmPassword,
+      firstName,
+      lastName,
+    }).pipe(map(() => undefined));
+  }
 }

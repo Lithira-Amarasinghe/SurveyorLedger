@@ -7,7 +7,7 @@ namespace SurveyorLedger.API.Services;
 
 public interface IEmailService
 {
-    Task SendVerificationOtpAsync(string email, string otpCode);
+    Task SendVerificationOtpAsync(string email, string otpCode, int expirationMinutes);
     Task SendWelcomeEmailAsync(string email, string firstName);
     Task SendInviteEmailAsync(string email, string workspaceName, string inviteUrl);
 }
@@ -26,7 +26,7 @@ public class EmailService : IEmailService
         _logger = logger;
     }
 
-    public async Task SendVerificationOtpAsync(string email, string otpCode)
+    public async Task SendVerificationOtpAsync(string email, string otpCode, int expirationMinutes)
     {
         if (string.IsNullOrWhiteSpace(email))
             throw new ValidationException("Email is required");
@@ -34,7 +34,7 @@ public class EmailService : IEmailService
             throw new ValidationException("OTP code is required");
 
         var subject = "Your OTP Code";
-        var body = $"Your verification code is: {otpCode}. It expires in 10 minutes.";
+        var body = $"Your verification code is: {otpCode}. It expires in {expirationMinutes} minute{(expirationMinutes == 1 ? "" : "s")}.";
         await SendEmailAsync(email, subject, body);
     }
 

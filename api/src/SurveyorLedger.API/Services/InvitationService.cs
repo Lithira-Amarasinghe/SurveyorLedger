@@ -15,6 +15,13 @@ public interface IInvitationService
     Task ResendInvitationAsync(Guid workspaceId, Guid invitationId, Guid callerUserId);
     Task<Invitation> GetByTokenAsync(string token);
     Task<(Guid WorkspaceId, string Role)> AcceptInvitationAsync(string token, Guid callerUserId, string callerEmail);
+
+    /// <summary>
+    /// Create an account directly from an invitation link and auto-accept it. The invite
+    /// link itself is proof of email ownership, so the account is created already verified
+    /// - no OTP round-trip. No tokens are issued; the caller logs in separately afterward.
+    /// </summary>
+    Task RegisterFromInvitationAsync(string token, Models.Invitation.RegisterFromInvitationRequest request);
 }
 
 public class InvitationService : IInvitationService
@@ -22,6 +29,7 @@ public class InvitationService : IInvitationService
     private readonly ApplicationDbContext _context;
     private readonly ICasbinService _casbinService;
     private readonly IEmailService _emailService;
+    private readonly IPasswordService _passwordService;
     private readonly IConfiguration _config;
     private readonly ILogger<InvitationService> _logger;
 
@@ -29,12 +37,14 @@ public class InvitationService : IInvitationService
         ApplicationDbContext context,
         ICasbinService casbinService,
         IEmailService emailService,
+        IPasswordService passwordService,
         IConfiguration config,
         ILogger<InvitationService> logger)
     {
         _context = context;
         _casbinService = casbinService;
         _emailService = emailService;
+        _passwordService = passwordService;
         _config = config;
         _logger = logger;
     }
@@ -179,6 +189,61 @@ public class InvitationService : IInvitationService
 
     public async Task<(Guid WorkspaceId, string Role)> AcceptInvitationAsync(string token, Guid callerUserId, string callerEmail)
     {
+        var invitation = await LoadAcceptableInvitationAsync(token);
+
+        if (!string.Equals(invitation.Email.Trim(), callerEmail.Trim(), StringComparison.OrdinalIgnoreCase))
+            throw new AppException(Constants.ErrorCodes.InvitationEmailMismatch, "This invitation is for a different account.", 403);
+
+        await GrantWorkspaceAccessAsync(invitation, callerUserId);
+
+        _logger.LogInformation("Invitation {InvitationId} accepted by {UserId}", invitation.Id, callerUserId);
+        return (invitation.WorkspaceId, invitation.Role);
+    }
+
+    public async Task RegisterFromInvitationAsync(string token, Models.Invitation.RegisterFromInvitationRequest request)
+    {
+        var invitation = await LoadAcceptableInvitationAsync(token);
+        var email = invitation.Email.Trim();
+
+        var existingUser = await _context.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Email == email);
+        if (existingUser != null)
+        {
+            _logger.LogWarning("Register-from-invitation attempted but an account already exists for {Email}", email);
+            throw new AppException(Constants.ErrorCodes.UserAlreadyExists,
+                "An account already exists for this email. Log in and accept the invite from there.", 409);
+        }
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = email,
+            FirstName = request.FirstName.Trim(),
+            LastName = request.LastName.Trim(),
+            PasswordHash = _passwordService.HashPassword(request.Password),
+            // Receiving and clicking the tokenized invite link is itself proof of email
+            // ownership - equivalent trust to an OTP, so registration skips the OTP round-trip.
+            EmailVerified = true,
+            EmailVerifiedAt = DateTime.UtcNow,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        await _context.Users.AddAsync(user);
+        await _context.SaveChangesAsync();
+
+        await GrantWorkspaceAccessAsync(invitation, user.Id);
+
+        _logger.LogInformation("Account created and invitation {InvitationId} auto-accepted for {Email}", invitation.Id, email);
+    }
+
+    /// <summary>
+    /// Loads an invitation by token and validates it's still acceptable (found, pending,
+    /// not expired), flipping it to Expired and persisting if the expiry just lapsed.
+    /// Shared by AcceptInvitationAsync and RegisterFromInvitationAsync.
+    /// </summary>
+    private async Task<Invitation> LoadAcceptableInvitationAsync(string token)
+    {
         var invitation = await _context.Invitations
             .FirstOrDefaultAsync(i => i.Token == token)
             ?? throw new AppException(Constants.ErrorCodes.InvitationNotFound, "Invitation not found", 404);
@@ -193,14 +258,21 @@ public class InvitationService : IInvitationService
             throw new AppException(Constants.ErrorCodes.InvitationExpired, "This invitation has expired or is no longer valid.", 410);
         }
 
-        if (!string.Equals(invitation.Email.Trim(), callerEmail.Trim(), StringComparison.OrdinalIgnoreCase))
-            throw new AppException(Constants.ErrorCodes.InvitationEmailMismatch, "This invitation is for a different account.", 403);
+        return invitation;
+    }
 
+    /// <summary>
+    /// Creates/updates the UserAccess + Casbin role grant for a user accepting an
+    /// invitation, and marks the invitation Accepted. Shared by both the "existing account
+    /// accepts" and "brand-new account registers and auto-accepts" paths.
+    /// </summary>
+    private async Task GrantWorkspaceAccessAsync(Invitation invitation, Guid userId)
+    {
         var role = await _context.Roles.FirstOrDefaultAsync(r => r.Name == invitation.Role && r.IsSystem)
             ?? throw new InvalidOperationException($"Role '{invitation.Role}' not found");
 
         var existingAccess = await _context.UserAccesses.FirstOrDefaultAsync(ua =>
-            ua.UserId == callerUserId && ua.IsActive &&
+            ua.UserId == userId && ua.IsActive &&
             ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == invitation.WorkspaceId);
 
         if (existingAccess != null)
@@ -212,8 +284,8 @@ public class InvitationService : IInvitationService
                 var oldRole = await _context.Roles.FirstAsync(r => r.Id == existingAccess.RoleId);
                 existingAccess.RoleId = role.Id;
                 await _context.SaveChangesAsync();
-                await _casbinService.RemoveRoleForUserAsync(callerUserId.ToString(), oldRole.Name, invitation.WorkspaceId.ToString());
-                await _casbinService.AddRoleForUserAsync(callerUserId.ToString(), role.Name, invitation.WorkspaceId.ToString());
+                await _casbinService.RemoveRoleForUserAsync(userId.ToString(), oldRole.Name, invitation.WorkspaceId.ToString());
+                await _casbinService.AddRoleForUserAsync(userId.ToString(), role.Name, invitation.WorkspaceId.ToString());
             }
         }
         else
@@ -221,7 +293,7 @@ public class InvitationService : IInvitationService
             var userAccess = new UserAccess
             {
                 Id = Guid.NewGuid(),
-                UserId = callerUserId,
+                UserId = userId,
                 RoleId = role.Id,
                 ScopeType = Constants.ScopeTypes.Workspace,
                 ScopeId = invitation.WorkspaceId,
@@ -232,15 +304,12 @@ public class InvitationService : IInvitationService
             };
             await _context.UserAccesses.AddAsync(userAccess);
             await _context.SaveChangesAsync();
-            await _casbinService.AddRoleForUserAsync(callerUserId.ToString(), role.Name, invitation.WorkspaceId.ToString());
+            await _casbinService.AddRoleForUserAsync(userId.ToString(), role.Name, invitation.WorkspaceId.ToString());
         }
 
         invitation.Status = "Accepted";
-        AddAudit("InvitationAccepted", "Invitation", invitation.Id, invitation.WorkspaceId, callerUserId, null, role.Name);
+        AddAudit("InvitationAccepted", "Invitation", invitation.Id, invitation.WorkspaceId, userId, null, role.Name);
         await _context.SaveChangesAsync();
-
-        _logger.LogInformation("Invitation {InvitationId} accepted by {UserId}", invitation.Id, callerUserId);
-        return (invitation.WorkspaceId, role.Name);
     }
 
     /// <returns>true if the email was sent successfully, false if it failed (invitation still created either way).</returns>

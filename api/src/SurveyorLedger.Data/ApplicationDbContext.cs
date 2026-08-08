@@ -17,6 +17,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Invitation> Invitations { get; set; }
     public DbSet<AuthToken> AuthTokens { get; set; }
     public DbSet<EmailVerification> EmailVerifications { get; set; }
+    public DbSet<PendingRegistration> PendingRegistrations { get; set; }
     public DbSet<AuditLog> AuditLogs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

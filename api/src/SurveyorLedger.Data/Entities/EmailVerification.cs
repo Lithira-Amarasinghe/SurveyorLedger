@@ -9,5 +9,6 @@ public class EmailVerification
     public DateTime ExpiresAt { get; set; }
     public DateTime? VerifiedAt { get; set; }
     public int Attempts { get; set; }
+    public DateTime? LastSentAt { get; set; }
     public DateTime CreatedAt { get; set; }
 }

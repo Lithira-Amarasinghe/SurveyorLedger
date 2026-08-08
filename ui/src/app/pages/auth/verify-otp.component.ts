@@ -1,8 +1,10 @@
-import { Component, signal } from '@angular/core';
+import { Component, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
+
+const RESEND_COOLDOWN_SECONDS = 60;
 
 @Component({
   selector: 'app-verify-otp',
@@ -38,20 +40,39 @@ import { AuthService } from '../../core/auth.service';
         </form>
 
         <p class="text-sm text-neutral-600 mt-lg text-center">
+          Didn't get a code?
+          <button
+            type="button"
+            class="text-primary-600 disabled:text-neutral-400 disabled:cursor-not-allowed"
+            [disabled]="resendCooldown() > 0 || resending()"
+            (click)="resend()"
+          >
+            {{ resendCooldown() > 0 ? 'Resend in ' + resendCooldown() + 's' : (resending() ? 'Sending…' : 'Resend code') }}
+          </button>
+        </p>
+        <p class="text-sm text-neutral-600 mt-sm text-center">
           <a routerLink="/auth/login">Back to sign in</a>
         </p>
       </div>
     </div>
   `
 })
-export class VerifyOtpComponent {
+export class VerifyOtpComponent implements OnDestroy {
   email = '';
   otpCode = '';
   loading = signal(false);
   error = signal('');
+  resending = signal(false);
+  resendCooldown = signal(0);
+  private cooldownTimer?: ReturnType<typeof setInterval>;
 
   constructor(private route: ActivatedRoute, private authService: AuthService, private router: Router) {
     this.email = this.route.snapshot.queryParamMap.get('email') ?? '';
+    this.startCooldown();
+  }
+
+  ngOnDestroy(): void {
+    if (this.cooldownTimer) clearInterval(this.cooldownTimer);
   }
 
   submit(): void {
@@ -59,13 +80,41 @@ export class VerifyOtpComponent {
     this.loading.set(true);
     this.authService.verifyOtp(this.email, this.otpCode).subscribe({
       next: () => {
-        const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') ?? '/';
-        this.router.navigateByUrl(returnUrl);
+        this.router.navigate(['/auth/login'], { queryParams: { verified: '1', email: this.email } });
       },
       error: (err) => {
         this.loading.set(false);
         this.error.set(err.error?.message ?? 'Invalid or expired code.');
       }
     });
+  }
+
+  resend(): void {
+    this.error.set('');
+    this.resending.set(true);
+    this.authService.resendOtp(this.email).subscribe({
+      next: () => {
+        this.resending.set(false);
+        this.startCooldown();
+      },
+      error: (err) => {
+        this.resending.set(false);
+        this.error.set(err.error?.message ?? 'Could not resend the code.');
+      }
+    });
+  }
+
+  private startCooldown(): void {
+    this.resendCooldown.set(RESEND_COOLDOWN_SECONDS);
+    if (this.cooldownTimer) clearInterval(this.cooldownTimer);
+    this.cooldownTimer = setInterval(() => {
+      const next = this.resendCooldown() - 1;
+      if (next <= 0) {
+        this.resendCooldown.set(0);
+        clearInterval(this.cooldownTimer);
+      } else {
+        this.resendCooldown.set(next);
+      }
+    }, 1000);
   }
 }

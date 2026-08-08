@@ -31,16 +31,18 @@ export class AuthService {
 
   constructor(private http: HttpClient) {}
 
-  register(email: string, password: string, firstName: string, lastName: string): Observable<AuthResponse> {
-    return this.http.post<ApiResponse<AuthResponse>>(`${this.apiUrl}/register`, {
+  register(email: string, password: string, confirmPassword: string, firstName: string, lastName: string): Observable<void> {
+    return this.http.post<ApiResponse<unknown>>(`${this.apiUrl}/register`, {
       email,
       password,
+      confirmPassword,
       firstName,
       lastName,
-    }).pipe(
-      map(res => res.data),
-      tap(response => this.setToken(response.accessToken, response.refreshToken))
-    );
+    }).pipe(map(() => undefined));
+  }
+
+  resendOtp(email: string): Observable<void> {
+    return this.http.post<ApiResponse<unknown>>(`${this.apiUrl}/resend-otp`, { email }).pipe(map(() => undefined));
   }
 
   login(email: string, password: string): Observable<AuthResponse> {

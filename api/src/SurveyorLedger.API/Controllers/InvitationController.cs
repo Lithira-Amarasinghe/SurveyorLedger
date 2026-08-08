@@ -87,6 +87,13 @@ namespace SurveyorLedger.API.Controllers
             return Ok(ApiResponse<InvitationPreviewResponse>.Ok(response));
         }
 
+        [HttpPost("invitations/{token}/register")]
+        public async Task<ActionResult<ApiResponse<object>>> RegisterFromInvitation(string token, [FromBody] RegisterFromInvitationRequest request)
+        {
+            await _invitationService.RegisterFromInvitationAsync(token, request);
+            return Ok(ApiResponse<object>.Ok(new { message = "Account created. Please log in to continue." }));
+        }
+
         [Authorize]
         [HttpPost("invitations/{token}/accept")]
         public async Task<ActionResult<ApiResponse<AcceptInvitationResponse>>> AcceptInvitation(string token)

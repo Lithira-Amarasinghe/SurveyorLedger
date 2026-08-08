@@ -114,6 +114,14 @@ ng serve
 .claude/launch.json: "SurveyorLedger API" + "SurveyorLedger UI"
 ```
 
+## Process Discipline
+
+**Plan mode:** required before touching code for — new endpoint/feature, schema/migration change, cross-layer change (API+UI), anything touching auth/tenant isolation. Skip for: single-file fix, typo, config tweak, adding a test. Use `superpowers:brainstorming` first if requirements aren't nailed down, then `EnterPlanMode`.
+
+**Long/multi-session work:** if context is filling on a long debugging or multi-file session, use the `headroom` skill to compress old tool output/conversation before it gets truncated — cheaper than losing early context to auto-compaction.
+
+**Skills over subagents:** for review-shaped checks (layering, tenant isolation, migration correctness) run the `api-layer-review` / `migration-check` skills inline instead of spawning a subagent — same checklist rigor, no dispatch overhead.
+
 ## When in Doubt
 
 1. **Read existing code first** — patterns, structure, naming

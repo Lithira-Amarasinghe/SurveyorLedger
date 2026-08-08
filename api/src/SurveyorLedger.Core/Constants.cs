@@ -32,6 +32,8 @@ public static class Constants
         public const string AlreadyMember = "ALREADY_MEMBER";
         public const string LastAdminRequired = "LAST_ADMIN_REQUIRED";
         public const string CannotModifyOwner = "CANNOT_MODIFY_OWNER";
+        public const string RegistrationExpired = "REGISTRATION_EXPIRED";
+        public const string ResendCooldown = "RESEND_COOLDOWN";
     }
 
     public static class Permissions

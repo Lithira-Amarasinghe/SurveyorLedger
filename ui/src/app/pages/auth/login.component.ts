@@ -14,6 +14,10 @@ import { AuthService } from '../../core/auth.service';
         <h1 class="text-lg font-semibold text-neutral-900">Sign in</h1>
         <p class="text-sm text-neutral-600 mt-xs">Welcome back to SurveyorLedger.</p>
 
+        @if (verifiedMessage()) {
+          <p class="text-sm text-green-600 mt-md">{{ verifiedMessage() }}</p>
+        }
+
         <form class="mt-xl space-y-md" (ngSubmit)="submit()">
           <div>
             <label class="block text-xs font-medium text-neutral-700 mb-xs">Email</label>
@@ -25,7 +29,12 @@ import { AuthService } from '../../core/auth.service';
           </div>
 
           @if (error()) {
-            <p class="text-sm text-primary-500">{{ error() }}</p>
+            <p class="text-sm text-primary-500">
+              {{ error() }}
+              @if (unverifiedEmail()) {
+                <a [routerLink]="['/auth/verify-otp']" [queryParams]="{ email: unverifiedEmail() }">Verify it now</a>
+              }
+            </p>
           }
 
           <button class="btn-primary w-full" type="submit" [disabled]="loading()">
@@ -45,11 +54,19 @@ export class LoginComponent {
   password = '';
   loading = signal(false);
   error = signal('');
+  unverifiedEmail = signal('');
+  verifiedMessage = signal('');
 
-  constructor(private authService: AuthService, private router: Router, private route: ActivatedRoute) {}
+  constructor(private authService: AuthService, private router: Router, private route: ActivatedRoute) {
+    if (this.route.snapshot.queryParamMap.get('verified') === '1') {
+      this.verifiedMessage.set('Email verified. Please log in to continue.');
+      this.email = this.route.snapshot.queryParamMap.get('email') ?? '';
+    }
+  }
 
   submit(): void {
     this.error.set('');
+    this.unverifiedEmail.set('');
     this.loading.set(true);
     this.authService.login(this.email, this.password).subscribe({
       next: () => {
@@ -58,7 +75,11 @@ export class LoginComponent {
       },
       error: (err) => {
         this.loading.set(false);
-        this.error.set(err.error?.message ?? 'Invalid email or password.');
+        const message = err.error?.message ?? 'Invalid email or password.';
+        this.error.set(message);
+        if (message.toLowerCase().includes('not verified')) {
+          this.unverifiedEmail.set(this.email);
+        }
       }
     });
   }

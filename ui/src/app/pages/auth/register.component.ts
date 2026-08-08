@@ -31,7 +31,11 @@ import { AuthService } from '../../core/auth.service';
           </div>
           <div>
             <label class="block text-xs font-medium text-neutral-700 mb-xs">Password</label>
-            <input class="input-field" type="password" name="password" [(ngModel)]="password" required autocomplete="new-password" />
+            <input class="input-field" type="password" name="password" [(ngModel)]="password" required minlength="8" autocomplete="new-password" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-neutral-700 mb-xs">Confirm password</label>
+            <input class="input-field" type="password" name="confirmPassword" [(ngModel)]="confirmPassword" required autocomplete="new-password" />
           </div>
 
           @if (error()) {
@@ -53,6 +57,7 @@ import { AuthService } from '../../core/auth.service';
 export class RegisterComponent {
   email = '';
   password = '';
+  confirmPassword = '';
   firstName = '';
   lastName = '';
   loading = signal(false);
@@ -62,8 +67,14 @@ export class RegisterComponent {
 
   submit(): void {
     this.error.set('');
+
+    if (this.password !== this.confirmPassword) {
+      this.error.set('Passwords do not match.');
+      return;
+    }
+
     this.loading.set(true);
-    this.authService.register(this.email, this.password, this.firstName, this.lastName).subscribe({
+    this.authService.register(this.email, this.password, this.confirmPassword, this.firstName, this.lastName).subscribe({
       next: () => this.router.navigate(['/auth/verify-otp'], { queryParams: { email: this.email } }),
       error: (err) => {
         this.loading.set(false);

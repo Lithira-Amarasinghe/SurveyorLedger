@@ -19,21 +19,10 @@ namespace SurveyorLedger.API.Controllers
         }
 
         [HttpPost("register")]
-        public async Task<ActionResult<ApiResponse<AuthResponse>>> Register([FromBody] RegisterRequest request)
+        public async Task<ActionResult<ApiResponse<object>>> Register([FromBody] RegisterRequest request)
         {
-            var (user, accessToken, refreshToken, expiresIn) = await _authService.RegisterAsync(request);
-            SetRefreshTokenCookie(refreshToken);
-
-            return Ok(ApiResponse<AuthResponse>.Ok(new AuthResponse
-            {
-                UserId = user.Id,
-                Email = user.Email,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                AccessToken = accessToken,
-                RefreshToken = refreshToken,
-                ExpiresIn = expiresIn
-            }));
+            await _authService.RegisterAsync(request);
+            return Ok(ApiResponse<object>.Ok(new { message = "Check your email for a verification code." }));
         }
 
         [HttpPost("login")]
@@ -58,7 +47,14 @@ namespace SurveyorLedger.API.Controllers
         public async Task<ActionResult<ApiResponse<object>>> VerifyOtp([FromBody] VerifyOtpRequest request)
         {
             await _authService.VerifyOtpAsync(request.Email, request.OtpCode);
-            return Ok(ApiResponse<object>.Ok(new { message = "Email verified successfully" }));
+            return Ok(ApiResponse<object>.Ok(new { message = "Email verified. Please log in to continue." }));
+        }
+
+        [HttpPost("resend-otp")]
+        public async Task<ActionResult<ApiResponse<object>>> ResendOtp([FromBody] ResendOtpRequest request)
+        {
+            await _authService.ResendOtpAsync(request.Email);
+            return Ok(ApiResponse<object>.Ok(new { message = "If a pending registration exists for this email, a new code has been sent." }));
         }
 
         [HttpPost("refresh-token")]

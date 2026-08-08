@@ -77,8 +77,14 @@ import { AuthService } from '../../core/auth.service';
               </div>
               <div>
                 <label class="block text-xs font-medium text-neutral-700 mb-xs">Password</label>
-                <input class="input-field" type="password" name="password" [(ngModel)]="password" required />
+                <input class="input-field" type="password" name="password" [(ngModel)]="password" required minlength="8" [autocomplete]="mode() === 'register' ? 'new-password' : 'current-password'" />
               </div>
+              @if (mode() === 'register') {
+                <div>
+                  <label class="block text-xs font-medium text-neutral-700 mb-xs">Confirm password</label>
+                  <input class="input-field" type="password" name="confirmPassword" [(ngModel)]="confirmPassword" required autocomplete="new-password" />
+                </div>
+              }
 
               @if (authError()) {
                 <p class="text-sm text-primary-500">{{ authError() }}</p>
@@ -107,6 +113,7 @@ export class AcceptInviteComponent implements OnInit {
   firstName = '';
   lastName = '';
   password = '';
+  confirmPassword = '';
   authLoading = signal(false);
   authError = signal('');
 
@@ -161,18 +168,35 @@ export class AcceptInviteComponent implements OnInit {
     if (!preview) return;
 
     this.authError.set('');
+
+    if (this.mode() === 'register') {
+      if (this.password !== this.confirmPassword) {
+        this.authError.set('Passwords do not match.');
+        return;
+      }
+
+      this.authLoading.set(true);
+      this.invitationService.registerFromInvitation(this.token, this.password, this.confirmPassword, this.firstName, this.lastName).subscribe({
+        next: () => {
+          // Account is created already verified and the invite is auto-accepted server-side -
+          // no tokens are issued, so send them to log in like any other new account.
+          this.router.navigate(['/auth/login'], { queryParams: { verified: '1', email: preview.email } });
+        },
+        error: (err) => {
+          this.authLoading.set(false);
+          this.authError.set(err.error?.message ?? 'Could not create your account.');
+        }
+      });
+      return;
+    }
+
     this.authLoading.set(true);
-
-    const auth$ = this.mode() === 'register'
-      ? this.authService.register(preview.email, this.password, this.firstName, this.lastName)
-      : this.authService.login(preview.email, this.password);
-
-    auth$.subscribe({
+    this.authService.login(preview.email, this.password).subscribe({
       next: () => this.accept(),
       error: (err) => {
         this.authLoading.set(false);
         const message = err.error?.message ?? 'Something went wrong.';
-        if (message.includes('not verified')) {
+        if (message.toLowerCase().includes('not verified')) {
           this.router.navigate(['/auth/verify-otp'], {
             queryParams: { email: preview.email, returnUrl: `/invite/${this.token}` }
           });
