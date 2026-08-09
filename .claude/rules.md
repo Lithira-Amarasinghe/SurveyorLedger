@@ -83,7 +83,7 @@
 ## No Out-of-Scope Features
 
 Skip in Phase 1/2:
-- Jobs, Surveys (Phase 3)
+- Job/Land UI (Angular) - API+DB done, see docs/superpowers/specs/2026-08-09-job-land-user-design.md
 - RBAC UI (Phase 3)
 - Billing, payment gateway
 - Password reset, social auth
