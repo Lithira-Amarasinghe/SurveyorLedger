@@ -7,6 +7,8 @@ public class User
     public string FirstName { get; set; }
     public string LastName { get; set; }
     public string? PasswordHash { get; set; }
+    public string? Phone { get; set; }
+    public Address Address { get; set; } = new();
     public bool EmailVerified { get; set; }
     public DateTime? EmailVerifiedAt { get; set; }
     public DateTime CreatedAt { get; set; }

@@ -62,6 +62,15 @@ builder.Services.AddScoped<IWorkspaceService, WorkspaceService>();
 // Register invitation service
 builder.Services.AddScoped<IInvitationService, InvitationService>();
 
+// Register land service
+builder.Services.AddScoped<ILandService, LandService>();
+
+// Register job service
+builder.Services.AddScoped<IJobService, JobService>();
+
+// Register client service
+builder.Services.AddScoped<IClientService, ClientService>();
+
 // Register RBAC service. Singleton: the enforcer is shared in-memory state that must
 // survive across requests, not per-request scoped state.
 builder.Services.AddSingleton<ICasbinService, CasbinService>();
