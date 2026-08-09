@@ -46,6 +46,7 @@ public interface IAuthService
     /// Get active user by email.
     /// </summary>
     Task<User?> GetUserByEmailAsync(string email);
+    Task<User?> GetUserByIdAsync(Guid id);
 }
 
 /// <summary>
@@ -149,8 +150,9 @@ public class AuthService : IAuthService
         var user = await _context.Users
             .FirstOrDefaultAsync(u => u.Email == request.Email && u.IsActive);
 
-        // Check user exists and password matches
-        if (user == null || !_passwordService.VerifyPassword(request.Password, user.PasswordHash))
+        // Check user exists and password matches. PasswordHash is null for client-only users
+        // (created without login credentials) - treat that as invalid credentials, not a crash.
+        if (user == null || user.PasswordHash == null || !_passwordService.VerifyPassword(request.Password, user.PasswordHash))
         {
             _logger.LogWarning("Login failed for email: {Email} - invalid credentials", request.Email);
             throw new AppException(Constants.ErrorCodes.InvalidCredentials, "Invalid email or password");
@@ -316,6 +318,15 @@ public class AuthService : IAuthService
     public async Task<User?> GetUserByEmailAsync(string email)
     {
         return await _context.Users.FirstOrDefaultAsync(u => u.Email == email && u.IsActive);
+    }
+
+    /// <summary>
+    /// Get active user by id. Preferred over email lookup for resolving the
+    /// authenticated caller - a user may have no email yet (client, not invited).
+    /// </summary>
+    public async Task<User?> GetUserByIdAsync(Guid id)
+    {
+        return await _context.Users.FirstOrDefaultAsync(u => u.Id == id && u.IsActive);
     }
 
     /// <summary>

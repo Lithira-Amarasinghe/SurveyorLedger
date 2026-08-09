@@ -28,7 +28,7 @@ namespace SurveyorLedger.API.Controllers
             if (!Guid.TryParse(userId, out var id))
                 return Unauthorized(ApiResponse<object>.Fail("Invalid user ID"));
 
-            var user = await _authService.GetUserByEmailAsync(User.FindFirst(ClaimTypes.Email)?.Value!);
+            var user = await _authService.GetUserByIdAsync(id);
             if (user == null)
                 return NotFound(ApiResponse<object>.Fail("User not found"));
 

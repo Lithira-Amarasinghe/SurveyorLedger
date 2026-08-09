@@ -8,7 +8,7 @@ namespace SurveyorLedger.API.Services;
 
 public interface ITokenService
 {
-    (string accessToken, string refreshToken, int expiresIn) GenerateTokens(Guid userId, string email);
+    (string accessToken, string refreshToken, int expiresIn) GenerateTokens(Guid userId, string? email);
     Guid? ValidateAccessToken(string token);
     Guid? ValidateRefreshToken(string token);
 }
@@ -24,7 +24,7 @@ public class TokenService : ITokenService
         _logger = logger;
     }
 
-    public (string accessToken, string refreshToken, int expiresIn) GenerateTokens(Guid userId, string email)
+    public (string accessToken, string refreshToken, int expiresIn) GenerateTokens(Guid userId, string? email)
     {
         var jwtKey = _config["JwtSettings:Key"] ?? throw new InvalidOperationException("JwtSettings:Key not configured");
         var issuer = _config["JwtSettings:Issuer"] ?? throw new InvalidOperationException("JwtSettings:Issuer not configured");
@@ -40,12 +40,18 @@ public class TokenService : ITokenService
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        var claims = new[]
+        // Email claim omitted entirely when null (client user not yet invited) - a
+        // Claim with a null/empty value is a common source of downstream NREs, so
+        // don't add it rather than add it defensively.
+        var claims = new List<Claim>
         {
-            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
-            new Claim(ClaimTypes.Email, email),
-            new Claim(Constants.ClaimNames.UserId, userId.ToString())
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(Constants.ClaimNames.UserId, userId.ToString())
         };
+        if (!string.IsNullOrEmpty(email))
+        {
+            claims.Add(new Claim(ClaimTypes.Email, email));
+        }
 
         // Access token (short-lived JWT)
         var accessToken = new JwtSecurityToken(

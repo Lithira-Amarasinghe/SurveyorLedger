@@ -61,7 +61,7 @@ public class InvitationService : IInvitationService
         var email = request.Email.Trim();
 
         var existingUser = await _context.Users
-            .FirstOrDefaultAsync(u => u.Email.ToUpper() == email.ToUpper() && u.IsActive);
+            .FirstOrDefaultAsync(u => u.Email != null && u.Email.ToUpper() == email.ToUpper() && u.IsActive);
         if (existingUser != null)
         {
             var alreadyMember = await _context.UserAccesses.AnyAsync(ua =>

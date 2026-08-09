@@ -34,7 +34,9 @@ namespace SurveyorLedger.API.Controllers
             return Ok(ApiResponse<AuthResponse>.Ok(new AuthResponse
             {
                 UserId = user.Id,
-                Email = user.Email,
+                // LoginAsync matches on request.Email (non-null), so a user reaching this
+                // point always has an Email - the ! here reflects that, not a real risk.
+                Email = user.Email!,
                 FirstName = user.FirstName,
                 LastName = user.LastName,
                 AccessToken = accessToken,

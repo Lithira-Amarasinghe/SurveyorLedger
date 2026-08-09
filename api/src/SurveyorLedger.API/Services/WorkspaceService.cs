@@ -10,7 +10,7 @@ namespace SurveyorLedger.API.Services;
 
 public record WorkspaceWithAccess(Workspace Workspace, string Tier, string Role);
 
-public record WorkspaceMember(Guid UserId, string Email, string FirstName, string LastName, string Role, DateTime AssignedAt, bool IsOwner);
+public record WorkspaceMember(Guid UserId, string? Email, string FirstName, string LastName, string Role, DateTime AssignedAt, bool IsOwner);
 
 public record PermissionInfo(string Name, string Resource, string Action, string Description);
 

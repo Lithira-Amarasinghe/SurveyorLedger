@@ -47,39 +47,26 @@ public class AuthControllerTests
         {
             Email = "test@example.com",
             Password = "Password123!",
+            ConfirmPassword = "Password123!",
             FirstName = "Test",
             LastName = "User"
         };
 
-        var userId = Guid.NewGuid();
-        var user = new User
-        {
-            Id = userId,
-            Email = "test@example.com",
-            FirstName = "Test",
-            LastName = "User",
-            PasswordHash = "hashed",
-            EmailVerified = false,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
-
         mockAuthService
             .Setup(x => x.RegisterAsync(It.IsAny<RegisterRequest>()))
-            .ReturnsAsync((user, "access_token", "refresh_token", 3600));
+            .Returns(Task.CompletedTask);
 
         // Act
         var result = await controller.Register(request);
 
         // Assert
+        // Registration is pending-OTP now (no tokens issued yet) - it returns a plain
+        // acknowledgement, not an AuthResponse. See AuthController.Register.
         var okResult = Assert.IsType<OkObjectResult>(result.Result);
         Assert.NotNull(okResult.Value);
-        var response = okResult.Value as ApiResponse<AuthResponse>;
+        var response = okResult.Value as ApiResponse<object>;
         Assert.NotNull(response);
         Assert.True(response.Success);
-        Assert.NotNull(response.Data);
-        Assert.Equal("test@example.com", response.Data.Email);
     }
 
     [Fact]
@@ -141,7 +128,7 @@ public class AuthControllerTests
 
         mockAuthService
             .Setup(x => x.VerifyOtpAsync(It.IsAny<string>(), It.IsAny<string>()))
-            .ReturnsAsync(true);
+            .Returns(Task.CompletedTask);
 
         // Act
         var result = await controller.VerifyOtp(request);

@@ -11,9 +11,9 @@ public class UserProfileResponse
     public Guid UserId { get; set; }
 
     /// <summary>
-    /// The user's email address.
+    /// The user's email address. Null for a client who hasn't been invited/verified yet.
     /// </summary>
-    public required string Email { get; set; }
+    public string? Email { get; set; }
 
     /// <summary>
     /// The user's first name.
