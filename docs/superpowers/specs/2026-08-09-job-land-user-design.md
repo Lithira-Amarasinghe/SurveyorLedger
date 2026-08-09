@@ -105,10 +105,10 @@ LandDeed
 - CreatedAt
 ```
 
-### LandBoundaryNote (flexible surrounding-property details — many per Land)
+### LandBoundary (flexible surrounding-property details — many per Land)
 
 ```
-LandBoundaryNote
+LandBoundary
 - Id, LandId
 - Label             string (free text — not restricted to N/S/E/W)
 - Description       nullable
