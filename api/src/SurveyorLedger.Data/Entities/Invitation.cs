@@ -13,6 +13,14 @@ public class Invitation
     public bool EmailFailed { get; set; }
     public DateTime CreatedAt { get; set; }
 
+    /// <summary>
+    /// Set when this invitation is meant to attach an email/login to a specific
+    /// pre-existing User row (a client created during a call, with no email yet) rather
+    /// than to create a brand-new account. Null for ordinary staff invites.
+    /// </summary>
+    public Guid? UserId { get; set; }
+
     public Workspace Workspace { get; set; }
     public User InvitedByUser { get; set; }
+    public User? TargetUser { get; set; }
 }

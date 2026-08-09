@@ -21,5 +21,6 @@ public class InvitationConfiguration : IEntityTypeConfiguration<Invitation>
 
         builder.HasOne(x => x.Workspace).WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(x => x.InvitedByUser).WithMany().HasForeignKey(x => x.InvitedBy).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.TargetUser).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
     }
 }

@@ -71,6 +71,18 @@ public class InvitationService : IInvitationService
                 throw new AppException(Constants.ErrorCodes.AlreadyMember, "This person is already a member of the workspace.", 409);
         }
 
+        if (request.UserId.HasValue)
+        {
+            var targetUser = await _context.Users
+                .FirstOrDefaultAsync(u => u.Id == request.UserId.Value && u.IsActive)
+                ?? throw new NotFoundException("User not found");
+
+            // Email is immutable once set - this invite path only exists to attach a
+            // first email/login to a client that doesn't have one yet, never to change one.
+            if (targetUser.Email != null)
+                throw new AppException(Constants.ErrorCodes.EmailAlreadySet, "This user already has an email on file and cannot be re-invited this way.", 409);
+        }
+
         // A new invite for the same email supersedes any existing pending one.
         var existingPending = await _context.Invitations
             .Where(i => i.WorkspaceId == workspaceId && i.Email.ToUpper() == email.ToUpper() && i.Status == "Pending")
@@ -90,7 +102,8 @@ public class InvitationService : IInvitationService
             InvitedBy = invitedByUserId,
             ExpiresAt = DateTime.UtcNow.AddDays(7),
             Status = "Pending",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            UserId = request.UserId
         };
 
         invitation.EmailFailed = !await TrySendInviteEmailAsync(invitation, workspace.Name);
@@ -206,31 +219,67 @@ public class InvitationService : IInvitationService
         var email = invitation.Email.Trim();
 
         var existingUser = await _context.Users.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(u => u.Email == email);
-        if (existingUser != null)
-        {
-            _logger.LogWarning("Register-from-invitation attempted but an account already exists for {Email}", email);
-            throw new AppException(Constants.ErrorCodes.UserAlreadyExists,
-                "An account already exists for this email. Log in and accept the invite from there.", 409);
-        }
+            .FirstOrDefaultAsync(u => u.Email != null && u.Email == email);
 
-        var user = new User
+        User user;
+        if (invitation.UserId.HasValue)
         {
-            Id = Guid.NewGuid(),
-            Email = email,
-            FirstName = request.FirstName.Trim(),
-            LastName = request.LastName.Trim(),
-            PasswordHash = _passwordService.HashPassword(request.Password),
+            // Attach-to-existing path: this invite is for a pre-existing User row (a
+            // client created during a call, with only a name/phone so far) rather than a
+            // brand-new account. Fill in login credentials on that exact row.
+            var targetUser = await _context.Users.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.Id == invitation.UserId.Value && u.IsActive)
+                ?? throw new NotFoundException("User not found");
+
+            if (existingUser != null && existingUser.Id != targetUser.Id)
+            {
+                _logger.LogWarning("Register-from-invitation attempted but email {Email} is already claimed by a different account", email);
+                throw new AppException(Constants.ErrorCodes.UserAlreadyExists,
+                    "An account already exists for this email.", 409);
+            }
+
+            // Email is immutable once set - re-check here too (not just at invite-creation
+            // time) in case it was set through some other path in the meantime.
+            if (targetUser.Email != null)
+                throw new AppException(Constants.ErrorCodes.EmailAlreadySet,
+                    "This user already has an email on file.", 409);
+
+            targetUser.Email = email;
+            targetUser.PasswordHash = _passwordService.HashPassword(request.Password);
             // Receiving and clicking the tokenized invite link is itself proof of email
             // ownership - equivalent trust to an OTP, so registration skips the OTP round-trip.
-            EmailVerified = true,
-            EmailVerifiedAt = DateTime.UtcNow,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
-        await _context.Users.AddAsync(user);
-        await _context.SaveChangesAsync();
+            targetUser.EmailVerified = true;
+            targetUser.EmailVerifiedAt = DateTime.UtcNow;
+            targetUser.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            user = targetUser;
+        }
+        else
+        {
+            if (existingUser != null)
+            {
+                _logger.LogWarning("Register-from-invitation attempted but an account already exists for {Email}", email);
+                throw new AppException(Constants.ErrorCodes.UserAlreadyExists,
+                    "An account already exists for this email. Log in and accept the invite from there.", 409);
+            }
+
+            user = new User
+            {
+                Id = Guid.NewGuid(),
+                Email = email,
+                FirstName = request.FirstName.Trim(),
+                LastName = request.LastName.Trim(),
+                PasswordHash = _passwordService.HashPassword(request.Password),
+                EmailVerified = true,
+                EmailVerifiedAt = DateTime.UtcNow,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            await _context.Users.AddAsync(user);
+            await _context.SaveChangesAsync();
+        }
 
         await GrantWorkspaceAccessAsync(invitation, user.Id);
 

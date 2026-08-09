@@ -34,6 +34,7 @@ public static class Constants
         public const string CannotModifyOwner = "CANNOT_MODIFY_OWNER";
         public const string RegistrationExpired = "REGISTRATION_EXPIRED";
         public const string ResendCooldown = "RESEND_COOLDOWN";
+        public const string EmailAlreadySet = "EMAIL_ALREADY_SET";
     }
 
     public static class Permissions
