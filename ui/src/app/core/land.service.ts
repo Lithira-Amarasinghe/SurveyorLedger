@@ -31,6 +31,53 @@ export interface LandRequest {
   notes?: string;
 }
 
+export interface LandSurvey {
+  id: string;
+  landId: string;
+  surveyPlanNumber: string;
+  surveyDate: string;
+  surveyedByName: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface LandSurveyRequest {
+  surveyPlanNumber: string;
+  surveyDate: string;
+  surveyedByName?: string;
+  notes?: string;
+}
+
+export interface LandDeed {
+  id: string;
+  landId: string;
+  deedNumber: string;
+  issuedDate: string;
+  isCurrent: boolean;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface LandDeedRequest {
+  deedNumber: string;
+  issuedDate: string;
+  isCurrent: boolean;
+  notes?: string;
+}
+
+export interface LandBoundary {
+  id: string;
+  landId: string;
+  label: string;
+  description: string | null;
+  createdAt: string;
+}
+
+export interface LandBoundaryRequest {
+  label: string;
+  description?: string;
+}
+
 interface ApiResponse<T> {
   success: boolean;
   data: T;
@@ -57,5 +104,41 @@ export class LandService {
 
   create(workspaceId: string, request: LandRequest): Observable<Land> {
     return this.http.post<ApiResponse<Land>>(this.base(workspaceId), request).pipe(map(res => res.data));
+  }
+
+  getById(workspaceId: string, landId: string): Observable<Land> {
+    return this.http.get<ApiResponse<Land>>(`${this.base(workspaceId)}/${landId}`).pipe(map(res => res.data));
+  }
+
+  update(workspaceId: string, landId: string, request: LandRequest): Observable<Land> {
+    return this.http.put<ApiResponse<Land>>(`${this.base(workspaceId)}/${landId}`, request).pipe(map(res => res.data));
+  }
+
+  getSurveys(workspaceId: string, landId: string): Observable<LandSurvey[]> {
+    return this.http.get<ApiResponse<LandSurvey[]>>(`${this.base(workspaceId)}/${landId}/surveys`).pipe(map(res => res.data));
+  }
+
+  addSurvey(workspaceId: string, landId: string, request: LandSurveyRequest): Observable<LandSurvey> {
+    return this.http
+      .post<ApiResponse<LandSurvey>>(`${this.base(workspaceId)}/${landId}/surveys`, request)
+      .pipe(map(res => res.data));
+  }
+
+  getDeeds(workspaceId: string, landId: string): Observable<LandDeed[]> {
+    return this.http.get<ApiResponse<LandDeed[]>>(`${this.base(workspaceId)}/${landId}/deeds`).pipe(map(res => res.data));
+  }
+
+  addDeed(workspaceId: string, landId: string, request: LandDeedRequest): Observable<LandDeed> {
+    return this.http.post<ApiResponse<LandDeed>>(`${this.base(workspaceId)}/${landId}/deeds`, request).pipe(map(res => res.data));
+  }
+
+  getBoundaries(workspaceId: string, landId: string): Observable<LandBoundary[]> {
+    return this.http.get<ApiResponse<LandBoundary[]>>(`${this.base(workspaceId)}/${landId}/boundaries`).pipe(map(res => res.data));
+  }
+
+  addBoundary(workspaceId: string, landId: string, request: LandBoundaryRequest): Observable<LandBoundary> {
+    return this.http
+      .post<ApiResponse<LandBoundary>>(`${this.base(workspaceId)}/${landId}/boundaries`, request)
+      .pipe(map(res => res.data));
   }
 }
