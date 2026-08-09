@@ -93,4 +93,4 @@ ui/src/app/
 - Material components for tables, dialogs, dropdowns
 - Palette: #9E0031 accent, #44001A-#8E0045 variants, neutral grays
 
-**NOT in scope**: Jobs, Surveys, RBAC UI, org management, billing, password reset, social auth.
+**NOT in scope**: Surveys (beyond Land's basic survey/deed history), RBAC UI, org management, billing, password reset, social auth. Job list/detail UI is built — see docs/superpowers/specs/2026-08-09-job-ui-design.md.
