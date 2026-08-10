@@ -9,13 +9,14 @@ import { Person } from '../../core/person.service';
 import { CurrentWorkspaceService } from '../../core/current-workspace.service';
 import { AddPersonWidgetComponent } from './add-person-widget/add-person-widget.component';
 import { AddLandWidgetComponent } from './add-land-widget/add-land-widget.component';
+import { LandDetailPanelComponent } from '../land/land-detail-panel/land-detail-panel.component';
 
 const STATUSES = ['Draft', 'Scheduled', 'InProgress', 'Completed', 'Cancelled'];
 
 @Component({
   selector: 'app-job-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, AddPersonWidgetComponent, AddLandWidgetComponent],
+  imports: [CommonModule, FormsModule, AddPersonWidgetComponent, AddLandWidgetComponent, LandDetailPanelComponent],
   template: `
     @if (loading()) {
       <p class="p-lg text-sm text-neutral-500">Loading…</p>
@@ -72,16 +73,23 @@ const STATUSES = ['Draft', 'Scheduled', 'InProgress', 'Completed', 'Cancelled'];
           @if (lands().length > 0) {
             <div class="space-y-xs mb-md">
               @for (l of lands(); track l.landId) {
-                <div class="flex items-center justify-between px-md py-sm rounded bg-neutral-50">
-                  <div>
-                    <span class="text-sm text-neutral-900">{{ addressLine(l) }}</span>
-                    @if (l.size) {
-                      <span class="text-xs text-neutral-500 block">{{ l.size }} {{ l.sizeUnit }}</span>
-                    }
+                <div class="rounded bg-neutral-50">
+                  <div class="flex items-center justify-between px-md py-sm cursor-pointer" (click)="toggleLand(l.landId)">
+                    <div>
+                      <span class="text-sm text-neutral-900">{{ addressLine(l) }}</span>
+                      @if (l.size) {
+                        <span class="text-xs text-neutral-500 block">{{ l.size }} {{ l.sizeUnit }}</span>
+                      }
+                    </div>
+                    <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="removeLand(l); $event.stopPropagation()">
+                      Remove
+                    </button>
                   </div>
-                  <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="removeLand(l)">
-                    Remove
-                  </button>
+                  @if (expandedLandId() === l.landId) {
+                    <div class="px-md pb-md pt-sm border-t border-neutral-200">
+                      <app-land-detail-panel [workspaceId]="workspaceId" [landId]="l.landId" />
+                    </div>
+                  }
                 </div>
               }
             </div>
@@ -107,6 +115,11 @@ export class JobDetailComponent implements OnInit {
   descriptionDraft = '';
 
   addressLine = addressLine;
+  expandedLandId = signal<string | null>(null);
+
+  toggleLand(landId: string): void {
+    this.expandedLandId.update(current => (current === landId ? null : landId));
+  }
 
   constructor(
     private jobService: JobService,
