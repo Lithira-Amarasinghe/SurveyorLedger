@@ -9,6 +9,8 @@ import { MembersComponent } from './pages/workspace/members.component';
 import { RolesComponent } from './pages/workspace/roles.component';
 import { JobListComponent } from './pages/job/job-list.component';
 import { JobDetailComponent } from './pages/job/job-detail.component';
+import { LandListComponent } from './pages/land/land-list.component';
+import { LandDetailComponent } from './pages/land/land-detail.component';
 import { AcceptInviteComponent } from './pages/invite/accept-invite.component';
 import { ProfileComponent } from './pages/profile/profile.component';
 import { AppShellComponent } from './shell/app-shell.component';
@@ -41,6 +43,8 @@ export const routes: Routes = [
           { path: '', component: WorkspaceOverviewComponent },
           { path: 'jobs', component: JobListComponent },
           { path: 'jobs/:jobId', component: JobDetailComponent },
+          { path: 'lands', component: LandListComponent },
+          { path: 'lands/:landId', component: LandDetailComponent },
           { path: 'members', component: MembersComponent },
           { path: 'roles', component: RolesComponent },
         ]
