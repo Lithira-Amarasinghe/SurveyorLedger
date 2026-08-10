@@ -78,6 +78,22 @@ namespace SurveyorLedger.API.Controllers
             return Ok(ApiResponse<LandSurveyResponse>.Ok(ToResponse(survey)));
         }
 
+        [HttpPut("{id}/surveys/{surveyId}")]
+        public async Task<ActionResult<ApiResponse<LandSurveyResponse>>> UpdateSurvey(Guid workspaceId, Guid id, Guid surveyId, [FromBody] LandSurveyRequest request)
+        {
+            var callerId = CallerId();
+            var survey = await _landService.UpdateSurveyAsync(workspaceId, callerId, id, surveyId, request);
+            return Ok(ApiResponse<LandSurveyResponse>.Ok(ToResponse(survey)));
+        }
+
+        [HttpDelete("{id}/surveys/{surveyId}")]
+        public async Task<IActionResult> DeleteSurvey(Guid workspaceId, Guid id, Guid surveyId)
+        {
+            var callerId = CallerId();
+            await _landService.DeleteSurveyAsync(workspaceId, callerId, id, surveyId);
+            return NoContent();
+        }
+
         [HttpGet("{id}/deeds")]
         public async Task<ActionResult<ApiResponse<List<LandDeedResponse>>>> GetDeeds(Guid workspaceId, Guid id)
         {
@@ -94,6 +110,22 @@ namespace SurveyorLedger.API.Controllers
             return Ok(ApiResponse<LandDeedResponse>.Ok(ToResponse(deed)));
         }
 
+        [HttpPut("{id}/deeds/{deedId}")]
+        public async Task<ActionResult<ApiResponse<LandDeedResponse>>> UpdateDeed(Guid workspaceId, Guid id, Guid deedId, [FromBody] LandDeedRequest request)
+        {
+            var callerId = CallerId();
+            var deed = await _landService.UpdateDeedAsync(workspaceId, callerId, id, deedId, request);
+            return Ok(ApiResponse<LandDeedResponse>.Ok(ToResponse(deed)));
+        }
+
+        [HttpDelete("{id}/deeds/{deedId}")]
+        public async Task<IActionResult> DeleteDeed(Guid workspaceId, Guid id, Guid deedId)
+        {
+            var callerId = CallerId();
+            await _landService.DeleteDeedAsync(workspaceId, callerId, id, deedId);
+            return NoContent();
+        }
+
         [HttpGet("{id}/boundaries")]
         public async Task<ActionResult<ApiResponse<List<LandBoundaryResponse>>>> GetBoundaries(Guid workspaceId, Guid id)
         {
@@ -108,6 +140,22 @@ namespace SurveyorLedger.API.Controllers
             var callerId = CallerId();
             var boundary = await _landService.AddBoundaryAsync(workspaceId, callerId, id, request);
             return Ok(ApiResponse<LandBoundaryResponse>.Ok(ToResponse(boundary)));
+        }
+
+        [HttpPut("{id}/boundaries/{boundaryId}")]
+        public async Task<ActionResult<ApiResponse<LandBoundaryResponse>>> UpdateBoundary(Guid workspaceId, Guid id, Guid boundaryId, [FromBody] LandBoundaryRequest request)
+        {
+            var callerId = CallerId();
+            var boundary = await _landService.UpdateBoundaryAsync(workspaceId, callerId, id, boundaryId, request);
+            return Ok(ApiResponse<LandBoundaryResponse>.Ok(ToResponse(boundary)));
+        }
+
+        [HttpDelete("{id}/boundaries/{boundaryId}")]
+        public async Task<IActionResult> DeleteBoundary(Guid workspaceId, Guid id, Guid boundaryId)
+        {
+            var callerId = CallerId();
+            await _landService.DeleteBoundaryAsync(workspaceId, callerId, id, boundaryId);
+            return NoContent();
         }
 
         private Guid CallerId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);

@@ -16,12 +16,18 @@ public interface ILandService
 
     Task<LandSurvey> AddSurveyAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandSurveyRequest request);
     Task<List<LandSurvey>> GetSurveysAsync(Guid workspaceId, Guid callerUserId, Guid landId);
+    Task<LandSurvey> UpdateSurveyAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid surveyId, LandSurveyRequest request);
+    Task DeleteSurveyAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid surveyId);
 
     Task<LandDeed> AddDeedAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandDeedRequest request);
     Task<List<LandDeed>> GetDeedsAsync(Guid workspaceId, Guid callerUserId, Guid landId);
+    Task<LandDeed> UpdateDeedAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid deedId, LandDeedRequest request);
+    Task DeleteDeedAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid deedId);
 
     Task<LandBoundary> AddBoundaryAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandBoundaryRequest request);
     Task<List<LandBoundary>> GetBoundariesAsync(Guid workspaceId, Guid callerUserId, Guid landId);
+    Task<LandBoundary> UpdateBoundaryAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid boundaryId, LandBoundaryRequest request);
+    Task DeleteBoundaryAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid boundaryId);
 }
 
 public class LandService : ILandService
@@ -151,6 +157,32 @@ public class LandService : ILandService
             .ToListAsync();
     }
 
+    public async Task<LandSurvey> UpdateSurveyAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid surveyId, LandSurveyRequest request)
+    {
+        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await FindLandAsync(workspaceId, landId);
+        var survey = await FindSurveyAsync(landId, surveyId);
+
+        survey.SurveyPlanNumber = request.SurveyPlanNumber.Trim();
+        survey.SurveyDate = request.SurveyDate;
+        survey.SurveyedByName = request.SurveyedByName?.Trim();
+        survey.Notes = request.Notes;
+
+        await _context.SaveChangesAsync();
+        return survey;
+    }
+
+    /// <summary>Hard delete - corrects a mis-entered record, not meaningful history to preserve once wrong.</summary>
+    public async Task DeleteSurveyAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid surveyId)
+    {
+        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await FindLandAsync(workspaceId, landId);
+        var survey = await FindSurveyAsync(landId, surveyId);
+
+        _context.LandSurveys.Remove(survey);
+        await _context.SaveChangesAsync();
+    }
+
     public async Task<LandDeed> AddDeedAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandDeedRequest request)
     {
         await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
@@ -195,6 +227,41 @@ public class LandService : ILandService
             .ToListAsync();
     }
 
+    public async Task<LandDeed> UpdateDeedAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid deedId, LandDeedRequest request)
+    {
+        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await FindLandAsync(workspaceId, landId);
+        var deed = await FindDeedAsync(landId, deedId);
+
+        if (request.IsCurrent && !deed.IsCurrent)
+        {
+            var currentDeeds = await _context.LandDeeds
+                .Where(d => d.LandId == landId && d.IsCurrent && d.Id != deedId)
+                .ToListAsync();
+            foreach (var old in currentDeeds)
+                old.IsCurrent = false;
+        }
+
+        deed.DeedNumber = request.DeedNumber.Trim();
+        deed.IssuedDate = request.IssuedDate;
+        deed.IsCurrent = request.IsCurrent;
+        deed.Notes = request.Notes;
+
+        await _context.SaveChangesAsync();
+        return deed;
+    }
+
+    /// <summary>Hard delete - corrects a mis-entered record, not meaningful history to preserve once wrong.</summary>
+    public async Task DeleteDeedAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid deedId)
+    {
+        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await FindLandAsync(workspaceId, landId);
+        var deed = await FindDeedAsync(landId, deedId);
+
+        _context.LandDeeds.Remove(deed);
+        await _context.SaveChangesAsync();
+    }
+
     public async Task<LandBoundary> AddBoundaryAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandBoundaryRequest request)
     {
         await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
@@ -225,10 +292,52 @@ public class LandService : ILandService
             .ToListAsync();
     }
 
+    public async Task<LandBoundary> UpdateBoundaryAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid boundaryId, LandBoundaryRequest request)
+    {
+        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await FindLandAsync(workspaceId, landId);
+        var boundary = await FindBoundaryAsync(landId, boundaryId);
+
+        boundary.Label = request.Label.Trim();
+        boundary.Description = request.Description;
+
+        await _context.SaveChangesAsync();
+        return boundary;
+    }
+
+    /// <summary>Hard delete - corrects a mis-entered record, not meaningful history to preserve once wrong.</summary>
+    public async Task DeleteBoundaryAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid boundaryId)
+    {
+        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await FindLandAsync(workspaceId, landId);
+        var boundary = await FindBoundaryAsync(landId, boundaryId);
+
+        _context.LandBoundaries.Remove(boundary);
+        await _context.SaveChangesAsync();
+    }
+
     private async Task<Land> FindLandAsync(Guid workspaceId, Guid landId)
     {
         return await _context.Lands.FirstOrDefaultAsync(l => l.Id == landId && l.WorkspaceId == workspaceId)
             ?? throw new NotFoundException("Land not found");
+    }
+
+    private async Task<LandSurvey> FindSurveyAsync(Guid landId, Guid surveyId)
+    {
+        return await _context.LandSurveys.FirstOrDefaultAsync(s => s.Id == surveyId && s.LandId == landId)
+            ?? throw new NotFoundException("Survey record not found");
+    }
+
+    private async Task<LandDeed> FindDeedAsync(Guid landId, Guid deedId)
+    {
+        return await _context.LandDeeds.FirstOrDefaultAsync(d => d.Id == deedId && d.LandId == landId)
+            ?? throw new NotFoundException("Deed record not found");
+    }
+
+    private async Task<LandBoundary> FindBoundaryAsync(Guid landId, Guid boundaryId)
+    {
+        return await _context.LandBoundaries.FirstOrDefaultAsync(b => b.Id == boundaryId && b.LandId == landId)
+            ?? throw new NotFoundException("Boundary record not found");
     }
 
     private async Task EnsureAllowedAsync(Guid callerUserId, string action, Guid workspaceId)
