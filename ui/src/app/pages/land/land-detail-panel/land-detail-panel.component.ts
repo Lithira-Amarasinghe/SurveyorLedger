@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
@@ -19,7 +19,22 @@ import { Address, Land, LandBoundary, LandDeed, LandService, LandSurvey } from '
     } @else {
       <div class="space-y-lg">
         <div>
-          <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-sm">Details</h3>
+          <div class="flex items-center justify-between mb-sm">
+            <h3 class="text-xs font-semibold text-neutral-500 uppercase">Details</h3>
+            @if (confirmingDelete()) {
+              <span class="text-xs text-neutral-600">
+                Delete this land record?
+                <button type="button" class="text-primary-500 font-medium ml-xs" [disabled]="deleting()" (click)="confirmDelete()">
+                  {{ deleting() ? 'Deleting…' : 'Yes' }}
+                </button>
+                <button type="button" class="text-neutral-500 ml-xs" (click)="confirmingDelete.set(false)">No</button>
+              </span>
+            } @else {
+              <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="confirmingDelete.set(true)">
+                Delete
+              </button>
+            }
+          </div>
           <div class="grid grid-cols-2 gap-sm">
             <input class="input-field" placeholder="Street" [(ngModel)]="street" (blur)="saveDetails()" />
             <input class="input-field" placeholder="City" [(ngModel)]="city" (blur)="saveDetails()" />
@@ -132,10 +147,13 @@ import { Address, Land, LandBoundary, LandDeed, LandService, LandSurvey } from '
 export class LandDetailPanelComponent implements OnInit {
   @Input() workspaceId = '';
   @Input() landId = '';
+  @Output() deleted = new EventEmitter<void>();
 
   loading = signal(true);
   error = signal('');
   land = signal<Land | null>(null);
+  confirmingDelete = signal(false);
+  deleting = signal(false);
   surveys = signal<LandSurvey[]>([]);
   deeds = signal<LandDeed[]>([]);
   boundaries = signal<LandBoundary[]>([]);
@@ -194,6 +212,18 @@ export class LandDetailPanelComponent implements OnInit {
       error: (err) => {
         this.error.set(err.error?.message ?? 'Could not load land record.');
         this.loading.set(false);
+      }
+    });
+  }
+
+  confirmDelete(): void {
+    this.deleting.set(true);
+    this.landService.delete(this.workspaceId, this.landId).subscribe({
+      next: () => this.deleted.emit(),
+      error: (err) => {
+        this.deleting.set(false);
+        this.confirmingDelete.set(false);
+        this.error.set(err.error?.message ?? 'Could not delete land record.');
       }
     });
   }

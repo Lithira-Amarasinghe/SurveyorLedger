@@ -87,7 +87,7 @@ const STATUSES = ['Draft', 'Scheduled', 'InProgress', 'Completed', 'Cancelled'];
                   </div>
                   @if (expandedLandId() === l.landId) {
                     <div class="px-md pb-md pt-sm border-t border-neutral-200">
-                      <app-land-detail-panel [workspaceId]="workspaceId" [landId]="l.landId" />
+                      <app-land-detail-panel [workspaceId]="workspaceId" [landId]="l.landId" (deleted)="onLandDeleted(l.landId)" />
                     </div>
                   }
                 </div>
@@ -220,5 +220,11 @@ export class JobDetailComponent implements OnInit {
       next: () => this.lands.update(list => list.filter(l => l.landId !== land.landId)),
       error: (err) => this.error.set(err.error?.message ?? 'Could not remove land.')
     });
+  }
+
+  /** The land record itself was deleted (not just unlinked) - drop it locally, no separate unlink call needed. */
+  onLandDeleted(landId: string): void {
+    this.lands.update(list => list.filter(l => l.landId !== landId));
+    this.expandedLandId.set(null);
   }
 }
