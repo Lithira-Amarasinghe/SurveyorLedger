@@ -141,4 +141,8 @@ export class LandService {
       .post<ApiResponse<LandBoundary>>(`${this.base(workspaceId)}/${landId}/boundaries`, request)
       .pipe(map(res => res.data));
   }
+
+  delete(workspaceId: string, landId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base(workspaceId)}/${landId}`);
+  }
 }

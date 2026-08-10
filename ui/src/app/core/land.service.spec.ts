@@ -111,6 +111,13 @@ describe('LandService', () => {
     expect(req.request.body).toEqual(request);
     req.flush({ success: true, data: {} });
   });
+
+  it('delete() deletes the land', () => {
+    service.delete(workspaceId, 'l1').subscribe();
+    const req = httpMock.expectOne(`${base}/l1`);
+    expect(req.request.method).toBe('DELETE');
+    req.flush(null);
+  });
 });
 
 describe('addressLine', () => {
