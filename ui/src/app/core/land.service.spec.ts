@@ -112,6 +112,54 @@ describe('LandService', () => {
     req.flush({ success: true, data: {} });
   });
 
+  it('updateSurvey() puts to the survey sub-route', () => {
+    const request = { surveyPlanNumber: 'SP-1-fixed', surveyDate: '2020-01-01' };
+    service.updateSurvey(workspaceId, 'l1', 's1', request).subscribe();
+    const req = httpMock.expectOne(`${base}/l1/surveys/s1`);
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual(request);
+    req.flush({ success: true, data: {} });
+  });
+
+  it('deleteSurvey() deletes the survey sub-route', () => {
+    service.deleteSurvey(workspaceId, 'l1', 's1').subscribe();
+    const req = httpMock.expectOne(`${base}/l1/surveys/s1`);
+    expect(req.request.method).toBe('DELETE');
+    req.flush(null);
+  });
+
+  it('updateDeed() puts to the deed sub-route', () => {
+    const request = { deedNumber: 'DN-1-fixed', issuedDate: '2020-01-01', isCurrent: true };
+    service.updateDeed(workspaceId, 'l1', 'd1', request).subscribe();
+    const req = httpMock.expectOne(`${base}/l1/deeds/d1`);
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual(request);
+    req.flush({ success: true, data: {} });
+  });
+
+  it('deleteDeed() deletes the deed sub-route', () => {
+    service.deleteDeed(workspaceId, 'l1', 'd1').subscribe();
+    const req = httpMock.expectOne(`${base}/l1/deeds/d1`);
+    expect(req.request.method).toBe('DELETE');
+    req.flush(null);
+  });
+
+  it('updateBoundary() puts to the boundary sub-route', () => {
+    const request = { label: 'North (fixed)' };
+    service.updateBoundary(workspaceId, 'l1', 'b1', request).subscribe();
+    const req = httpMock.expectOne(`${base}/l1/boundaries/b1`);
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual(request);
+    req.flush({ success: true, data: {} });
+  });
+
+  it('deleteBoundary() deletes the boundary sub-route', () => {
+    service.deleteBoundary(workspaceId, 'l1', 'b1').subscribe();
+    const req = httpMock.expectOne(`${base}/l1/boundaries/b1`);
+    expect(req.request.method).toBe('DELETE');
+    req.flush(null);
+  });
+
   it('delete() deletes the land', () => {
     service.delete(workspaceId, 'l1').subscribe();
     const req = httpMock.expectOne(`${base}/l1`);

@@ -51,11 +51,27 @@ import { Address, Land, LandBoundary, LandDeed, LandService, LandSurvey } from '
           @if (surveys().length > 0) {
             <div class="space-y-xs mb-sm">
               @for (s of surveys(); track s.id) {
-                <div class="px-md py-sm rounded bg-neutral-50 text-sm">
-                  <span class="text-neutral-900">{{ s.surveyPlanNumber }}</span>
-                  <span class="text-neutral-500"> · {{ s.surveyDate | date: 'mediumDate' }}</span>
-                  @if (s.surveyedByName) {
-                    <span class="text-neutral-500"> · {{ s.surveyedByName }}</span>
+                <div class="px-md py-sm rounded bg-neutral-50 text-sm flex items-center justify-between">
+                  <div>
+                    <span class="text-neutral-900">{{ s.surveyPlanNumber }}</span>
+                    <span class="text-neutral-500"> · {{ s.surveyDate | date: 'mediumDate' }}</span>
+                    @if (s.surveyedByName) {
+                      <span class="text-neutral-500"> · {{ s.surveyedByName }}</span>
+                    }
+                  </div>
+                  @if (confirmingDeleteSurveyId() === s.id) {
+                    <span class="text-xs text-neutral-600 whitespace-nowrap">
+                      Delete?
+                      <button type="button" class="text-primary-500 font-medium ml-xs" (click)="deleteSurvey(s.id)">Yes</button>
+                      <button type="button" class="text-neutral-500 ml-xs" (click)="confirmingDeleteSurveyId.set(null)">No</button>
+                    </span>
+                  } @else {
+                    <span class="whitespace-nowrap">
+                      <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="startEditSurvey(s)">Edit</button>
+                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600 ml-sm" (click)="confirmingDeleteSurveyId.set(s.id)">
+                        Delete
+                      </button>
+                    </span>
                   }
                 </div>
               }
@@ -67,9 +83,9 @@ import { Address, Land, LandBoundary, LandDeed, LandService, LandSurvey } from '
               <input class="input-field" type="date" [(ngModel)]="newSurveyDate" />
               <input class="input-field" placeholder="Surveyed by (optional)" [(ngModel)]="newSurveyedByName" />
               <div class="flex justify-end gap-sm">
-                <button type="button" class="btn-secondary" (click)="addingSurvey.set(false)">Cancel</button>
+                <button type="button" class="btn-secondary" (click)="cancelSurveyForm()">Cancel</button>
                 <button type="button" class="btn-primary" [disabled]="!newSurveyPlanNumber.trim() || !newSurveyDate" (click)="submitSurvey()">
-                  Add
+                  {{ editingSurveyId() ? 'Save' : 'Add' }}
                 </button>
               </div>
             </div>
@@ -83,11 +99,27 @@ import { Address, Land, LandBoundary, LandDeed, LandService, LandSurvey } from '
           @if (deeds().length > 0) {
             <div class="space-y-xs mb-sm">
               @for (d of deeds(); track d.id) {
-                <div class="px-md py-sm rounded bg-neutral-50 text-sm">
-                  <span class="text-neutral-900">{{ d.deedNumber }}</span>
-                  <span class="text-neutral-500"> · {{ d.issuedDate | date: 'mediumDate' }}</span>
-                  @if (d.isCurrent) {
-                    <span class="text-xs px-sm py-xs rounded bg-green-100 text-green-700 ml-sm">Current</span>
+                <div class="px-md py-sm rounded bg-neutral-50 text-sm flex items-center justify-between">
+                  <div>
+                    <span class="text-neutral-900">{{ d.deedNumber }}</span>
+                    <span class="text-neutral-500"> · {{ d.issuedDate | date: 'mediumDate' }}</span>
+                    @if (d.isCurrent) {
+                      <span class="text-xs px-sm py-xs rounded bg-green-100 text-green-700 ml-sm">Current</span>
+                    }
+                  </div>
+                  @if (confirmingDeleteDeedId() === d.id) {
+                    <span class="text-xs text-neutral-600 whitespace-nowrap">
+                      Delete?
+                      <button type="button" class="text-primary-500 font-medium ml-xs" (click)="deleteDeed(d.id)">Yes</button>
+                      <button type="button" class="text-neutral-500 ml-xs" (click)="confirmingDeleteDeedId.set(null)">No</button>
+                    </span>
+                  } @else {
+                    <span class="whitespace-nowrap">
+                      <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="startEditDeed(d)">Edit</button>
+                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600 ml-sm" (click)="confirmingDeleteDeedId.set(d.id)">
+                        Delete
+                      </button>
+                    </span>
                   }
                 </div>
               }
@@ -102,9 +134,9 @@ import { Address, Land, LandBoundary, LandDeed, LandService, LandSurvey } from '
                 This is the current deed
               </label>
               <div class="flex justify-end gap-sm">
-                <button type="button" class="btn-secondary" (click)="addingDeed.set(false)">Cancel</button>
+                <button type="button" class="btn-secondary" (click)="cancelDeedForm()">Cancel</button>
                 <button type="button" class="btn-primary" [disabled]="!newDeedNumber.trim() || !newDeedIssuedDate" (click)="submitDeed()">
-                  Add
+                  {{ editingDeedId() ? 'Save' : 'Add' }}
                 </button>
               </div>
             </div>
@@ -118,10 +150,26 @@ import { Address, Land, LandBoundary, LandDeed, LandService, LandSurvey } from '
           @if (boundaries().length > 0) {
             <div class="space-y-xs mb-sm">
               @for (b of boundaries(); track b.id) {
-                <div class="px-md py-sm rounded bg-neutral-50 text-sm">
-                  <span class="text-neutral-900">{{ b.label }}</span>
-                  @if (b.description) {
-                    <span class="text-neutral-500"> · {{ b.description }}</span>
+                <div class="px-md py-sm rounded bg-neutral-50 text-sm flex items-center justify-between">
+                  <div>
+                    <span class="text-neutral-900">{{ b.label }}</span>
+                    @if (b.description) {
+                      <span class="text-neutral-500"> · {{ b.description }}</span>
+                    }
+                  </div>
+                  @if (confirmingDeleteBoundaryId() === b.id) {
+                    <span class="text-xs text-neutral-600 whitespace-nowrap">
+                      Delete?
+                      <button type="button" class="text-primary-500 font-medium ml-xs" (click)="deleteBoundary(b.id)">Yes</button>
+                      <button type="button" class="text-neutral-500 ml-xs" (click)="confirmingDeleteBoundaryId.set(null)">No</button>
+                    </span>
+                  } @else {
+                    <span class="whitespace-nowrap">
+                      <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="startEditBoundary(b)">Edit</button>
+                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600 ml-sm" (click)="confirmingDeleteBoundaryId.set(b.id)">
+                        Delete
+                      </button>
+                    </span>
                   }
                 </div>
               }
@@ -132,8 +180,10 @@ import { Address, Land, LandBoundary, LandDeed, LandService, LandSurvey } from '
               <input class="input-field" placeholder="Label (e.g. North, River side)" [(ngModel)]="newBoundaryLabel" />
               <input class="input-field" placeholder="Description (optional)" [(ngModel)]="newBoundaryDescription" />
               <div class="flex justify-end gap-sm">
-                <button type="button" class="btn-secondary" (click)="addingBoundary.set(false)">Cancel</button>
-                <button type="button" class="btn-primary" [disabled]="!newBoundaryLabel.trim()" (click)="submitBoundary()">Add</button>
+                <button type="button" class="btn-secondary" (click)="cancelBoundaryForm()">Cancel</button>
+                <button type="button" class="btn-primary" [disabled]="!newBoundaryLabel.trim()" (click)="submitBoundary()">
+                  {{ editingBoundaryId() ? 'Save' : 'Add' }}
+                </button>
               </div>
             </div>
           } @else {
@@ -167,16 +217,22 @@ export class LandDetailPanelComponent implements OnInit {
   notes = '';
 
   addingSurvey = signal(false);
+  editingSurveyId = signal<string | null>(null);
+  confirmingDeleteSurveyId = signal<string | null>(null);
   newSurveyPlanNumber = '';
   newSurveyDate = '';
   newSurveyedByName = '';
 
   addingDeed = signal(false);
+  editingDeedId = signal<string | null>(null);
+  confirmingDeleteDeedId = signal<string | null>(null);
   newDeedNumber = '';
   newDeedIssuedDate = '';
   newDeedIsCurrent = true;
 
   addingBoundary = signal(false);
+  editingBoundaryId = signal<string | null>(null);
+  confirmingDeleteBoundaryId = signal<string | null>(null);
   newBoundaryLabel = '';
   newBoundaryDescription = '';
 
@@ -254,63 +310,139 @@ export class LandDetailPanelComponent implements OnInit {
       });
   }
 
+  startEditSurvey(s: LandSurvey): void {
+    this.editingSurveyId.set(s.id);
+    this.newSurveyPlanNumber = s.surveyPlanNumber;
+    this.newSurveyDate = s.surveyDate.slice(0, 10);
+    this.newSurveyedByName = s.surveyedByName ?? '';
+    this.addingSurvey.set(true);
+  }
+
+  cancelSurveyForm(): void {
+    this.addingSurvey.set(false);
+    this.editingSurveyId.set(null);
+    this.newSurveyPlanNumber = '';
+    this.newSurveyDate = '';
+    this.newSurveyedByName = '';
+  }
+
   submitSurvey(): void {
     if (!this.newSurveyPlanNumber.trim() || !this.newSurveyDate) return;
-    this.landService
-      .addSurvey(this.workspaceId, this.landId, {
-        surveyPlanNumber: this.newSurveyPlanNumber.trim(),
-        surveyDate: this.newSurveyDate,
-        surveyedByName: this.newSurveyedByName.trim() || undefined
-      })
-      .subscribe({
-        next: (survey) => {
-          this.surveys.update(list => [survey, ...list]);
-          this.addingSurvey.set(false);
-          this.newSurveyPlanNumber = '';
-          this.newSurveyDate = '';
-          this.newSurveyedByName = '';
-        },
-        error: (err) => this.error.set(err.error?.message ?? 'Could not add survey.')
-      });
+    const request = {
+      surveyPlanNumber: this.newSurveyPlanNumber.trim(),
+      surveyDate: this.newSurveyDate,
+      surveyedByName: this.newSurveyedByName.trim() || undefined
+    };
+    const editingId = this.editingSurveyId();
+
+    const result$ = editingId
+      ? this.landService.updateSurvey(this.workspaceId, this.landId, editingId, request)
+      : this.landService.addSurvey(this.workspaceId, this.landId, request);
+
+    result$.subscribe({
+      next: (survey) => {
+        this.surveys.update(list => (editingId ? list.map(s => (s.id === editingId ? survey : s)) : [survey, ...list]));
+        this.cancelSurveyForm();
+      },
+      error: (err) => this.error.set(err.error?.message ?? 'Could not save survey.')
+    });
+  }
+
+  deleteSurvey(surveyId: string): void {
+    this.landService.deleteSurvey(this.workspaceId, this.landId, surveyId).subscribe({
+      next: () => {
+        this.surveys.update(list => list.filter(s => s.id !== surveyId));
+        this.confirmingDeleteSurveyId.set(null);
+      },
+      error: (err) => this.error.set(err.error?.message ?? 'Could not delete survey.')
+    });
+  }
+
+  startEditDeed(d: LandDeed): void {
+    this.editingDeedId.set(d.id);
+    this.newDeedNumber = d.deedNumber;
+    this.newDeedIssuedDate = d.issuedDate.slice(0, 10);
+    this.newDeedIsCurrent = d.isCurrent;
+    this.addingDeed.set(true);
+  }
+
+  cancelDeedForm(): void {
+    this.addingDeed.set(false);
+    this.editingDeedId.set(null);
+    this.newDeedNumber = '';
+    this.newDeedIssuedDate = '';
+    this.newDeedIsCurrent = true;
   }
 
   submitDeed(): void {
     if (!this.newDeedNumber.trim() || !this.newDeedIssuedDate) return;
-    this.landService
-      .addDeed(this.workspaceId, this.landId, {
-        deedNumber: this.newDeedNumber.trim(),
-        issuedDate: this.newDeedIssuedDate,
-        isCurrent: this.newDeedIsCurrent
-      })
-      .subscribe({
-        next: (deed) => {
-          // A new current deed supersedes the old one server-side - refetch the list
-          // rather than patch it locally, so the previously-current deed's badge updates too.
-          this.landService.getDeeds(this.workspaceId, this.landId).subscribe(deeds => this.deeds.set(deeds));
-          this.addingDeed.set(false);
-          this.newDeedNumber = '';
-          this.newDeedIssuedDate = '';
-          this.newDeedIsCurrent = true;
-        },
-        error: (err) => this.error.set(err.error?.message ?? 'Could not add deed.')
-      });
+    const request = { deedNumber: this.newDeedNumber.trim(), issuedDate: this.newDeedIssuedDate, isCurrent: this.newDeedIsCurrent };
+    const editingId = this.editingDeedId();
+
+    const result$ = editingId
+      ? this.landService.updateDeed(this.workspaceId, this.landId, editingId, request)
+      : this.landService.addDeed(this.workspaceId, this.landId, request);
+
+    result$.subscribe({
+      next: () => {
+        // A current deed supersedes any other current deed server-side - refetch the
+        // list rather than patch it locally, so every affected badge updates too.
+        this.landService.getDeeds(this.workspaceId, this.landId).subscribe(deeds => this.deeds.set(deeds));
+        this.cancelDeedForm();
+      },
+      error: (err) => this.error.set(err.error?.message ?? 'Could not save deed.')
+    });
+  }
+
+  deleteDeed(deedId: string): void {
+    this.landService.deleteDeed(this.workspaceId, this.landId, deedId).subscribe({
+      next: () => {
+        this.deeds.update(list => list.filter(d => d.id !== deedId));
+        this.confirmingDeleteDeedId.set(null);
+      },
+      error: (err) => this.error.set(err.error?.message ?? 'Could not delete deed.')
+    });
+  }
+
+  startEditBoundary(b: LandBoundary): void {
+    this.editingBoundaryId.set(b.id);
+    this.newBoundaryLabel = b.label;
+    this.newBoundaryDescription = b.description ?? '';
+    this.addingBoundary.set(true);
+  }
+
+  cancelBoundaryForm(): void {
+    this.addingBoundary.set(false);
+    this.editingBoundaryId.set(null);
+    this.newBoundaryLabel = '';
+    this.newBoundaryDescription = '';
   }
 
   submitBoundary(): void {
     if (!this.newBoundaryLabel.trim()) return;
-    this.landService
-      .addBoundary(this.workspaceId, this.landId, {
-        label: this.newBoundaryLabel.trim(),
-        description: this.newBoundaryDescription.trim() || undefined
-      })
-      .subscribe({
-        next: (boundary) => {
-          this.boundaries.update(list => [...list, boundary]);
-          this.addingBoundary.set(false);
-          this.newBoundaryLabel = '';
-          this.newBoundaryDescription = '';
-        },
-        error: (err) => this.error.set(err.error?.message ?? 'Could not add boundary.')
-      });
+    const request = { label: this.newBoundaryLabel.trim(), description: this.newBoundaryDescription.trim() || undefined };
+    const editingId = this.editingBoundaryId();
+
+    const result$ = editingId
+      ? this.landService.updateBoundary(this.workspaceId, this.landId, editingId, request)
+      : this.landService.addBoundary(this.workspaceId, this.landId, request);
+
+    result$.subscribe({
+      next: (boundary) => {
+        this.boundaries.update(list => (editingId ? list.map(b => (b.id === editingId ? boundary : b)) : [...list, boundary]));
+        this.cancelBoundaryForm();
+      },
+      error: (err) => this.error.set(err.error?.message ?? 'Could not save boundary.')
+    });
+  }
+
+  deleteBoundary(boundaryId: string): void {
+    this.landService.deleteBoundary(this.workspaceId, this.landId, boundaryId).subscribe({
+      next: () => {
+        this.boundaries.update(list => list.filter(b => b.id !== boundaryId));
+        this.confirmingDeleteBoundaryId.set(null);
+      },
+      error: (err) => this.error.set(err.error?.message ?? 'Could not delete boundary.')
+    });
   }
 }

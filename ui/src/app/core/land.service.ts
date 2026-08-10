@@ -124,12 +124,32 @@ export class LandService {
       .pipe(map(res => res.data));
   }
 
+  updateSurvey(workspaceId: string, landId: string, surveyId: string, request: LandSurveyRequest): Observable<LandSurvey> {
+    return this.http
+      .put<ApiResponse<LandSurvey>>(`${this.base(workspaceId)}/${landId}/surveys/${surveyId}`, request)
+      .pipe(map(res => res.data));
+  }
+
+  deleteSurvey(workspaceId: string, landId: string, surveyId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base(workspaceId)}/${landId}/surveys/${surveyId}`);
+  }
+
   getDeeds(workspaceId: string, landId: string): Observable<LandDeed[]> {
     return this.http.get<ApiResponse<LandDeed[]>>(`${this.base(workspaceId)}/${landId}/deeds`).pipe(map(res => res.data));
   }
 
   addDeed(workspaceId: string, landId: string, request: LandDeedRequest): Observable<LandDeed> {
     return this.http.post<ApiResponse<LandDeed>>(`${this.base(workspaceId)}/${landId}/deeds`, request).pipe(map(res => res.data));
+  }
+
+  updateDeed(workspaceId: string, landId: string, deedId: string, request: LandDeedRequest): Observable<LandDeed> {
+    return this.http
+      .put<ApiResponse<LandDeed>>(`${this.base(workspaceId)}/${landId}/deeds/${deedId}`, request)
+      .pipe(map(res => res.data));
+  }
+
+  deleteDeed(workspaceId: string, landId: string, deedId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base(workspaceId)}/${landId}/deeds/${deedId}`);
   }
 
   getBoundaries(workspaceId: string, landId: string): Observable<LandBoundary[]> {
@@ -140,6 +160,16 @@ export class LandService {
     return this.http
       .post<ApiResponse<LandBoundary>>(`${this.base(workspaceId)}/${landId}/boundaries`, request)
       .pipe(map(res => res.data));
+  }
+
+  updateBoundary(workspaceId: string, landId: string, boundaryId: string, request: LandBoundaryRequest): Observable<LandBoundary> {
+    return this.http
+      .put<ApiResponse<LandBoundary>>(`${this.base(workspaceId)}/${landId}/boundaries/${boundaryId}`, request)
+      .pipe(map(res => res.data));
+  }
+
+  deleteBoundary(workspaceId: string, landId: string, boundaryId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base(workspaceId)}/${landId}/boundaries/${boundaryId}`);
   }
 
   delete(workspaceId: string, landId: string): Observable<void> {
