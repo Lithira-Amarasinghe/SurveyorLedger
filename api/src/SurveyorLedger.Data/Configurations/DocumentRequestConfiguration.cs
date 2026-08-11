@@ -41,5 +41,20 @@ public class DocumentRequestConfiguration : IEntityTypeConfiguration<DocumentReq
             .WithMany()
             .HasForeignKey(x => x.FulfilledBy)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Property(x => x.TargetRole).HasMaxLength(20);
+
+        builder.HasOne(x => x.TargetUser)
+            .WithMany()
+            .HasForeignKey(x => x.TargetUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Two nullable columns following this entity's existing pattern (FulfilledDocumentId/
+        // FulfilledAt/FulfilledBy are already nullable-until-set the same way). App-level
+        // validation alone can't close the "both set" gap against a bug or a direct write,
+        // so it's enforced at the DB level too.
+        builder.ToTable(t => t.HasCheckConstraint(
+            "CK_DocumentRequests_TargetExclusive",
+            "[TargetRole] IS NULL OR [TargetUserId] IS NULL"));
     }
 }

@@ -10,7 +10,10 @@ export interface DocumentRequest {
   title: string;
   description: string | null;
   category: 'SurveyPlan' | 'LegalDocument' | 'Photo' | 'Other';
-  status: 'Pending' | 'Fulfilled';
+  targetRole: 'Admin' | 'Surveyor' | 'Client' | null;
+  targetUserId: string | null;
+  targetUserName: string | null;
+  status: 'Pending' | 'Fulfilled' | 'Reopened';
   fulfilledDocumentId: string | null;
   fulfilledAt: string | null;
   fulfilledBy: string | null;
@@ -37,28 +40,35 @@ export class DocumentRequestService {
     return this.http.get<ApiResponse<DocumentRequest[]>>(this.base(workspaceId, jobId)).pipe(map(res => res.data));
   }
 
-  create(workspaceId: string, jobId: string, title: string, description: string | null, category: string): Observable<DocumentRequest> {
+  create(workspaceId: string, jobId: string, title: string, description: string | null, category: string, targetRole: string | null, targetUserId: string | null): Observable<DocumentRequest> {
     return this.http
-      .post<ApiResponse<DocumentRequest>>(this.base(workspaceId, jobId), { title, description, category })
+      .post<ApiResponse<DocumentRequest>>(this.base(workspaceId, jobId), { title, description, category, targetRole, targetUserId })
       .pipe(map(res => res.data));
   }
 
-  fulfill(workspaceId: string, jobId: string, requestId: string, file: File, visibility: string): Observable<DocumentRequest> {
+  fulfill(workspaceId: string, jobId: string, requestId: string, file: File, visibility: string, displayFileName?: string): Observable<DocumentRequest> {
     const form = new FormData();
     form.append('File', file);
     form.append('Visibility', visibility);
+    if (displayFileName) form.append('DisplayFileName', displayFileName);
     return this.http
       .post<ApiResponse<DocumentRequest>>(`${this.base(workspaceId, jobId)}/${requestId}/fulfill`, form)
       .pipe(map(res => res.data));
   }
 
-  reopen(workspaceId: string, jobId: string, requestId: string): Observable<DocumentRequest> {
+  reopen(workspaceId: string, jobId: string, requestId: string, note?: string | null): Observable<DocumentRequest> {
     return this.http
-      .post<ApiResponse<DocumentRequest>>(`${this.base(workspaceId, jobId)}/${requestId}/reopen`, {})
+      .post<ApiResponse<DocumentRequest>>(`${this.base(workspaceId, jobId)}/${requestId}/reopen`, { note: note ?? null })
       .pipe(map(res => res.data));
   }
 
   cancel(workspaceId: string, jobId: string, requestId: string): Observable<void> {
     return this.http.delete<void>(`${this.base(workspaceId, jobId)}/${requestId}`);
+  }
+
+  updateTarget(workspaceId: string, jobId: string, requestId: string, targetRole: string | null, targetUserId: string | null): Observable<DocumentRequest> {
+    return this.http
+      .patch<ApiResponse<DocumentRequest>>(`${this.base(workspaceId, jobId)}/${requestId}/target`, { targetRole, targetUserId })
+      .pipe(map(res => res.data));
   }
 }

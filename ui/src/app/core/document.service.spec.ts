@@ -22,7 +22,7 @@ describe('DocumentService', () => {
   afterEach(() => httpMock.verify());
 
   it('list() unwraps ApiResponse and hits the correct URL', () => {
-    const docs = [{ documentId: 'd1', jobId, fileName: 'plan.pdf', contentType: 'application/pdf', fileSizeBytes: 100, category: 'SurveyPlan', visibility: 'ClientVisible', uploadedBy: 'u1', createdAt: '2026-01-01', updatedAt: '2026-01-01' }];
+    const docs = [{ documentId: 'd1', jobId, fileName: 'plan.pdf', contentType: 'application/pdf', fileSizeBytes: 100, category: 'SurveyPlan', visibility: 'ClientVisible', uploadedBy: 'u1', uploadedByName: 'Admin Person', createdAt: '2026-01-01', updatedAt: '2026-01-01'}];
     service.list(workspaceId, jobId).subscribe(result => expect(result).toEqual(docs));
     const req = httpMock.expectOne(base);
     expect(req.request.method).toBe('GET');
@@ -30,7 +30,7 @@ describe('DocumentService', () => {
   });
 
   it('upload() posts a FormData body with File, Category, Visibility', () => {
-    const doc = { documentId: 'd1', jobId, fileName: 'plan.pdf', contentType: 'application/pdf', fileSizeBytes: 100, category: 'SurveyPlan', visibility: 'ClientVisible', uploadedBy: 'u1', createdAt: '2026-01-01', updatedAt: '2026-01-01' };
+    const doc = { documentId: 'd1', jobId, fileName: 'plan.pdf', contentType: 'application/pdf', fileSizeBytes: 100, category: 'SurveyPlan', visibility: 'ClientVisible', uploadedBy: 'u1', uploadedByName: 'Admin Person', createdAt: '2026-01-01', updatedAt: '2026-01-01'};
     const file = new File(['content'], 'plan.pdf', { type: 'application/pdf' });
 
     service.upload(workspaceId, jobId, file, 'SurveyPlan', 'ClientVisible').subscribe(result => expect(result).toEqual(doc));
@@ -59,5 +59,14 @@ describe('DocumentService', () => {
     const req = httpMock.expectOne(`${base}/d1`);
     expect(req.request.method).toBe('DELETE');
     req.flush(null);
+  });
+
+  it('updateVisibility() patches the visibility sub-route', () => {
+    const doc = { documentId: 'd1', jobId, fileName: 'plan.pdf', contentType: 'application/pdf', fileSizeBytes: 100, category: 'SurveyPlan', visibility: 'Internal', uploadedBy: 'u1', uploadedByName: 'Admin Person', createdAt: '2026-01-01', updatedAt: '2026-01-01' };
+    service.updateVisibility(workspaceId, jobId, 'd1', 'Internal').subscribe(result => expect(result).toEqual(doc));
+    const req = httpMock.expectOne(`${base}/d1/visibility`);
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ visibility: 'Internal' });
+    req.flush({ success: true, data: doc });
   });
 });

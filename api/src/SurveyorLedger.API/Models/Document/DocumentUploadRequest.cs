@@ -17,4 +17,7 @@ public class DocumentUploadRequest
 
     [Required(ErrorMessage = "Visibility is required.")]
     public required DocumentVisibility Visibility { get; set; }
+
+    [StringLength(260)]
+    public string? DisplayFileName { get; set; }
 }

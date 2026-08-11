@@ -19,6 +19,8 @@ public class DocumentRequest
     public DateTime? FulfilledAt { get; set; }
     public Guid? FulfilledBy { get; set; }
     public Guid RequestedBy { get; set; }
+    public string? TargetRole { get; set; }
+    public Guid? TargetUserId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public bool IsActive { get; set; } = true;
@@ -27,4 +29,5 @@ public class DocumentRequest
     public Document? FulfilledDocument { get; set; }
     public User RequestedByUser { get; set; }
     public User? FulfilledByUser { get; set; }
+    public User? TargetUser { get; set; }
 }

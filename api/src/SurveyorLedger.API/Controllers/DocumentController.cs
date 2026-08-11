@@ -31,7 +31,7 @@ namespace SurveyorLedger.API.Controllers
         [RequestSizeLimit(DocumentService.MaxFileSizeBytes)]
         public async Task<ActionResult<ApiResponse<DocumentResponse>>> Upload(Guid workspaceId, Guid jobId, [FromForm] DocumentUploadRequest request)
         {
-            var document = await _documentService.UploadAsync(workspaceId, CallerId(), jobId, request.File, request.Category, request.Visibility);
+            var document = await _documentService.UploadAsync(workspaceId, CallerId(), jobId, request.File, request.Category, request.Visibility, request.DisplayFileName);
             return Ok(ApiResponse<DocumentResponse>.Ok(ToResponse(document)));
         }
 
@@ -52,6 +52,13 @@ namespace SurveyorLedger.API.Controllers
             return NoContent();
         }
 
+        [HttpPatch("{id}/visibility")]
+        public async Task<ActionResult<ApiResponse<DocumentResponse>>> UpdateVisibility(Guid workspaceId, Guid jobId, Guid id, [FromBody] DocumentVisibilityUpdateRequest request)
+        {
+            var document = await _documentService.UpdateVisibilityAsync(workspaceId, CallerId(), jobId, id, request.Visibility);
+            return Ok(ApiResponse<DocumentResponse>.Ok(ToResponse(document)));
+        }
+
         private Guid CallerId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
 
         private static DocumentResponse ToResponse(Document d) => new()
@@ -64,6 +71,7 @@ namespace SurveyorLedger.API.Controllers
             Category = d.Category,
             Visibility = d.Visibility,
             UploadedBy = d.UploadedBy,
+            UploadedByName = $"{d.UploadedByUser.FirstName} {d.UploadedByUser.LastName}",
             CreatedAt = d.CreatedAt,
             UpdatedAt = d.UpdatedAt
         };

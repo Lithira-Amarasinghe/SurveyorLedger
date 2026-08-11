@@ -197,27 +197,80 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
           @if (documentRows().length > 0) {
             <div class="space-y-xs mb-md">
               @for (row of documentRows(); track (row.request?.requestId ?? row.document?.documentId)) {
-                @if (row.kind === 'request' && row.request!.status === 'Pending') {
-                  <div class="flex items-center justify-between gap-sm px-md py-sm rounded border border-dashed border-neutral-300">
-                    <div class="min-w-0">
-                      <span class="text-sm text-neutral-900 truncate block">Requested: {{ row.request!.title }}</span>
-                      <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ row.request!.category }}</span>
+                @if (row.kind === 'request' && (row.request!.status === 'Pending' || row.request!.status === 'Reopened')) {
+                  <div class="rounded border border-dashed border-neutral-300">
+                    <div class="flex items-center justify-between gap-sm px-md py-sm">
+                      <div class="min-w-0">
+                        <span class="text-sm text-neutral-900 truncate block">
+                          {{ row.request!.status === 'Reopened' ? 'Needs re-upload: ' : 'Requested: ' }}{{ row.request!.title }}
+                        </span>
+                        @if (row.request!.description) {
+                          <span class="text-xs text-neutral-500 block">{{ row.request!.description }}</span>
+                        }
+                        <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600 mr-xs">{{ row.request!.category }}</span>
+                        @if (row.request!.targetRole) {
+                          <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">for {{ row.request!.targetRole }}</span>
+                        } @else if (row.request!.targetUserName; as targetName) {
+                          <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">for {{ targetName }}</span>
+                        }
+                      </div>
+                      <div class="flex items-center gap-sm flex-shrink-0 whitespace-nowrap">
+                        <input #fulfillInput type="file" class="hidden" (change)="fulfillRequest(row.request!, fulfillInput.files); fulfillInput.value = ''" />
+                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="fulfillInput.click()">Upload</button>
+                        @if (!isClient()) {
+                          <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="startEditTarget(row.request!)">Edit target</button>
+                          <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="cancelRequest(row.request!)">Cancel</button>
+                        }
+                      </div>
                     </div>
-                    <div class="flex items-center gap-sm flex-shrink-0 whitespace-nowrap">
-                      <input #fulfillInput type="file" class="hidden" (change)="fulfillRequest(row.request!, fulfillInput.files); fulfillInput.value = ''" />
-                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="fulfillInput.click()">Upload</button>
-                      @if (!isClient()) {
-                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="cancelRequest(row.request!)">Cancel</button>
-                      }
-                    </div>
+                    @if (editingRequestTarget() === row.request!.requestId) {
+                      <div class="px-md pb-md space-y-sm border-t border-neutral-200 pt-sm">
+                        <select class="input-field text-sm" [(ngModel)]="requestTargetKind">
+                          <option value="anyone">Anyone</option>
+                          <option value="role">By role</option>
+                          <option value="person">Specific person</option>
+                        </select>
+                        @if (requestTargetKind === 'role') {
+                          <select class="input-field text-sm" [(ngModel)]="requestTargetRoleDraft">
+                            <option value="Admin">Admin</option>
+                            <option value="Surveyor">Surveyor</option>
+                            <option value="Client">Client</option>
+                          </select>
+                        } @else if (requestTargetKind === 'person') {
+                          <select class="input-field text-sm" [(ngModel)]="requestTargetUserIdDraft">
+                            <option value="" disabled>Select a person</option>
+                            @for (p of participants(); track p.userId) {
+                              <option [value]="p.userId">{{ p.firstName }} {{ p.lastName }}</option>
+                            }
+                          </select>
+                        }
+                        <div class="flex items-center justify-end gap-sm">
+                          <button type="button" class="btn-secondary text-xs" (click)="cancelEditTarget()">Cancel</button>
+                          <button type="button" class="btn-primary text-xs" (click)="submitTargetEdit(row.request!)">Save</button>
+                        </div>
+                      </div>
+                    }
                   </div>
                 } @else if (row.document; as d) {
                   <div class="flex items-center justify-between gap-sm px-md py-sm rounded bg-neutral-50">
                     <div class="min-w-0">
                       <span class="text-sm text-neutral-900 truncate block">{{ d.fileName }}</span>
+                      <span class="text-xs text-neutral-500 block">
+                        {{ d.uploadedByName }} · {{ d.createdAt | date: 'mediumDate' }} · {{ formatFileSize(d.fileSizeBytes) }}
+                      </span>
+                      <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600 mr-xs">{{ documentIcon(d.contentType) }}</span>
                       <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600 mr-xs">{{ d.category }}</span>
                       @if (!isClient()) {
-                        <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ d.visibility }}</span>
+                        <button
+                          type="button"
+                          class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600 hover:bg-neutral-200 mr-xs"
+                          (click)="toggleVisibility(d)"
+                        >
+                          {{ d.visibility }}
+                        </button>
+                      }
+                      @if (row.request) {
+                        <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">via request: {{ row.request!.title }}</span>
                       }
                     </div>
                     <div class="flex items-center gap-sm flex-shrink-0 whitespace-nowrap">
@@ -238,12 +291,21 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
           @if (documentError()) {
             <p class="text-xs text-primary-500 mb-sm">{{ documentError() }}</p>
           }
-          <app-document-upload-widget
-            [workspaceId]="workspaceId"
-            [jobId]="jobId"
-            [isClient]="isClient()"
-            (added)="onDocumentAdded($event)"
-          />
+          <div class="flex flex-wrap items-center gap-md">
+            <app-document-upload-widget
+              [workspaceId]="workspaceId"
+              [jobId]="jobId"
+              [isClient]="isClient()"
+              (added)="onDocumentAdded($event)"
+            />
+            @if (!isClient()) {
+              @if (!requestingDocument()) {
+                <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="requestingDocument.set(true)">
+                  + Request document
+                </button>
+              }
+            }
+          </div>
           @if (requestError()) {
             <p class="text-xs text-primary-500 mt-sm">{{ requestError() }}</p>
           }
@@ -258,15 +320,30 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                   <option value="Photo">Photo</option>
                   <option value="Other">Other</option>
                 </select>
+                <select class="input-field text-sm" [(ngModel)]="requestTargetKind">
+                  <option value="anyone">Anyone</option>
+                  <option value="role">By role</option>
+                  <option value="person">Specific person</option>
+                </select>
+                @if (requestTargetKind === 'role') {
+                  <select class="input-field text-sm" [(ngModel)]="requestTargetRoleDraft">
+                    <option value="Admin">Admin</option>
+                    <option value="Surveyor">Surveyor</option>
+                    <option value="Client">Client</option>
+                  </select>
+                } @else if (requestTargetKind === 'person') {
+                  <select class="input-field text-sm" [(ngModel)]="requestTargetUserIdDraft">
+                    <option value="" disabled>Select a person</option>
+                    @for (p of participants(); track p.userId) {
+                      <option [value]="p.userId">{{ p.firstName }} {{ p.lastName }}</option>
+                    }
+                  </select>
+                }
                 <div class="flex items-center justify-end gap-sm">
                   <button type="button" class="btn-secondary text-xs" (click)="cancelAddRequest()">Cancel</button>
                   <button type="button" class="btn-primary text-xs" (click)="submitRequest()">Request</button>
                 </div>
               </div>
-            } @else {
-              <button type="button" class="text-xs text-primary-500 hover:text-primary-600 mt-sm" (click)="requestingDocument.set(true)">
-                + Request document
-              </button>
             }
           }
         </div>
@@ -331,7 +408,11 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   requestTitleDraft = '';
   requestDescriptionDraft = '';
   requestCategoryDraft = 'Other';
+  requestTargetKind: 'anyone' | 'role' | 'person' = 'anyone';
+  requestTargetRoleDraft = 'Client';
+  requestTargetUserIdDraft = '';
   requestError = signal('');
+  editingRequestTarget = signal<string | null>(null);
 
   documentRows = computed(() => {
     const requests = this.documentRequests();
@@ -665,9 +746,17 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
       this.requestError.set('Title is required.');
       return;
     }
+    if (this.requestTargetKind === 'person' && !this.requestTargetUserIdDraft) {
+      this.requestError.set('Select a person to target, or switch to Anyone/By role.');
+      return;
+    }
     this.requestError.set('');
+
+    const targetRole = this.requestTargetKind === 'role' ? this.requestTargetRoleDraft : null;
+    const targetUserId = this.requestTargetKind === 'person' ? this.requestTargetUserIdDraft : null;
+
     this.documentRequestService
-      .create(this.workspaceId, this.jobId, this.requestTitleDraft.trim(), this.requestDescriptionDraft.trim() || null, this.requestCategoryDraft)
+      .create(this.workspaceId, this.jobId, this.requestTitleDraft.trim(), this.requestDescriptionDraft.trim() || null, this.requestCategoryDraft, targetRole, targetUserId)
       .subscribe({
         next: (request) => {
           this.documentRequests.update(list => [request, ...list]);
@@ -682,16 +771,77 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     this.requestTitleDraft = '';
     this.requestDescriptionDraft = '';
     this.requestCategoryDraft = 'Other';
+    this.requestTargetKind = 'anyone';
+    this.requestTargetRoleDraft = 'Client';
+    this.requestTargetUserIdDraft = '';
     this.requestError.set('');
+  }
+
+  startEditTarget(request: DocumentRequest): void {
+    this.requestTargetKind = request.targetRole ? 'role' : request.targetUserId ? 'person' : 'anyone';
+    this.requestTargetRoleDraft = request.targetRole ?? 'Client';
+    this.requestTargetUserIdDraft = request.targetUserId ?? '';
+    this.requestError.set('');
+    this.editingRequestTarget.set(request.requestId);
+  }
+
+  cancelEditTarget(): void {
+    this.editingRequestTarget.set(null);
+    this.requestTargetKind = 'anyone';
+    this.requestTargetRoleDraft = 'Client';
+    this.requestTargetUserIdDraft = '';
+    this.requestError.set('');
+  }
+
+  submitTargetEdit(request: DocumentRequest): void {
+    if (this.requestTargetKind === 'person' && !this.requestTargetUserIdDraft) {
+      this.requestError.set('Select a person to target, or switch to Anyone/By role.');
+      return;
+    }
+    const targetRole = this.requestTargetKind === 'role' ? this.requestTargetRoleDraft : null;
+    const targetUserId = this.requestTargetKind === 'person' ? this.requestTargetUserIdDraft : null;
+
+    this.requestError.set('');
+    this.documentRequestService.updateTarget(this.workspaceId, this.jobId, request.requestId, targetRole, targetUserId).subscribe({
+      next: (updated) => {
+        this.documentRequests.update(list => list.map(r => (r.requestId === updated.requestId ? updated : r)));
+        this.cancelEditTarget();
+      },
+      error: (err) => this.requestError.set(err.error?.message ?? 'Could not update target.')
+    });
+  }
+
+  formatFileSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  documentIcon(contentType: string): string {
+    if (contentType === 'application/pdf') return 'PDF';
+    if (contentType.startsWith('image/')) return 'IMG';
+    if (contentType.includes('word')) return 'DOC';
+    if (contentType.includes('sheet') || contentType.includes('excel')) return 'XLS';
+    return 'FILE';
+  }
+
+  toggleVisibility(doc: Document): void {
+    const next = doc.visibility === 'Internal' ? 'ClientVisible' : 'Internal';
+    this.documentError.set('');
+    this.documentService.updateVisibility(this.workspaceId, this.jobId, doc.documentId, next).subscribe({
+      next: (updated) => this.documents.update(list => list.map(d => (d.documentId === updated.documentId ? updated : d))),
+      error: (err) => this.documentError.set(err.error?.message ?? 'Could not update visibility.')
+    });
   }
 
   fulfillRequest(request: DocumentRequest, files: FileList | null): void {
     const file = files?.item(0);
     if (!file) return;
     const visibility = this.isClient() ? 'ClientVisible' : 'Internal';
+    const displayFileName = prompt('File name', file.name) ?? undefined;
 
     this.documentError.set('');
-    this.documentRequestService.fulfill(this.workspaceId, this.jobId, request.requestId, file, visibility).subscribe({
+    this.documentRequestService.fulfill(this.workspaceId, this.jobId, request.requestId, file, visibility, displayFileName).subscribe({
       next: (fulfilled) => {
         this.documentRequests.update(list => list.map(r => (r.requestId === fulfilled.requestId ? fulfilled : r)));
         this.documentService.list(this.workspaceId, this.jobId).subscribe(documents => this.documents.set(documents));
@@ -701,7 +851,10 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   }
 
   reopenRequest(request: DocumentRequest): void {
-    this.documentRequestService.reopen(this.workspaceId, this.jobId, request.requestId).subscribe({
+    const note = prompt('Note for the re-upload (optional)', request.description ?? '');
+    if (note === null) return;
+
+    this.documentRequestService.reopen(this.workspaceId, this.jobId, request.requestId, note).subscribe({
       next: (reopened) => this.documentRequests.update(list => list.map(r => (r.requestId === reopened.requestId ? reopened : r))),
       error: (err) => this.documentError.set(err.error?.message ?? 'Could not reopen request.')
     });

@@ -82,18 +82,49 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
-    public async Task Reopen_ClearsLink_WithoutDeletingDocument()
+    public async Task Reopen_KeepsPreviousDocumentLink_SetsStatusReopened()
     {
+        // No versioning: the previous document and its "via request" link stay visible
+        // (FulfilledDocumentId not cleared) until a replacement is actually uploaded.
         await SeedJobsAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
         var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible);
-        var documentId = fulfilled.FulfilledDocumentId;
 
         var reopened = await _requestService.ReopenAsync(WorkspaceId, AdminId, _jobAId, request.Id);
 
-        Assert.Equal("Pending", reopened.Status);
-        Assert.Null(reopened.FulfilledDocumentId);
-        Assert.NotNull(documentId);
+        Assert.Equal("Reopened", reopened.Status);
+        Assert.Equal(fulfilled.FulfilledDocumentId, reopened.FulfilledDocumentId);
+    }
+
+    [Fact]
+    public async Task Reopen_CanUpdateNote()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
+        await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible);
+
+        var reopened = await _requestService.ReopenAsync(WorkspaceId, AdminId, _jobAId, request.Id, "Scan as PDF, both sides.");
+
+        Assert.Equal("Scan as PDF, both sides.", reopened.Description);
+    }
+
+    [Fact]
+    public async Task RefulfillingReopenedRequest_DeletesPreviousDocument()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
+        var firstFulfill = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, MakeFile("first.pdf"), DocumentVisibility.ClientVisible);
+        var firstDocumentId = firstFulfill.FulfilledDocumentId!.Value;
+        await _requestService.ReopenAsync(WorkspaceId, AdminId, _jobAId, request.Id);
+
+        var secondFulfill = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, MakeFile("second.pdf"), DocumentVisibility.ClientVisible);
+
+        Assert.Equal("Fulfilled", secondFulfill.Status);
+        Assert.NotEqual(firstDocumentId, secondFulfill.FulfilledDocumentId);
+
+        var documentService = GetService<IDocumentService>();
+        var remainingDocs = await documentService.GetDocumentsAsync(WorkspaceId, AdminId, _jobAId);
+        Assert.DoesNotContain(remainingDocs, d => d.Id == firstDocumentId);
     }
 
     [Fact]
@@ -138,5 +169,121 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             _requestService.FulfillAsync(WorkspaceId, AdminId, _jobBId, request.Id, MakeFile(), DocumentVisibility.ClientVisible));
+    }
+
+    [Fact]
+    public async Task Create_WithBothTargetRoleAndTargetUserId_ThrowsValidation()
+    {
+        await SeedJobsAsync();
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, Constants.SystemRoles.Client, ClientId));
+    }
+
+    [Fact]
+    public async Task Create_TargetingNonParticipant_ThrowsValidation()
+    {
+        await SeedJobsAsync();
+        // SurveyorId/ClientId are assigned to Job A only; nobody is assigned to Job B, so
+        // targeting AdminId (who has full access but no job-scoped UserAccess row for Job A) works
+        // as the non-participant case here since Admin never gets an explicit job assignment.
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, AdminId));
+    }
+
+    [Fact]
+    public async Task Fulfill_RoleTargeted_WrongRole_ThrowsForbidden_EvenForAdmin()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, Constants.SystemRoles.Client, null);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _requestService.FulfillAsync(WorkspaceId, AdminId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible));
+    }
+
+    [Fact]
+    public async Task Fulfill_RoleTargeted_CorrectRole_Succeeds()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, Constants.SystemRoles.Client, null);
+
+        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible);
+
+        Assert.Equal("Fulfilled", fulfilled.Status);
+    }
+
+    [Fact]
+    public async Task Fulfill_PersonTargeted_WrongPerson_ThrowsForbidden_EvenForSurveyor()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, ClientId);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _requestService.FulfillAsync(WorkspaceId, SurveyorId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible));
+    }
+
+    [Fact]
+    public async Task Fulfill_PersonTargeted_CorrectPerson_Succeeds()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, ClientId);
+
+        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible);
+
+        Assert.Equal("Fulfilled", fulfilled.Status);
+    }
+
+    [Fact]
+    public async Task Fulfill_OpenRequest_StaffCanStillFulfillOnBehalf()
+    {
+        // Regression guard: targeting must not change open-request behavior.
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, null);
+
+        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, AdminId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible);
+
+        Assert.Equal("Fulfilled", fulfilled.Status);
+    }
+
+    [Fact]
+    public async Task UpdateTarget_ChangesFromOpenToRoleTargeted()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, null);
+
+        var updated = await _requestService.UpdateTargetAsync(WorkspaceId, AdminId, _jobAId, request.Id, Constants.SystemRoles.Client, null);
+
+        Assert.Equal(Constants.SystemRoles.Client, updated.TargetRole);
+        Assert.Null(updated.TargetUserId);
+    }
+
+    [Fact]
+    public async Task UpdateTarget_OnFulfilledRequest_ThrowsValidation()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, null);
+        await _requestService.FulfillAsync(WorkspaceId, AdminId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible);
+
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            _requestService.UpdateTargetAsync(WorkspaceId, AdminId, _jobAId, request.Id, Constants.SystemRoles.Client, null));
+    }
+
+    [Fact]
+    public async Task UpdateTarget_WithBothRoleAndPerson_ThrowsValidation()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, null);
+
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            _requestService.UpdateTargetAsync(WorkspaceId, AdminId, _jobAId, request.Id, Constants.SystemRoles.Client, ClientId));
+    }
+
+    [Fact]
+    public async Task UpdateTarget_ByClient_ThrowsForbidden()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, null);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _requestService.UpdateTargetAsync(WorkspaceId, ClientId, _jobAId, request.Id, Constants.SystemRoles.Client, null));
     }
 }

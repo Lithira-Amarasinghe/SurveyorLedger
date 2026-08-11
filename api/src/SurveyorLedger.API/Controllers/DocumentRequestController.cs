@@ -30,7 +30,7 @@ namespace SurveyorLedger.API.Controllers
         [HttpPost]
         public async Task<ActionResult<ApiResponse<DocumentRequestResponse>>> Create(Guid workspaceId, Guid jobId, [FromBody] DocumentRequestCreateRequest request)
         {
-            var created = await _requestService.CreateAsync(workspaceId, CallerId(), jobId, request.Title, request.Description, request.Category);
+            var created = await _requestService.CreateAsync(workspaceId, CallerId(), jobId, request.Title, request.Description, request.Category, request.TargetRole, request.TargetUserId);
             return Ok(ApiResponse<DocumentRequestResponse>.Ok(ToResponse(created)));
         }
 
@@ -38,14 +38,14 @@ namespace SurveyorLedger.API.Controllers
         [RequestSizeLimit(DocumentService.MaxFileSizeBytes)]
         public async Task<ActionResult<ApiResponse<DocumentRequestResponse>>> Fulfill(Guid workspaceId, Guid jobId, Guid id, [FromForm] DocumentRequestFulfillRequest request)
         {
-            var fulfilled = await _requestService.FulfillAsync(workspaceId, CallerId(), jobId, id, request.File, request.Visibility);
+            var fulfilled = await _requestService.FulfillAsync(workspaceId, CallerId(), jobId, id, request.File, request.Visibility, request.DisplayFileName);
             return Ok(ApiResponse<DocumentRequestResponse>.Ok(ToResponse(fulfilled)));
         }
 
         [HttpPost("{id}/reopen")]
-        public async Task<ActionResult<ApiResponse<DocumentRequestResponse>>> Reopen(Guid workspaceId, Guid jobId, Guid id)
+        public async Task<ActionResult<ApiResponse<DocumentRequestResponse>>> Reopen(Guid workspaceId, Guid jobId, Guid id, [FromBody] DocumentRequestReopenRequest? request)
         {
-            var reopened = await _requestService.ReopenAsync(workspaceId, CallerId(), jobId, id);
+            var reopened = await _requestService.ReopenAsync(workspaceId, CallerId(), jobId, id, request?.Note);
             return Ok(ApiResponse<DocumentRequestResponse>.Ok(ToResponse(reopened)));
         }
 
@@ -54,6 +54,13 @@ namespace SurveyorLedger.API.Controllers
         {
             await _requestService.CancelAsync(workspaceId, CallerId(), jobId, id);
             return NoContent();
+        }
+
+        [HttpPatch("{id}/target")]
+        public async Task<ActionResult<ApiResponse<DocumentRequestResponse>>> UpdateTarget(Guid workspaceId, Guid jobId, Guid id, [FromBody] DocumentRequestTargetUpdateRequest request)
+        {
+            var updated = await _requestService.UpdateTargetAsync(workspaceId, CallerId(), jobId, id, request.TargetRole, request.TargetUserId);
+            return Ok(ApiResponse<DocumentRequestResponse>.Ok(ToResponse(updated)));
         }
 
         private Guid CallerId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
@@ -65,6 +72,9 @@ namespace SurveyorLedger.API.Controllers
             Title = r.Title,
             Description = r.Description,
             Category = r.Category,
+            TargetRole = r.TargetRole,
+            TargetUserId = r.TargetUserId,
+            TargetUserName = r.TargetUser != null ? $"{r.TargetUser.FirstName} {r.TargetUser.LastName}" : null,
             Status = r.Status,
             FulfilledDocumentId = r.FulfilledDocumentId,
             FulfilledAt = r.FulfilledAt,

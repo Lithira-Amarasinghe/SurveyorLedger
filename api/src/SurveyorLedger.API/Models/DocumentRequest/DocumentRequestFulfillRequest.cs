@@ -11,4 +11,6 @@ public class DocumentRequestFulfillRequest
 
     [Required(ErrorMessage = "Visibility is required.")]
     public required DocumentVisibility Visibility { get; set; }
+
+    public string? DisplayFileName { get; set; }
 }

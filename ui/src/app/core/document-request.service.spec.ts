@@ -23,6 +23,7 @@ describe('DocumentRequestService', () => {
 
   const sample = {
     requestId: 'r1', jobId, title: 'Legal Deed', description: null, category: 'LegalDocument',
+    targetRole: null, targetUserId: null, targetUserName: null,
     status: 'Pending', fulfilledDocumentId: null, fulfilledAt: null, fulfilledBy: null,
     requestedBy: 'u1', createdAt: '2026-01-01', updatedAt: '2026-01-01'
   };
@@ -34,11 +35,11 @@ describe('DocumentRequestService', () => {
     req.flush({ success: true, data: [sample] });
   });
 
-  it('create() posts title/description/category', () => {
-    service.create(workspaceId, jobId, 'Legal Deed', null, 'LegalDocument').subscribe(result => expect(result).toEqual(sample));
+  it('create() posts title/description/category/targetRole/targetUserId', () => {
+    service.create(workspaceId, jobId, 'Legal Deed', null, 'LegalDocument', null, null).subscribe(result => expect(result).toEqual(sample));
     const req = httpMock.expectOne(base);
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ title: 'Legal Deed', description: null, category: 'LegalDocument' });
+    expect(req.request.body).toEqual({ title: 'Legal Deed', description: null, category: 'LegalDocument', targetRole: null, targetUserId: null });
     req.flush({ success: true, data: sample });
   });
 
@@ -52,10 +53,11 @@ describe('DocumentRequestService', () => {
     req.flush({ success: true, data: fulfilled });
   });
 
-  it('reopen() posts to /{id}/reopen', () => {
-    service.reopen(workspaceId, jobId, 'r1').subscribe(result => expect(result).toEqual(sample));
+  it('reopen() posts to /{id}/reopen with an optional note', () => {
+    service.reopen(workspaceId, jobId, 'r1', 'Scan as PDF.').subscribe(result => expect(result).toEqual(sample));
     const req = httpMock.expectOne(`${base}/r1/reopen`);
     expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ note: 'Scan as PDF.' });
     req.flush({ success: true, data: sample });
   });
 
@@ -64,5 +66,14 @@ describe('DocumentRequestService', () => {
     const req = httpMock.expectOne(`${base}/r1`);
     expect(req.request.method).toBe('DELETE');
     req.flush(null);
+  });
+
+  it('updateTarget() patches the target sub-route', () => {
+    const updated = { ...sample, targetRole: 'Client' };
+    service.updateTarget(workspaceId, jobId, 'r1', 'Client', null).subscribe(result => expect(result).toEqual(updated));
+    const req = httpMock.expectOne(`${base}/r1/target`);
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ targetRole: 'Client', targetUserId: null });
+    req.flush({ success: true, data: updated });
   });
 });

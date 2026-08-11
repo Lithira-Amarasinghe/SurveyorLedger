@@ -14,4 +14,7 @@ public class DocumentRequestCreateRequest
 
     [Required(ErrorMessage = "Category is required.")]
     public required DocumentCategory Category { get; set; }
+
+    public string? TargetRole { get; set; }
+    public Guid? TargetUserId { get; set; }
 }

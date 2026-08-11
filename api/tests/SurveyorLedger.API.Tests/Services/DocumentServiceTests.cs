@@ -191,4 +191,27 @@ public class DocumentServiceTests : WorkspaceIntegrationTestBase
         await Assert.ThrowsAsync<NotFoundException>(() =>
             _documentService.GetFileAsync(WorkspaceId, AdminId, _jobBId, doc.Id));
     }
+
+    [Fact]
+    public async Task Admin_CanUpdateVisibility()
+    {
+        await SeedJobsAsync();
+        var doc = await _documentService.UploadAsync(WorkspaceId, AdminId, _jobAId,
+            MakeFile(), DocumentCategory.Other, DocumentVisibility.Internal);
+
+        var updated = await _documentService.UpdateVisibilityAsync(WorkspaceId, AdminId, _jobAId, doc.Id, DocumentVisibility.ClientVisible);
+
+        Assert.Equal(DocumentVisibility.ClientVisible, updated.Visibility);
+    }
+
+    [Fact]
+    public async Task Client_CannotUpdateVisibility()
+    {
+        await SeedJobsAsync();
+        var doc = await _documentService.UploadAsync(WorkspaceId, AdminId, _jobAId,
+            MakeFile(), DocumentCategory.Other, DocumentVisibility.Internal);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _documentService.UpdateVisibilityAsync(WorkspaceId, ClientId, _jobAId, doc.Id, DocumentVisibility.ClientVisible));
+    }
 }

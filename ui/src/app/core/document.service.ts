@@ -13,6 +13,7 @@ export interface Document {
   category: 'SurveyPlan' | 'LegalDocument' | 'Photo' | 'Other';
   visibility: 'Internal' | 'ClientVisible';
   uploadedBy: string;
+  uploadedByName: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,11 +36,12 @@ export class DocumentService {
     return this.http.get<ApiResponse<Document[]>>(this.base(workspaceId, jobId)).pipe(map(res => res.data));
   }
 
-  upload(workspaceId: string, jobId: string, file: File, category: string, visibility: string): Observable<Document> {
+  upload(workspaceId: string, jobId: string, file: File, category: string, visibility: string, displayFileName?: string): Observable<Document> {
     const form = new FormData();
     form.append('File', file);
     form.append('Category', category);
     form.append('Visibility', visibility);
+    if (displayFileName) form.append('DisplayFileName', displayFileName);
     return this.http.post<ApiResponse<Document>>(this.base(workspaceId, jobId), form).pipe(map(res => res.data));
   }
 
@@ -54,5 +56,11 @@ export class DocumentService {
 
   delete(workspaceId: string, jobId: string, documentId: string): Observable<void> {
     return this.http.delete<void>(`${this.base(workspaceId, jobId)}/${documentId}`);
+  }
+
+  updateVisibility(workspaceId: string, jobId: string, documentId: string, visibility: string): Observable<Document> {
+    return this.http
+      .patch<ApiResponse<Document>>(`${this.base(workspaceId, jobId)}/${documentId}/visibility`, { visibility })
+      .pipe(map(res => res.data));
   }
 }

@@ -10,9 +10,10 @@ namespace SurveyorLedger.API.Services;
 public interface IDocumentService
 {
     Task<List<Document>> GetDocumentsAsync(Guid workspaceId, Guid callerUserId, Guid jobId);
-    Task<Document> UploadAsync(Guid workspaceId, Guid callerUserId, Guid jobId, IFormFile file, DocumentCategory category, DocumentVisibility visibility);
+    Task<Document> UploadAsync(Guid workspaceId, Guid callerUserId, Guid jobId, IFormFile file, DocumentCategory category, DocumentVisibility visibility, string? displayFileName = null);
     Task<(Document Document, Stream Content)> GetFileAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId);
+    Task<Document> UpdateVisibilityAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId, DocumentVisibility visibility);
 }
 
 /// <summary>
@@ -52,6 +53,7 @@ public class DocumentService : IDocumentService
         var callerRole = await GetCallerRoleAsync(callerUserId, workspaceId);
 
         var documents = await _context.Documents
+            .Include(d => d.UploadedByUser)
             .Where(d => d.JobId == jobId && d.IsActive)
             .OrderByDescending(d => d.CreatedAt)
             .ToListAsync();
@@ -59,7 +61,7 @@ public class DocumentService : IDocumentService
         return documents.Where(d => IsVisible(d, callerRole)).ToList();
     }
 
-    public async Task<Document> UploadAsync(Guid workspaceId, Guid callerUserId, Guid jobId, IFormFile file, DocumentCategory category, DocumentVisibility visibility)
+    public async Task<Document> UploadAsync(Guid workspaceId, Guid callerUserId, Guid jobId, IFormFile file, DocumentCategory category, DocumentVisibility visibility, string? displayFileName = null)
     {
         await FindJobAsync(workspaceId, jobId);
         await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
@@ -70,7 +72,13 @@ public class DocumentService : IDocumentService
         if (file.Length > MaxFileSizeBytes)
             throw new ValidationException("File exceeds the 25 MB size limit.");
 
-        var storedRelativePath = $"{workspaceId}/{jobId}/{Guid.NewGuid():N}_{file.FileName}";
+        // Rename keeps the original extension regardless of what the caller typed - the
+        // stored/served ContentType is derived from the real file, not the display name.
+        var fileName = string.IsNullOrWhiteSpace(displayFileName) ? file.FileName : displayFileName.Trim();
+        if (!fileName.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+            fileName += extension;
+
+        var storedRelativePath = $"{workspaceId}/{jobId}/{Guid.NewGuid():N}_{fileName}";
 
         await using (var stream = file.OpenReadStream())
         {
@@ -81,7 +89,7 @@ public class DocumentService : IDocumentService
         {
             Id = Guid.NewGuid(),
             JobId = jobId,
-            FileName = file.FileName,
+            FileName = fileName,
             StoredPath = storedRelativePath,
             ContentType = file.ContentType,
             FileSizeBytes = file.Length,
@@ -95,6 +103,11 @@ public class DocumentService : IDocumentService
 
         await _context.Documents.AddAsync(document);
         await _context.SaveChangesAsync();
+
+        // UploadedBy == callerUserId always here - fetch once so the caller (ToResponse)
+        // can render the uploader's name without a second round trip through this service.
+        document.UploadedByUser = await _context.Users.FindAsync(callerUserId)
+            ?? throw new NotFoundException("Uploading user not found");
 
         _logger.LogInformation("Document {DocumentId} uploaded for job {JobId} by {UserId}", document.Id, jobId, callerUserId);
         return document;
@@ -125,6 +138,18 @@ public class DocumentService : IDocumentService
         await _context.SaveChangesAsync();
     }
 
+    public async Task<Document> UpdateVisibilityAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId, DocumentVisibility visibility)
+    {
+        await FindJobAsync(workspaceId, jobId);
+        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+
+        var document = await FindDocumentAsync(jobId, documentId);
+        document.Visibility = visibility;
+        document.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return document;
+    }
+
     private static bool IsVisible(Document document, string callerRole) =>
         callerRole != Constants.SystemRoles.Client || document.Visibility == DocumentVisibility.ClientVisible;
 
@@ -147,7 +172,8 @@ public class DocumentService : IDocumentService
 
     private async Task<Document> FindDocumentAsync(Guid jobId, Guid documentId)
     {
-        return await _context.Documents.FirstOrDefaultAsync(d => d.Id == documentId && d.JobId == jobId && d.IsActive)
+        return await _context.Documents.Include(d => d.UploadedByUser)
+            .FirstOrDefaultAsync(d => d.Id == documentId && d.JobId == jobId && d.IsActive)
             ?? throw new NotFoundException("Document not found");
     }
 
