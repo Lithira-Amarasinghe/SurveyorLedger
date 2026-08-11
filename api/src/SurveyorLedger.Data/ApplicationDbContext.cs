@@ -25,6 +25,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<LandBoundary> LandBoundaries { get; set; }
     public DbSet<Job> Jobs { get; set; }
     public DbSet<JobLand> JobLands { get; set; }
+    public DbSet<Milestone> Milestones { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -36,5 +37,6 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<UserAccess>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<Land>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<Job>().HasQueryFilter(x => x.IsActive);
+        modelBuilder.Entity<Milestone>().HasQueryFilter(x => x.IsActive);
     }
 }

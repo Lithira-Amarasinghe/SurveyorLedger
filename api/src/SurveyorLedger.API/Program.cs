@@ -95,6 +95,9 @@ builder.Services.AddScoped<ILandService, LandService>();
 // Register job service
 builder.Services.AddScoped<IJobService, JobService>();
 
+// Register milestone service
+builder.Services.AddScoped<IMilestoneService, MilestoneService>();
+
 // Register the shared UserAccess grant/revoke service (workspace-scope and job-scope
 // membership both go through this - see UserAccessGrantService for why).
 builder.Services.AddScoped<IUserAccessGrantService, UserAccessGrantService>();
