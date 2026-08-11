@@ -98,6 +98,10 @@ builder.Services.AddScoped<IJobService, JobService>();
 // Register milestone service
 builder.Services.AddScoped<IMilestoneService, MilestoneService>();
 
+// Register file storage. Local disk for dev - see LocalFileStorageService for the
+// swap-to-Azure-Blob path.
+builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+
 // Register the shared UserAccess grant/revoke service (workspace-scope and job-scope
 // membership both go through this - see UserAccessGrantService for why).
 builder.Services.AddScoped<IUserAccessGrantService, UserAccessGrantService>();
