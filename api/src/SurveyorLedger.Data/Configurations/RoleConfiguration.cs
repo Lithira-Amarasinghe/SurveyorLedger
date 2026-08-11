@@ -9,7 +9,6 @@ public class RoleConfiguration : IEntityTypeConfiguration<Role>
 {
     // Fixed GUIDs required for EF HasData to produce stable migrations.
     public static readonly Guid AdminRoleId = new("00000000-0000-0000-0000-000000000001");
-    public static readonly Guid ManagerRoleId = new("00000000-0000-0000-0000-000000000002");
     public static readonly Guid SurveyorRoleId = new("00000000-0000-0000-0000-000000000003");
     public static readonly Guid ClientRoleId = new("00000000-0000-0000-0000-000000000004");
 
@@ -28,7 +27,6 @@ public class RoleConfiguration : IEntityTypeConfiguration<Role>
         var seededAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         builder.HasData(
             new Role { Id = AdminRoleId, Name = Constants.SystemRoles.Admin, Description = "Full access to workspace settings, members, and data.", WorkspaceId = null, IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
-            new Role { Id = ManagerRoleId, Name = Constants.SystemRoles.Manager, Description = "Manages jobs and surveyors within a workspace.", WorkspaceId = null, IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
             new Role { Id = SurveyorRoleId, Name = Constants.SystemRoles.Surveyor, Description = "Performs assigned survey jobs.", WorkspaceId = null, IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
             new Role { Id = ClientRoleId, Name = Constants.SystemRoles.Client, Description = "Views job status and results for their organization.", WorkspaceId = null, IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt }
         );

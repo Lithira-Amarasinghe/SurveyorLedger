@@ -51,7 +51,6 @@ public static class Constants
     public static class SystemRoles
     {
         public const string Admin = "Admin";
-        public const string Manager = "Manager";
         public const string Surveyor = "Surveyor";
         public const string Client = "Client";
     }

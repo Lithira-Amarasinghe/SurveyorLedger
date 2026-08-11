@@ -179,7 +179,7 @@ public class WorkspaceService : IWorkspaceService
             accesses = accesses.Where(ua => ua.UserId == callerUserId).ToList();
 
         // Which scope types each distinct role has blanket ("view_all") access to - e.g.
-        // Admin/Manager hold job.view_all, so they implicitly see every job without an
+        // Admin holds job.view_all, so they implicitly see every job without an
         // explicit per-job UserAccess row. Computed from whatever view_all permissions
         // are actually seeded, not hardcoded to "Job" - a future organization.view_all
         // grant falls out of this the same way with zero code change here.

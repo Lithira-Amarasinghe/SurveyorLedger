@@ -272,7 +272,7 @@ public class JobService : IJobService
     /// <summary>
     /// Two-part check for any per-job action: the caller's workspace role must grant the
     /// action at all (Casbin, workspace-scoped), and unless the role also grants
-    /// job.view_all (full workspace visibility - Admin/Manager), the caller must hold an
+    /// job.view_all (full workspace visibility - Admin), the caller must hold an
     /// explicit job-scoped UserAccess row for this specific job. Applies uniformly to
     /// view, edit, and delete so a role with workspace-wide job.edit still can't touch a
     /// job it isn't assigned to and can't see.

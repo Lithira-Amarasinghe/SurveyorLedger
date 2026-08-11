@@ -19,7 +19,7 @@ public class MemberResponse
     public DateTime AssignedAt { get; set; }
     public bool IsOwner { get; set; }
 
-    /// <summary>Scope types this member's role has blanket access to (e.g. "Job" for Admin/Manager).</summary>
+    /// <summary>Scope types this member's role has blanket access to (e.g. "Job" for Admin).</summary>
     public List<string> FullAccessScopeTypes { get; set; } = new();
 
     /// <summary>Explicit extra scope grants this member holds (e.g. specific job assignments).</summary>
