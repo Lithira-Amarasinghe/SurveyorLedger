@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SurveyorLedger.API.Models.Land;
 using SurveyorLedger.API.Models.Responses;
 using SurveyorLedger.API.Models.User;
 using SurveyorLedger.API.Services;
+using SurveyorLedger.Data.Entities;
 using System.Security.Claims;
 
 namespace SurveyorLedger.API.Controllers
@@ -32,14 +34,21 @@ namespace SurveyorLedger.API.Controllers
             if (user == null)
                 return NotFound(ApiResponse<object>.Fail("User not found"));
 
-            return Ok(ApiResponse<UserProfileResponse>.Ok(new UserProfileResponse
+            return Ok(ApiResponse<UserProfileResponse>.Ok(ToResponse(user)));
+        }
+
+        [HttpGet("search")]
+        public async Task<ActionResult<ApiResponse<List<UserSearchResponse>>>> Search([FromQuery] string q)
+        {
+            var users = await _authService.SearchUsersAsync(q ?? "");
+            var results = users.Select(u => new UserSearchResponse
             {
-                UserId = user.Id,
-                Email = user.Email,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                CreatedAt = user.CreatedAt
-            }));
+                UserId = u.Id,
+                FirstName = u.FirstName,
+                LastName = u.LastName,
+                Email = u.Email
+            }).ToList();
+            return Ok(ApiResponse<List<UserSearchResponse>>.Ok(results));
         }
 
         [HttpPut("profile")]
@@ -49,8 +58,27 @@ namespace SurveyorLedger.API.Controllers
             if (!Guid.TryParse(userId, out var id))
                 return Unauthorized(ApiResponse<object>.Fail("Invalid user ID"));
 
-            // TODO: Implement profile update logic
-            return BadRequest(ApiResponse<object>.Fail("Not implemented"));
+            var user = await _authService.UpdateProfileAsync(id, request);
+            return Ok(ApiResponse<UserProfileResponse>.Ok(ToResponse(user)));
         }
+
+        private static UserProfileResponse ToResponse(User user) => new()
+        {
+            UserId = user.Id,
+            Email = user.Email,
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            Phone = user.Phone,
+            EmailVerified = user.EmailVerified,
+            Address = new AddressDto
+            {
+                Street = user.Address.Street,
+                City = user.Address.City,
+                District = user.Address.District,
+                PostalCode = user.Address.PostalCode,
+                Country = user.Address.Country
+            },
+            CreatedAt = user.CreatedAt
+        };
     }
 }

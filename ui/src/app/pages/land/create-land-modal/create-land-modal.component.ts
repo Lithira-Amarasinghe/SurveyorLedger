@@ -2,11 +2,12 @@ import { Component, EventEmitter, Input, Output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Address, Land, LandService } from '../../../core/land.service';
+import { OwnerPickerComponent, OwnerValue } from '../owner-picker/owner-picker.component';
 
 @Component({
   selector: 'app-create-land-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, OwnerPickerComponent],
   template: `
     <div class="fixed inset-0 z-50 bg-neutral-900/40 flex items-center justify-center px-lg" (click)="cancel.emit()">
       <div class="card w-full max-w-md" (click)="$event.stopPropagation()">
@@ -32,6 +33,8 @@ import { Address, Land, LandService } from '../../../core/land.service';
             </div>
           </div>
 
+          <app-owner-picker [value]="owner" (valueChange)="owner = $event" />
+
           @if (error()) {
             <p class="text-sm text-primary-500">{{ error() }}</p>
           }
@@ -56,6 +59,7 @@ export class CreateLandModalComponent {
   city = '';
   size: number | null = null;
   sizeUnit = '';
+  owner: OwnerValue = {};
   loading = signal(false);
   error = signal('');
 
@@ -69,7 +73,12 @@ export class CreateLandModalComponent {
     const address: Address = { street: this.street.trim(), city: this.city.trim() || null, district: null, postalCode: null, country: null };
 
     this.landService
-      .create(this.workspaceId, { address, size: this.size ?? undefined, sizeUnit: this.sizeUnit.trim() || undefined })
+      .create(this.workspaceId, {
+        address,
+        size: this.size ?? undefined,
+        sizeUnit: this.sizeUnit.trim() || undefined,
+        ...this.owner
+      })
       .subscribe({
         next: (land) => {
           this.loading.set(false);

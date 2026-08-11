@@ -1,7 +1,14 @@
 using System.ComponentModel.DataAnnotations;
+using SurveyorLedger.API.Models.Land;
 
 namespace SurveyorLedger.API.Models.Invitation;
 
+/// <summary>
+/// The single "add a person to this workspace" request - whether they're brand new or
+/// already have an account elsewhere, nothing is granted until they accept. FirstName/
+/// LastName/Phone/Address only apply when a new User is being created; ignored when the
+/// email matches an existing account (that account's own details are used instead).
+/// </summary>
 public class InvitationRequest
 {
     [Required(ErrorMessage = "Email is required.")]
@@ -12,10 +19,14 @@ public class InvitationRequest
     [RegularExpression("^(Admin|Manager|Surveyor|Client)$", ErrorMessage = "Role must be Admin, Manager, Surveyor, or Client.")]
     public required string Role { get; set; }
 
-    /// <summary>
-    /// Optional - set when inviting a specific pre-existing User (e.g. a client created
-    /// during a call with only a name/phone) to attach this email/login to that exact
-    /// record, instead of the default behavior of matching/creating an account by email.
-    /// </summary>
-    public Guid? UserId { get; set; }
+    [StringLength(100, MinimumLength = 1)]
+    public string? FirstName { get; set; }
+
+    [StringLength(100, MinimumLength = 1)]
+    public string? LastName { get; set; }
+
+    [StringLength(30)]
+    public string? Phone { get; set; }
+
+    public AddressDto? Address { get; set; }
 }

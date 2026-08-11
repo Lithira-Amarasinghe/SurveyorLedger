@@ -10,7 +10,12 @@ namespace SurveyorLedger.API.Services;
 
 public record WorkspaceWithAccess(Workspace Workspace, string Tier, string Role);
 
-public record WorkspaceMember(Guid UserId, string? Email, string FirstName, string LastName, string Role, DateTime AssignedAt, bool IsOwner);
+/// <summary>Another scope this member holds access to beyond the workspace itself - e.g. a specific job.</summary>
+public record MemberScopeGrant(string ScopeType, Guid ScopeId, string Label, string Role);
+
+public record WorkspaceMember(
+    Guid UserId, string Email, string FirstName, string LastName, string Role, DateTime AssignedAt, bool IsOwner,
+    List<string> FullAccessScopeTypes, List<MemberScopeGrant> AdditionalScopes);
 
 public record PermissionInfo(string Name, string Resource, string Action, string Description);
 
@@ -173,12 +178,53 @@ public class WorkspaceService : IWorkspaceService
         if (callerRole == Constants.SystemRoles.Client)
             accesses = accesses.Where(ua => ua.UserId == callerUserId).ToList();
 
+        // Which scope types each distinct role has blanket ("view_all") access to - e.g.
+        // Admin/Manager hold job.view_all, so they implicitly see every job without an
+        // explicit per-job UserAccess row. Computed from whatever view_all permissions
+        // are actually seeded, not hardcoded to "Job" - a future organization.view_all
+        // grant falls out of this the same way with zero code change here.
+        var roleIds = accesses.Select(a => a.RoleId).Distinct().ToList();
+        var viewAllByRole = await _context.RolePermissions
+            .Include(rp => rp.Permission)
+            .Where(rp => roleIds.Contains(rp.RoleId) && rp.Permission.Action == "view_all")
+            .Select(rp => new { rp.RoleId, rp.Permission.Resource })
+            .ToListAsync();
+        var fullAccessByRole = viewAllByRole
+            .GroupBy(x => x.RoleId)
+            .ToDictionary(g => g.Key, g => g.Select(x => Capitalize(x.Resource)).ToList());
+
+        // Every other active scope these members hold beyond the workspace itself (job
+        // assignments today). One extra query, not one per row.
+        var memberIds = accesses.Select(a => a.UserId).ToList();
+        var extraScopes = await _context.UserAccesses
+            .Include(ua => ua.Role)
+            .Where(ua => ua.IsActive && memberIds.Contains(ua.UserId) && ua.ScopeType != Constants.ScopeTypes.Workspace)
+            .ToListAsync();
+
+        var jobIds = extraScopes.Where(s => s.ScopeType == Constants.ScopeTypes.Job).Select(s => s.ScopeId).Distinct().ToList();
+        var jobLabels = await _context.Jobs
+            .Where(j => jobIds.Contains(j.Id))
+            .ToDictionaryAsync(j => j.Id, j => $"{j.JobNumber} · {j.Title}");
+
+        var extraScopesByUser = extraScopes
+            .GroupBy(s => s.UserId)
+            .ToDictionary(g => g.Key, g => g
+                .Select(s => new MemberScopeGrant(
+                    s.ScopeType, s.ScopeId,
+                    s.ScopeType == Constants.ScopeTypes.Job ? jobLabels.GetValueOrDefault(s.ScopeId, "Unknown job") : s.ScopeId.ToString(),
+                    s.Role.Name))
+                .ToList());
+
         return accesses
             .Select(ua => new WorkspaceMember(
-                ua.UserId, ua.User.Email, ua.User.FirstName, ua.User.LastName,
-                ua.Role.Name, ua.AssignedAt, ua.UserId == workspace.OwnerId))
+                ua.UserId, ua.User.Email!, ua.User.FirstName, ua.User.LastName,
+                ua.Role.Name, ua.AssignedAt, ua.UserId == workspace.OwnerId,
+                fullAccessByRole.GetValueOrDefault(ua.RoleId, new List<string>()),
+                extraScopesByUser.GetValueOrDefault(ua.UserId, new List<MemberScopeGrant>())))
             .ToList();
     }
+
+    private static string Capitalize(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
 
     public async Task<List<RoleWithPermissions>> GetWorkspaceRolesAsync(Guid workspaceId, Guid callerUserId)
     {
@@ -229,6 +275,25 @@ public class WorkspaceService : IWorkspaceService
 
         var oldRoleName = access.Role.Name;
 
+        // A member's job-scope grants carry their own copy of the role (AddParticipantAsync
+        // copies it from the workspace row at assignment time), so changing the workspace
+        // role must re-role those too. Leaving them behind means a demoted member keeps
+        // their old, higher permissions on every job they're assigned to - Casbin enforces
+        // the job-scope grouping independently of the workspace one.
+        var workspaceJobIds = await _context.Jobs
+            .Where(j => j.WorkspaceId == workspaceId)
+            .Select(j => j.Id)
+            .ToListAsync();
+        var jobGrants = await _context.UserAccesses
+            .Include(ua => ua.Role)
+            .Where(ua => ua.UserId == targetUserId && ua.IsActive &&
+                ua.ScopeType == Constants.ScopeTypes.Job && workspaceJobIds.Contains(ua.ScopeId))
+            .ToListAsync();
+        var jobGrantsToRerole = jobGrants
+            .Where(ua => ua.RoleId != newRole.Id)
+            .Select(ua => (ua.ScopeId, OldRoleName: ua.Role.Name))
+            .ToList();
+
         // Serializable so a concurrent role-change/removal against the same workspace can't
         // also pass the "at least one other Admin exists" read before either commits its write.
         // Must run through the DB's execution strategy (EnableRetryOnFailure) rather than a
@@ -244,12 +309,25 @@ public class WorkspaceService : IWorkspaceService
 
             access.RoleId = newRole.Id;
             AddAudit("MemberRoleChanged", "UserAccess", access.Id, workspaceId, callerUserId, oldRoleName, newRole.Name);
+
+            foreach (var jobGrant in jobGrants)
+            {
+                jobGrant.RoleId = newRole.Id;
+                jobGrant.UpdatedAt = DateTime.UtcNow;
+            }
+
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
         });
 
         await _casbinService.RemoveRoleForUserAsync(targetUserId.ToString(), oldRoleName, workspaceId.ToString());
         await _casbinService.AddRoleForUserAsync(targetUserId.ToString(), newRole.Name, workspaceId.ToString());
+
+        foreach (var (scopeId, previousRoleName) in jobGrantsToRerole)
+        {
+            await _casbinService.RemoveRoleForUserAsync(targetUserId.ToString(), previousRoleName, scopeId.ToString());
+            await _casbinService.AddRoleForUserAsync(targetUserId.ToString(), newRole.Name, scopeId.ToString());
+        }
 
         return newRole.Name;
     }
@@ -274,6 +352,20 @@ public class WorkspaceService : IWorkspaceService
 
         var roleName = access.Role.Name;
 
+        // Job-scope grants for this workspace's jobs don't disappear on their own -
+        // UserAccess for Workspace and Job scope are separate rows. Leaving them active
+        // would let a removed member still show up as having access to jobs they were
+        // assigned to, despite no longer being a workspace member at all.
+        var workspaceJobIds = await _context.Jobs
+            .Where(j => j.WorkspaceId == workspaceId)
+            .Select(j => j.Id)
+            .ToListAsync();
+        var jobGrants = await _context.UserAccesses
+            .Include(ua => ua.Role)
+            .Where(ua => ua.UserId == targetUserId && ua.IsActive &&
+                ua.ScopeType == Constants.ScopeTypes.Job && workspaceJobIds.Contains(ua.ScopeId))
+            .ToListAsync();
+
         var strategy = _context.Database.CreateExecutionStrategy();
         await strategy.ExecuteAsync(async () =>
         {
@@ -284,11 +376,17 @@ public class WorkspaceService : IWorkspaceService
 
             access.IsActive = false;
             AddAudit("MemberRemoved", "UserAccess", access.Id, workspaceId, callerUserId, roleName, null);
+
+            foreach (var jobGrant in jobGrants)
+                jobGrant.IsActive = false;
+
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
         });
 
         await _casbinService.RemoveRoleForUserAsync(targetUserId.ToString(), roleName, workspaceId.ToString());
+        foreach (var jobGrant in jobGrants)
+            await _casbinService.RemoveRoleForUserAsync(targetUserId.ToString(), jobGrant.Role.Name, jobGrant.ScopeId.ToString());
     }
 
     private async Task EnsureManageMembersAsync(Guid workspaceId, Guid callerUserId)

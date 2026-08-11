@@ -3,6 +3,7 @@ import { LandingComponent } from './pages/landing/landing.component';
 import { LoginComponent } from './pages/auth/login.component';
 import { RegisterComponent } from './pages/auth/register.component';
 import { VerifyOtpComponent } from './pages/auth/verify-otp.component';
+import { ForgotPasswordComponent } from './pages/auth/forgot-password.component';
 import { DashboardComponent } from './pages/dashboard/dashboard.component';
 import { WorkspaceOverviewComponent } from './pages/workspace/overview.component';
 import { MembersComponent } from './pages/workspace/members.component';
@@ -12,9 +13,11 @@ import { JobDetailComponent } from './pages/job/job-detail.component';
 import { LandListComponent } from './pages/land/land-list.component';
 import { LandDetailComponent } from './pages/land/land-detail.component';
 import { AcceptInviteComponent } from './pages/invite/accept-invite.component';
+import { InvitationsComponent } from './pages/invitations/invitations.component';
 import { ProfileComponent } from './pages/profile/profile.component';
 import { AppShellComponent } from './shell/app-shell.component';
 import { authGuard } from './core/auth.guard';
+import { unsavedChangesGuard } from './core/unsaved-changes.guard';
 import { guestGuard } from './core/guest.guard';
 import { workspaceResolveGuard } from './core/workspace-resolve.guard';
 
@@ -27,6 +30,7 @@ export const routes: Routes = [
       { path: 'login', component: LoginComponent, canActivate: [guestGuard] },
       { path: 'register', component: RegisterComponent, canActivate: [guestGuard] },
       { path: 'verify-otp', component: VerifyOtpComponent },
+      { path: 'forgot-password', component: ForgotPasswordComponent, canActivate: [guestGuard] },
     ]
   },
   {
@@ -35,16 +39,17 @@ export const routes: Routes = [
     canActivate: [authGuard],
     children: [
       { path: 'dashboard', component: DashboardComponent },
-      { path: 'profile', component: ProfileComponent },
+      { path: 'profile', component: ProfileComponent, canDeactivate: [unsavedChangesGuard] },
+      { path: 'invitations', component: InvitationsComponent },
       {
         path: 'workspace/:id',
         canActivate: [workspaceResolveGuard],
         children: [
           { path: '', component: WorkspaceOverviewComponent },
           { path: 'jobs', component: JobListComponent },
-          { path: 'jobs/:jobId', component: JobDetailComponent },
+          { path: 'jobs/:jobId', component: JobDetailComponent, canDeactivate: [unsavedChangesGuard] },
           { path: 'lands', component: LandListComponent },
-          { path: 'lands/:landId', component: LandDetailComponent },
+          { path: 'lands/:landId', component: LandDetailComponent, canDeactivate: [unsavedChangesGuard] },
           { path: 'members', component: MembersComponent },
           { path: 'roles', component: RolesComponent },
         ]

@@ -68,7 +68,11 @@ public class RolePermissionConfiguration : IEntityTypeConfiguration<RolePermissi
             Grant(new Guid("00000000-0000-0000-0000-000000000234"), RoleConfiguration.ManagerRoleId, PermissionConfiguration.ViewClientId),
             Grant(new Guid("00000000-0000-0000-0000-000000000235"), RoleConfiguration.ManagerRoleId, PermissionConfiguration.CreateClientId),
             Grant(new Guid("00000000-0000-0000-0000-000000000236"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.ViewClientId),
-            Grant(new Guid("00000000-0000-0000-0000-000000000237"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.CreateClientId)
+            Grant(new Guid("00000000-0000-0000-0000-000000000237"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.CreateClientId),
+            // Job view-all - Admin/Manager see every job in the workspace; Surveyor/Client
+            // are scoped to jobs they've been explicitly assigned (job-scoped UserAccess).
+            Grant(new Guid("00000000-0000-0000-0000-000000000238"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewAllJobId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000239"), RoleConfiguration.ManagerRoleId, PermissionConfiguration.ViewAllJobId)
         );
     }
 }

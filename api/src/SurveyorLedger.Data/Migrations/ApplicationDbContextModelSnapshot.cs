@@ -197,7 +197,13 @@ namespace SurveyorLedger.Data.Migrations
                     b.Property<Guid>("InvitedBy")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("Role")
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ScopeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ScopeType")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
@@ -214,22 +220,21 @@ namespace SurveyorLedger.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
-                    b.Property<Guid?>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("WorkspaceId")
+                    b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
                     b.HasIndex("InvitedBy");
 
+                    b.HasIndex("RoleId");
+
                     b.HasIndex("Token")
                         .IsUnique();
 
                     b.HasIndex("UserId");
 
-                    b.HasIndex("WorkspaceId", "Email");
+                    b.HasIndex("ScopeType", "ScopeId", "Email");
 
                     b.ToTable("Invitations");
                 });
@@ -326,44 +331,6 @@ namespace SurveyorLedger.Data.Migrations
                     b.ToTable("JobLands");
                 });
 
-            modelBuilder.Entity("SurveyorLedger.Data.Entities.JobParticipant", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("AddedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
-
-                    b.Property<Guid>("AddedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid>("JobId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("ParticipantType")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("JobId", "UserId", "ParticipantType")
-                        .IsUnique();
-
-                    b.ToTable("JobParticipants");
-                });
-
             modelBuilder.Entity("SurveyorLedger.Data.Entities.Land", b =>
                 {
                     b.Property<Guid>("Id")
@@ -386,6 +353,21 @@ namespace SurveyorLedger.Data.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<string>("OwnerEmail")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<Guid?>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("OwnerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("OwnerPhone")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
                     b.Property<decimal?>("Size")
                         .HasColumnType("decimal(18,2)");
 
@@ -404,6 +386,8 @@ namespace SurveyorLedger.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("IsActive");
+
+                    b.HasIndex("OwnerId");
 
                     b.HasIndex("WorkspaceId");
 
@@ -727,6 +711,15 @@ namespace SurveyorLedger.Data.Migrations
                             Description = "Create a bare client contact record.",
                             Name = "client.create",
                             Resource = "client"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000115"),
+                            Action = "view_all",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "View every job in the workspace, not just assigned ones.",
+                            Name = "job.view_all",
+                            Resource = "job"
                         });
                 });
 
@@ -1091,6 +1084,20 @@ namespace SurveyorLedger.Data.Migrations
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             PermissionId = new Guid("00000000-0000-0000-0000-000000000114"),
                             RoleId = new Guid("00000000-0000-0000-0000-000000000003")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000238"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000115"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000239"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000115"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000002")
                         });
                 });
 
@@ -1163,6 +1170,9 @@ namespace SurveyorLedger.Data.Migrations
                     b.Property<DateTime?>("EmailVerifiedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<int>("FailedLoginAttempts")
+                        .HasColumnType("int");
+
                     b.Property<string>("FirstName")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1175,6 +1185,9 @@ namespace SurveyorLedger.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("LockoutEndsAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("PasswordHash")
                         .HasColumnType("nvarchar(max)");
@@ -1346,22 +1359,23 @@ namespace SurveyorLedger.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("SurveyorLedger.Data.Entities.User", "TargetUser")
+                    b.HasOne("SurveyorLedger.Data.Entities.Role", "Role")
+                        .WithMany()
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SurveyorLedger.Data.Entities.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("SurveyorLedger.Data.Entities.Workspace", "Workspace")
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("InvitedByUser");
 
-                    b.Navigation("TargetUser");
+                    b.Navigation("Role");
 
-                    b.Navigation("Workspace");
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("SurveyorLedger.Data.Entities.Job", b =>
@@ -1402,27 +1416,13 @@ namespace SurveyorLedger.Data.Migrations
                     b.Navigation("Land");
                 });
 
-            modelBuilder.Entity("SurveyorLedger.Data.Entities.JobParticipant", b =>
-                {
-                    b.HasOne("SurveyorLedger.Data.Entities.Job", "Job")
-                        .WithMany("Participants")
-                        .HasForeignKey("JobId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SurveyorLedger.Data.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Job");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("SurveyorLedger.Data.Entities.Land", b =>
                 {
+                    b.HasOne("SurveyorLedger.Data.Entities.User", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SurveyorLedger.Data.Entities.Workspace", "Workspace")
                         .WithMany()
                         .HasForeignKey("WorkspaceId")
@@ -1469,6 +1469,8 @@ namespace SurveyorLedger.Data.Migrations
 
                     b.Navigation("Address")
                         .IsRequired();
+
+                    b.Navigation("Owner");
 
                     b.Navigation("Workspace");
                 });
@@ -1617,8 +1619,6 @@ namespace SurveyorLedger.Data.Migrations
             modelBuilder.Entity("SurveyorLedger.Data.Entities.Job", b =>
                 {
                     b.Navigation("Lands");
-
-                    b.Navigation("Participants");
                 });
 
             modelBuilder.Entity("SurveyorLedger.Data.Entities.Land", b =>

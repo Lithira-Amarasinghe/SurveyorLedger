@@ -8,6 +8,7 @@ namespace SurveyorLedger.API.Services;
 public interface IEmailService
 {
     Task SendVerificationOtpAsync(string email, string otpCode, int expirationMinutes);
+    Task SendPasswordResetOtpAsync(string email, string otpCode, int expirationMinutes);
     Task SendWelcomeEmailAsync(string email, string firstName);
     Task SendInviteEmailAsync(string email, string workspaceName, string inviteUrl);
 }
@@ -35,6 +36,18 @@ public class EmailService : IEmailService
 
         var subject = "Your OTP Code";
         var body = $"Your verification code is: {otpCode}. It expires in {expirationMinutes} minute{(expirationMinutes == 1 ? "" : "s")}.";
+        await SendEmailAsync(email, subject, body);
+    }
+
+    public async Task SendPasswordResetOtpAsync(string email, string otpCode, int expirationMinutes)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+            throw new ValidationException("Email is required");
+        if (string.IsNullOrWhiteSpace(otpCode))
+            throw new ValidationException("OTP code is required");
+
+        var subject = "Reset your password";
+        var body = $"Your password reset code is: {otpCode}. It expires in {expirationMinutes} minute{(expirationMinutes == 1 ? "" : "s")}. If you didn't request this, you can ignore this email.";
         await SendEmailAsync(email, subject, body);
     }
 

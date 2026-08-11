@@ -33,65 +33,76 @@ import { AuthService } from '../../core/auth.service';
             @if (acceptError()) {
               <p class="text-sm text-primary-500 mt-lg">{{ acceptError() }}</p>
             }
-            <button class="btn-primary w-full mt-lg" [disabled]="accepting()" (click)="accept()">
-              {{ accepting() ? 'Joining…' : 'Accept invite' }}
-            </button>
-          } @else {
-            <div class="flex gap-sm mt-lg border-b border-neutral-200">
-              <button
-                type="button"
-                class="px-md py-sm text-sm font-medium border-b-2 -mb-px"
-                [class.border-primary-500]="mode() === 'login'"
-                [class.text-primary-600]="mode() === 'login'"
-                [class.border-transparent]="mode() !== 'login'"
-                [class.text-neutral-500]="mode() !== 'login'"
-                (click)="mode.set('login')"
-              >Sign in</button>
-              <button
-                type="button"
-                class="px-md py-sm text-sm font-medium border-b-2 -mb-px"
-                [class.border-primary-500]="mode() === 'register'"
-                [class.text-primary-600]="mode() === 'register'"
-                [class.border-transparent]="mode() !== 'register'"
-                [class.text-neutral-500]="mode() !== 'register'"
-                (click)="mode.set('register')"
-              >Create account</button>
+            <div class="flex gap-sm mt-lg">
+              <button class="btn-secondary flex-1" [disabled]="accepting() || declining()" (click)="decline()">
+                {{ declining() ? 'Declining…' : 'Decline' }}
+              </button>
+              <button class="btn-primary flex-1" [disabled]="accepting() || declining()" (click)="accept()">
+                {{ accepting() ? 'Joining…' : 'Accept' }}
+              </button>
             </div>
-
-            <form class="mt-lg space-y-md" (ngSubmit)="submitAuth()">
-              @if (mode() === 'register') {
-                <div class="grid grid-cols-2 gap-md">
-                  <div>
-                    <label class="block text-xs font-medium text-neutral-700 mb-xs">First name</label>
-                    <input class="input-field" type="text" name="firstName" [(ngModel)]="firstName" required />
-                  </div>
-                  <div>
-                    <label class="block text-xs font-medium text-neutral-700 mb-xs">Last name</label>
-                    <input class="input-field" type="text" name="lastName" [(ngModel)]="lastName" required />
-                  </div>
-                </div>
-              }
+          } @else if (p.hasLogin) {
+            <form class="mt-lg space-y-md" (ngSubmit)="signIn()">
               <div>
                 <label class="block text-xs font-medium text-neutral-700 mb-xs">Email</label>
-                <input class="input-field" type="email" name="email" [value]="p.email" disabled />
+                <input class="input-field" type="email" [value]="p.email" disabled />
               </div>
               <div>
                 <label class="block text-xs font-medium text-neutral-700 mb-xs">Password</label>
-                <input class="input-field" type="password" name="password" [(ngModel)]="password" required minlength="8" [autocomplete]="mode() === 'register' ? 'new-password' : 'current-password'" />
+                <input class="input-field" type="password" name="password" [(ngModel)]="password" required minlength="8" autocomplete="current-password" />
               </div>
-              @if (mode() === 'register') {
-                <div>
-                  <label class="block text-xs font-medium text-neutral-700 mb-xs">Confirm password</label>
-                  <input class="input-field" type="password" name="confirmPassword" [(ngModel)]="confirmPassword" required autocomplete="new-password" />
-                </div>
-              }
 
               @if (authError()) {
                 <p class="text-sm text-primary-500">{{ authError() }}</p>
               }
+              @if (acceptError()) {
+                <p class="text-sm text-primary-500">{{ acceptError() }}</p>
+              }
 
               <button class="btn-primary w-full" type="submit" [disabled]="authLoading()">
-                {{ authLoading() ? 'Please wait…' : (mode() === 'login' ? 'Sign in' : 'Create account') }}
+                {{ authLoading() ? 'Signing in…' : 'Sign in to review invite' }}
+              </button>
+              <button type="button" class="btn-secondary w-full" [disabled]="declining()" (click)="declineByToken()">
+                {{ declining() ? 'Declining…' : 'Decline invite' }}
+              </button>
+            </form>
+          } @else {
+            <form class="mt-lg space-y-md" (ngSubmit)="completeAccount()">
+              <div class="grid grid-cols-2 gap-md">
+                <div>
+                  <label class="block text-xs font-medium text-neutral-700 mb-xs">First name</label>
+                  <input class="input-field" type="text" name="firstName" [(ngModel)]="firstName" required />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-neutral-700 mb-xs">Last name</label>
+                  <input class="input-field" type="text" name="lastName" [(ngModel)]="lastName" required />
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-neutral-700 mb-xs">Email</label>
+                <input class="input-field" type="email" [value]="p.email" disabled />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-neutral-700 mb-xs">Password</label>
+                <input class="input-field" type="password" name="password" [(ngModel)]="password" required minlength="8" autocomplete="new-password" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-neutral-700 mb-xs">Confirm password</label>
+                <input class="input-field" type="password" name="confirmPassword" [(ngModel)]="confirmPassword" required autocomplete="new-password" />
+              </div>
+
+              @if (authError()) {
+                <p class="text-sm text-primary-500">{{ authError() }}</p>
+              }
+              @if (acceptError()) {
+                <p class="text-sm text-primary-500">{{ acceptError() }}</p>
+              }
+
+              <button class="btn-primary w-full" type="submit" [disabled]="authLoading()">
+                {{ authLoading() ? 'Please wait…' : 'Set password and join' }}
+              </button>
+              <button type="button" class="btn-secondary w-full" [disabled]="declining()" (click)="declineByToken()">
+                {{ declining() ? 'Declining…' : 'Decline invite' }}
               </button>
             </form>
           }
@@ -108,7 +119,6 @@ export class AcceptInviteComponent implements OnInit {
 
   authenticated = signal(false);
   mismatchEmail = signal('');
-  mode = signal<'login' | 'register'>('login');
 
   firstName = '';
   lastName = '';
@@ -118,6 +128,7 @@ export class AcceptInviteComponent implements OnInit {
   authError = signal('');
 
   accepting = signal(false);
+  declining = signal(false);
   acceptError = signal('');
 
   constructor(
@@ -163,36 +174,17 @@ export class AcceptInviteComponent implements OnInit {
     });
   }
 
-  submitAuth(): void {
+  signIn(): void {
     const preview = this.preview();
     if (!preview) return;
 
     this.authError.set('');
-
-    if (this.mode() === 'register') {
-      if (this.password !== this.confirmPassword) {
-        this.authError.set('Passwords do not match.');
-        return;
-      }
-
-      this.authLoading.set(true);
-      this.invitationService.registerFromInvitation(this.token, this.password, this.confirmPassword, this.firstName, this.lastName).subscribe({
-        next: () => {
-          // Account is created already verified and the invite is auto-accepted server-side -
-          // no tokens are issued, so send them to log in like any other new account.
-          this.router.navigate(['/auth/login'], { queryParams: { verified: '1', email: preview.email } });
-        },
-        error: (err) => {
-          this.authLoading.set(false);
-          this.authError.set(err.error?.message ?? 'Could not create your account.');
-        }
-      });
-      return;
-    }
-
     this.authLoading.set(true);
     this.authService.login(preview.email, this.password).subscribe({
-      next: () => this.accept(),
+      // Don't auto-accept - the authenticated()-branch subscription (checkAuthState) flips
+      // the view to the manual Accept/Decline buttons for this invitation as soon as login
+      // succeeds. The person has to actually click one.
+      next: () => this.authLoading.set(false),
       error: (err) => {
         this.authLoading.set(false);
         const message = err.error?.message ?? 'Something went wrong.';
@@ -207,12 +199,41 @@ export class AcceptInviteComponent implements OnInit {
     });
   }
 
+  completeAccount(): void {
+    const preview = this.preview();
+    if (!preview) return;
+
+    this.authError.set('');
+    if (this.password !== this.confirmPassword) {
+      this.authError.set('Passwords do not match.');
+      return;
+    }
+
+    this.authLoading.set(true);
+    this.invitationService.completeInvitation(this.token, this.password, this.confirmPassword, this.firstName, this.lastName).subscribe({
+      next: () => {
+        // Account is created (verified) but the invite is NOT auto-accepted - send them to
+        // log in, then straight back here so they get an explicit Accept/Decline choice.
+        this.router.navigate(['/auth/login'], {
+          queryParams: { verified: '1', email: preview.email, returnUrl: `/invite/${this.token}` }
+        });
+      },
+      error: (err) => {
+        this.authLoading.set(false);
+        this.authError.set(err.error?.message ?? 'Could not set up your account.');
+      }
+    });
+  }
+
   accept(): void {
+    const preview = this.preview();
+    if (!preview) return;
+
     this.authLoading.set(false);
     this.acceptError.set('');
     this.accepting.set(true);
 
-    this.invitationService.accept(this.token).subscribe({
+    this.invitationService.accept(preview.invitationId).subscribe({
       next: (result) => this.router.navigate(['/app/workspace', result.workspaceId]),
       error: (err) => {
         this.accepting.set(false);
@@ -225,6 +246,36 @@ export class AcceptInviteComponent implements OnInit {
         } else {
           this.acceptError.set(message);
         }
+      }
+    });
+  }
+
+  decline(): void {
+    const preview = this.preview();
+    if (!preview) return;
+
+    this.acceptError.set('');
+    this.declining.set(true);
+
+    this.invitationService.decline(preview.invitationId).subscribe({
+      next: () => this.router.navigate(['/invitations']),
+      error: (err) => {
+        this.declining.set(false);
+        this.acceptError.set(err.error?.message ?? 'Could not decline the invite.');
+      }
+    });
+  }
+
+  /** Decline before ever logging in - the only option available to a not-yet-registered invitee. */
+  declineByToken(): void {
+    this.acceptError.set('');
+    this.declining.set(true);
+
+    this.invitationService.declineByToken(this.token).subscribe({
+      next: () => this.router.navigate(['/auth/login']),
+      error: (err) => {
+        this.declining.set(false);
+        this.acceptError.set(err.error?.message ?? 'Could not decline the invite.');
       }
     });
   }

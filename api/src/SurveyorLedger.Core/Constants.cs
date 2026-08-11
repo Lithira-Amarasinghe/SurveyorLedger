@@ -35,6 +35,8 @@ public static class Constants
         public const string RegistrationExpired = "REGISTRATION_EXPIRED";
         public const string ResendCooldown = "RESEND_COOLDOWN";
         public const string EmailAlreadySet = "EMAIL_ALREADY_SET";
+        public const string AccountLocked = "ACCOUNT_LOCKED";
+        public const string TooManyRequests = "TOO_MANY_REQUESTS";
     }
 
     public static class Permissions

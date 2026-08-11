@@ -17,13 +17,12 @@ export interface Job {
 }
 
 export interface JobParticipant {
-  id: string;
   userId: string;
   firstName: string;
   lastName: string;
   email: string | null;
-  participantType: string;
-  addedAt: string;
+  role: string;
+  assignedAt: string;
 }
 
 interface ApiResponse<T> {
@@ -64,9 +63,9 @@ export class JobService {
     return this.http.get<ApiResponse<JobParticipant[]>>(`${this.base(workspaceId)}/${jobId}/participants`).pipe(map(res => res.data));
   }
 
-  addParticipant(workspaceId: string, jobId: string, userId: string, participantType: string): Observable<JobParticipant> {
+  addParticipant(workspaceId: string, jobId: string, userId: string): Observable<JobParticipant> {
     return this.http
-      .post<ApiResponse<JobParticipant>>(`${this.base(workspaceId)}/${jobId}/participants/${userId}`, { participantType })
+      .post<ApiResponse<JobParticipant>>(`${this.base(workspaceId)}/${jobId}/participants/${userId}`, {})
       .pipe(map(res => res.data));
   }
 

@@ -14,6 +14,14 @@ export interface Workspace {
   role: string;
 }
 
+/** An extra scope a member holds access to beyond the workspace itself - today, a specific job. */
+export interface MemberScopeGrant {
+  scopeType: string;
+  scopeId: string;
+  label: string;
+  role: string;
+}
+
 export interface Member {
   userId: string;
   email: string;
@@ -22,6 +30,10 @@ export interface Member {
   role: string;
   assignedAt: string;
   isOwner: boolean;
+  /** Scope types this member's role grants blanket access to (e.g. "Job" for Admin). */
+  fullAccessScopeTypes: string[];
+  /** Explicit per-scope grants, e.g. individual job assignments. */
+  additionalScopes: MemberScopeGrant[];
 }
 
 export interface Permission {

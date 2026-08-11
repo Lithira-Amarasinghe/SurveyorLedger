@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using System.Threading.RateLimiting;
 using SurveyorLedger.API.Services;
 using SurveyorLedger.API.Middleware;
 using SurveyorLedger.Data;
@@ -26,6 +27,32 @@ builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options 
 
         return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(
             SurveyorLedger.API.Models.Responses.ApiResponse<object>.Fail("Validation failed", errors));
+    };
+});
+
+// Per-IP throttle on the auth endpoints. This is the other half of brute-force defence
+// from the per-account lockout in AuthService: lockout stops someone hammering one
+// account, this stops spraying many accounts from one source and stops the OTP/
+// forgot-password endpoints being used to bomb an inbox. Built-in limiter, no dependency.
+const string AuthRateLimitPolicy = "auth";
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddPolicy(AuthRateLimitPolicy, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = builder.Configuration.GetValue("RateLimiting:AuthPermitLimit", 10),
+                Window = TimeSpan.FromMinutes(builder.Configuration.GetValue("RateLimiting:AuthWindowMinutes", 1)),
+                QueueLimit = 0
+            }));
+
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            SurveyorLedger.API.Models.Responses.ApiResponse<object>.Fail("Too many requests. Please wait a moment and try again."),
+            cancellationToken);
     };
 });
 
@@ -68,8 +95,9 @@ builder.Services.AddScoped<ILandService, LandService>();
 // Register job service
 builder.Services.AddScoped<IJobService, JobService>();
 
-// Register client service
-builder.Services.AddScoped<IClientService, ClientService>();
+// Register the shared UserAccess grant/revoke service (workspace-scope and job-scope
+// membership both go through this - see UserAccessGrantService for why).
+builder.Services.AddScoped<IUserAccessGrantService, UserAccessGrantService>();
 
 // Register RBAC service. Singleton: the enforcer is shared in-memory state that must
 // survive across requests, not per-request scoped state.
@@ -115,6 +143,7 @@ app.UseMiddleware<ErrorHandlingMiddleware>();
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseCors(UiCorsPolicy);
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<TenantMiddleware>();

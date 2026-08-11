@@ -21,6 +21,11 @@ export interface Land {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Set when the owner is a real account. Null when the owner is only plain contact info. */
+  ownerId: string | null;
+  ownerName: string | null;
+  ownerPhone: string | null;
+  ownerEmail: string | null;
 }
 
 export interface LandRequest {
@@ -29,6 +34,11 @@ export interface LandRequest {
   sizeUnit?: string;
   gpsCoordinates?: string;
   notes?: string;
+  /** Either ownerId (an existing account) or ownerName/-Phone/-Email - never both. */
+  ownerId?: string;
+  ownerName?: string;
+  ownerPhone?: string;
+  ownerEmail?: string;
 }
 
 export interface LandSurvey {

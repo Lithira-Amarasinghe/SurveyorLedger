@@ -177,7 +177,11 @@ describe('addressLine', () => {
     gpsCoordinates: null,
     notes: null,
     createdAt: '2026-01-01',
-    updatedAt: '2026-01-01'
+    updatedAt: '2026-01-01',
+    ownerId: null,
+    ownerName: null,
+    ownerPhone: null,
+    ownerEmail: null
   };
 
   it('joins street and city with a comma', () => {

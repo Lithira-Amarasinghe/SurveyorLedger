@@ -80,10 +80,10 @@ namespace SurveyorLedger.API.Controllers
         }
 
         [HttpPost("{id}/participants/{userId}")]
-        public async Task<ActionResult<ApiResponse<JobParticipantResponse>>> AddParticipant(Guid workspaceId, Guid id, Guid userId, [FromBody] JobParticipantRequest request)
+        public async Task<ActionResult<ApiResponse<JobParticipantResponse>>> AddParticipant(Guid workspaceId, Guid id, Guid userId)
         {
             var callerId = CallerId();
-            var participant = await _jobService.AddParticipantAsync(workspaceId, callerId, id, userId, request.ParticipantType);
+            var participant = await _jobService.AddParticipantAsync(workspaceId, callerId, id, userId);
             return Ok(ApiResponse<JobParticipantResponse>.Ok(ToResponse(participant)));
         }
 
@@ -133,15 +133,14 @@ namespace SurveyorLedger.API.Controllers
             UpdatedAt = j.UpdatedAt
         };
 
-        private static JobParticipantResponse ToResponse(JobParticipant p) => new()
+        private static JobParticipantResponse ToResponse(UserAccess p) => new()
         {
-            Id = p.Id,
             UserId = p.UserId,
             FirstName = p.User.FirstName,
             LastName = p.User.LastName,
             Email = p.User.Email,
-            ParticipantType = p.ParticipantType,
-            AddedAt = p.AddedAt
+            Role = p.Role.Name,
+            AssignedAt = p.AssignedAt
         };
 
         private static LandResponse ToResponse(Land l) => new()

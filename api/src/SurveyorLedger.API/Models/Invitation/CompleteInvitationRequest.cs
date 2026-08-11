@@ -1,12 +1,14 @@
 using System.ComponentModel.DataAnnotations;
+using SurveyorLedger.API.Models.Land;
 
 namespace SurveyorLedger.API.Models.Invitation;
 
 /// <summary>
-/// Request model for creating an account directly from an invitation link. Email is not
-/// part of this request - it comes from the invitation itself and can't be spoofed.
+/// Request for completing an invitation when the account has no password yet - sets the
+/// password and lets the person review/edit the name/phone/address an admin pre-filled.
+/// Email is not part of this request - it comes from the invitation itself.
 /// </summary>
-public class RegisterFromInvitationRequest
+public class CompleteInvitationRequest
 {
     [Required(ErrorMessage = "Password is required.")]
     [StringLength(256, MinimumLength = 8, ErrorMessage = "Password must be between 8 and 256 characters.")]
@@ -23,4 +25,9 @@ public class RegisterFromInvitationRequest
     [Required(ErrorMessage = "LastName is required.")]
     [StringLength(100, MinimumLength = 1, ErrorMessage = "LastName must be between 1 and 100 characters.")]
     public required string LastName { get; set; }
+
+    [StringLength(30)]
+    public string? Phone { get; set; }
+
+    public AddressDto? Address { get; set; }
 }

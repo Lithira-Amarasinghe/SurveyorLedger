@@ -1,11 +1,19 @@
 namespace SurveyorLedger.Data.Entities;
 
+/// <summary>
+/// A pending grant: create the User (if needed) and the Invitation together, up front,
+/// but never touch UserAccess until they accept. ScopeType/ScopeId mirrors UserAccess's
+/// shape - today always ("Workspace", workspaceId), but consistent with the rest of the
+/// system if a different scope type is ever invited into directly.
+/// </summary>
 public class Invitation
 {
     public Guid Id { get; set; }
-    public Guid WorkspaceId { get; set; }
+    public Guid UserId { get; set; }
     public string Email { get; set; }
-    public string Role { get; set; }
+    public string ScopeType { get; set; }
+    public Guid ScopeId { get; set; }
+    public Guid RoleId { get; set; }
     public string Token { get; set; }
     public Guid InvitedBy { get; set; }
     public DateTime ExpiresAt { get; set; }
@@ -13,14 +21,7 @@ public class Invitation
     public bool EmailFailed { get; set; }
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>
-    /// Set when this invitation is meant to attach an email/login to a specific
-    /// pre-existing User row (a client created during a call, with no email yet) rather
-    /// than to create a brand-new account. Null for ordinary staff invites.
-    /// </summary>
-    public Guid? UserId { get; set; }
-
-    public Workspace Workspace { get; set; }
+    public User User { get; set; }
+    public Role Role { get; set; }
     public User InvitedByUser { get; set; }
-    public User? TargetUser { get; set; }
 }

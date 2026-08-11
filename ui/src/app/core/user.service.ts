@@ -4,11 +4,26 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 
+// Address is the app's one address shape - reused rather than redeclared. Both services
+// live in core/, so this is a flat import, not a layering dependency.
+import { Address } from './land.service';
+
 export interface UserProfile {
   userId: string;
-  email: string;
+  email: string | null;
   firstName: string;
   lastName: string;
+  phone: string | null;
+  address: Address | null;
+  emailVerified: boolean;
+  createdAt: string;
+}
+
+export interface UpdateProfileRequest {
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  address?: Partial<Address>;
 }
 
 interface ApiResponse<T> {
@@ -27,7 +42,7 @@ export class UserService {
     return this.http.get<ApiResponse<UserProfile>>(`${this.apiUrl}/profile`).pipe(map(res => res.data));
   }
 
-  updateProfile(firstName: string, lastName: string): Observable<UserProfile> {
-    return this.http.put<ApiResponse<UserProfile>>(`${this.apiUrl}/profile`, { firstName, lastName }).pipe(map(res => res.data));
+  updateProfile(request: UpdateProfileRequest): Observable<UserProfile> {
+    return this.http.put<ApiResponse<UserProfile>>(`${this.apiUrl}/profile`, request).pipe(map(res => res.data));
   }
 }

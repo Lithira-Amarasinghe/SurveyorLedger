@@ -20,6 +20,7 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
     public static readonly Guid DeleteJobId = new("00000000-0000-0000-0000-000000000112");
     public static readonly Guid ViewClientId = new("00000000-0000-0000-0000-000000000113");
     public static readonly Guid CreateClientId = new("00000000-0000-0000-0000-000000000114");
+    public static readonly Guid ViewAllJobId = new("00000000-0000-0000-0000-000000000115");
 
     public void Configure(EntityTypeBuilder<Permission> builder)
     {
@@ -49,7 +50,8 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
             new Permission { Id = EditJobId, Name = "job.edit", Description = "Edit jobs, participants, and land links.", Resource = "job", Action = "edit", Scope = null, CreatedAt = seededAt },
             new Permission { Id = DeleteJobId, Name = "job.delete", Description = "Delete jobs.", Resource = "job", Action = "delete", Scope = null, CreatedAt = seededAt },
             new Permission { Id = ViewClientId, Name = "client.view", Description = "Search/view client contact records.", Resource = "client", Action = "view", Scope = null, CreatedAt = seededAt },
-            new Permission { Id = CreateClientId, Name = "client.create", Description = "Create a bare client contact record.", Resource = "client", Action = "create", Scope = null, CreatedAt = seededAt }
+            new Permission { Id = CreateClientId, Name = "client.create", Description = "Create a bare client contact record.", Resource = "client", Action = "create", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = ViewAllJobId, Name = "job.view_all", Description = "View every job in the workspace, not just assigned ones.", Resource = "job", Action = "view_all", Scope = null, CreatedAt = seededAt }
         );
     }
 }

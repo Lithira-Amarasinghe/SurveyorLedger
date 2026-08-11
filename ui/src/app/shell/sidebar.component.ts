@@ -100,6 +100,14 @@ import { CurrentWorkspaceService } from '../core/current-workspace.service';
           >
             Profile
           </a>
+          <a
+            routerLink="/app/invitations"
+            routerLinkActive="bg-primary-50 text-primary-600"
+            class="flex items-center gap-sm px-md py-sm rounded text-sm text-neutral-700 hover:bg-neutral-100"
+            (click)="navigate.emit()"
+          >
+            Invitations
+          </a>
         </div>
 
         <div class="px-sm">

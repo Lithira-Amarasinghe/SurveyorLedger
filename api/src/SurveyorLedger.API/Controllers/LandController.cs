@@ -176,7 +176,11 @@ namespace SurveyorLedger.API.Controllers
             GpsCoordinates = l.GpsCoordinates,
             Notes = l.Notes,
             CreatedAt = l.CreatedAt,
-            UpdatedAt = l.UpdatedAt
+            UpdatedAt = l.UpdatedAt,
+            OwnerId = l.OwnerId,
+            OwnerName = l.Owner != null ? $"{l.Owner.FirstName} {l.Owner.LastName}" : l.OwnerName,
+            OwnerPhone = l.Owner != null ? l.Owner.Phone : l.OwnerPhone,
+            OwnerEmail = l.Owner != null ? l.Owner.Email : l.OwnerEmail
         };
 
         private static LandSurveyResponse ToResponse(LandSurvey s) => new()

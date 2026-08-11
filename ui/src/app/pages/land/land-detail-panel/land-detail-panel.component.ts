@@ -3,11 +3,12 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { Address, Land, LandBoundary, LandDeed, LandService, LandSurvey } from '../../../core/land.service';
+import { OwnerPickerComponent, OwnerValue } from '../owner-picker/owner-picker.component';
 
 @Component({
   selector: 'app-land-detail-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, OwnerPickerComponent],
   template: `
     @if (loading()) {
       <p class="text-sm text-neutral-500">Loading…</p>
@@ -19,9 +20,26 @@ import { Address, Land, LandBoundary, LandDeed, LandService, LandSurvey } from '
     } @else {
       <div class="space-y-lg">
         <div>
-          <div class="flex items-center justify-between mb-sm">
-            <h3 class="text-xs font-semibold text-neutral-500 uppercase">Details</h3>
-            @if (confirmingDelete()) {
+          <div class="flex items-center justify-between mb-sm gap-sm">
+            <div class="flex items-center gap-sm">
+              <h3 class="text-xs font-semibold text-neutral-500 uppercase">Details</h3>
+              @if (detailsDirty()) {
+                <span class="text-xs text-amber-600">Unsaved changes</span>
+              }
+            </div>
+            @if (detailsDirty()) {
+              <span class="flex items-center gap-sm">
+                @if (detailsError()) {
+                  <span class="text-xs text-primary-500">{{ detailsError() }}</span>
+                }
+                <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" [disabled]="savingDetails()" (click)="discardDetails()">
+                  Discard
+                </button>
+                <button type="button" class="text-xs text-primary-500 hover:text-primary-600 font-medium" [disabled]="savingDetails()" (click)="saveDetails()">
+                  {{ savingDetails() ? 'Saving…' : 'Save changes' }}
+                </button>
+              </span>
+            } @else if (confirmingDelete()) {
               <span class="text-xs text-neutral-600">
                 Delete this land record?
                 <button type="button" class="text-primary-500 font-medium ml-xs" [disabled]="deleting()" (click)="confirmDelete()">
@@ -36,14 +54,22 @@ import { Address, Land, LandBoundary, LandDeed, LandService, LandSurvey } from '
             }
           </div>
           <div class="grid grid-cols-2 gap-sm">
-            <input class="input-field" placeholder="Street" [(ngModel)]="street" (blur)="saveDetails()" />
-            <input class="input-field" placeholder="City" [(ngModel)]="city" (blur)="saveDetails()" />
-            <input class="input-field" placeholder="District" [(ngModel)]="district" (blur)="saveDetails()" />
-            <input class="input-field" type="number" placeholder="Size" [(ngModel)]="size" (blur)="saveDetails()" />
-            <input class="input-field" placeholder="Unit" [(ngModel)]="sizeUnit" (blur)="saveDetails()" />
-            <input class="input-field" placeholder="GPS coordinates" [(ngModel)]="gpsCoordinates" (blur)="saveDetails()" />
+            <input class="input-field" placeholder="Street" [(ngModel)]="street" />
+            <input class="input-field" placeholder="City" [(ngModel)]="city" />
+            <input class="input-field" placeholder="District" [(ngModel)]="district" />
+            <input class="input-field" type="number" placeholder="Size" [(ngModel)]="size" />
+            <input class="input-field" placeholder="Unit" [(ngModel)]="sizeUnit" />
+            <input class="input-field" placeholder="GPS coordinates" [(ngModel)]="gpsCoordinates" />
           </div>
-          <textarea class="input-field mt-sm" rows="2" placeholder="Notes" [(ngModel)]="notes" (blur)="saveDetails()"></textarea>
+          <textarea class="input-field mt-sm" rows="2" placeholder="Notes" [(ngModel)]="notes"></textarea>
+
+          <div class="mt-sm">
+            <app-owner-picker
+              [value]="owner"
+              [initialAccountLabel]="ownerLabel"
+              (valueChange)="onOwnerChange($event)"
+            />
+          </div>
         </div>
 
         <div>
@@ -204,10 +230,15 @@ export class LandDetailPanelComponent implements OnInit {
   land = signal<Land | null>(null);
   confirmingDelete = signal(false);
   deleting = signal(false);
+  savingDetails = signal(false);
+  detailsError = signal('');
   surveys = signal<LandSurvey[]>([]);
   deeds = signal<LandDeed[]>([]);
   boundaries = signal<LandBoundary[]>([]);
 
+  owner: OwnerValue = {};
+  /** Display name for an existing account owner, so the picker can render it without a re-fetch. */
+  ownerLabel: string | null = null;
   street = '';
   city = '';
   district = '';
@@ -260,6 +291,13 @@ export class LandDetailPanelComponent implements OnInit {
         this.sizeUnit = land.sizeUnit ?? '';
         this.gpsCoordinates = land.gpsCoordinates ?? '';
         this.notes = land.notes ?? '';
+        this.owner = land.ownerId
+          ? { ownerId: land.ownerId, ownerEmail: land.ownerEmail ?? undefined }
+          : land.ownerName
+            ? { ownerName: land.ownerName, ownerPhone: land.ownerPhone ?? undefined, ownerEmail: land.ownerEmail ?? undefined }
+            : {};
+        this.ownerLabel = land.ownerId ? land.ownerName : null;
+        this.storedDetails = this.snapshotDetails();
         this.surveys.set(surveys);
         this.deeds.set(deeds);
         this.boundaries.set(boundaries);
@@ -284,9 +322,50 @@ export class LandDetailPanelComponent implements OnInit {
     });
   }
 
-  saveDetails(): void {
+  /** Snapshot of Details as last loaded/saved, so edits (including the owner) can be detected and discarded. */
+  private storedDetails = '';
+
+  private snapshotDetails(): string {
+    return JSON.stringify({
+      street: this.street, city: this.city, district: this.district,
+      size: this.size, sizeUnit: this.sizeUnit, gpsCoordinates: this.gpsCoordinates,
+      notes: this.notes, owner: this.owner
+    });
+  }
+
+  detailsDirty(): boolean {
+    return this.snapshotDetails() !== this.storedDetails;
+  }
+
+  /** The picker has no blur of its own - it just marks Details dirty like every other field. */
+  onOwnerChange(value: OwnerValue): void {
+    this.owner = value;
+  }
+
+  discardDetails(): void {
     const current = this.land();
     if (!current) return;
+    this.street = current.address.street ?? '';
+    this.city = current.address.city ?? '';
+    this.district = current.address.district ?? '';
+    this.size = current.size;
+    this.sizeUnit = current.sizeUnit ?? '';
+    this.gpsCoordinates = current.gpsCoordinates ?? '';
+    this.notes = current.notes ?? '';
+    this.owner = current.ownerId
+      ? { ownerId: current.ownerId, ownerEmail: current.ownerEmail ?? undefined }
+      : current.ownerName
+        ? { ownerName: current.ownerName, ownerPhone: current.ownerPhone ?? undefined, ownerEmail: current.ownerEmail ?? undefined }
+        : {};
+    this.ownerLabel = current.ownerId ? current.ownerName : null;
+    this.detailsError.set('');
+  }
+
+  saveDetails(onSaved?: () => void): void {
+    const current = this.land();
+    if (!current || !this.detailsDirty()) return;
+
+    this.detailsError.set('');
 
     const address: Address = {
       street: this.street.trim() || null,
@@ -296,17 +375,28 @@ export class LandDetailPanelComponent implements OnInit {
       country: current.address.country
     };
 
+    this.savingDetails.set(true);
     this.landService
       .update(this.workspaceId, this.landId, {
         address,
         size: this.size ?? undefined,
         sizeUnit: this.sizeUnit.trim() || undefined,
         gpsCoordinates: this.gpsCoordinates.trim() || undefined,
-        notes: this.notes.trim() || undefined
+        notes: this.notes.trim() || undefined,
+        ...this.owner
       })
       .subscribe({
-        next: (land) => this.land.set(land),
-        error: (err) => this.error.set(err.error?.message ?? 'Could not save changes.')
+        next: (land) => {
+          this.land.set(land);
+          this.ownerLabel = land.ownerId ? land.ownerName : null;
+          this.storedDetails = this.snapshotDetails();
+          this.savingDetails.set(false);
+          onSaved?.();
+        },
+        error: (err) => {
+          this.savingDetails.set(false);
+          this.detailsError.set(err.error?.message ?? 'Could not save changes.');
+        }
       });
   }
 

@@ -15,6 +15,5 @@ public class Job
 
     public Workspace Workspace { get; set; }
     public User CreatedByUser { get; set; }
-    public ICollection<JobParticipant> Participants { get; set; } = new List<JobParticipant>();
     public ICollection<JobLand> Lands { get; set; } = new List<JobLand>();
 }

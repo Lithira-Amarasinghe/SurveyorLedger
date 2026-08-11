@@ -17,9 +17,9 @@ public interface IJobService
     Task<Job> UpdateStatusAsync(Guid workspaceId, Guid callerUserId, Guid jobId, string status);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid jobId);
 
-    Task<JobParticipant> AddParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId, string participantType);
+    Task<UserAccess> AddParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId);
     Task RemoveParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId);
-    Task<List<JobParticipant>> GetParticipantsAsync(Guid workspaceId, Guid callerUserId, Guid jobId);
+    Task<List<UserAccess>> GetParticipantsAsync(Guid workspaceId, Guid callerUserId, Guid jobId);
 
     Task AddLandAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid landId);
     Task RemoveLandAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid landId);
@@ -30,12 +30,14 @@ public class JobService : IJobService
 {
     private readonly ApplicationDbContext _context;
     private readonly ICasbinService _casbinService;
+    private readonly IUserAccessGrantService _grantService;
     private readonly ILogger<JobService> _logger;
 
-    public JobService(ApplicationDbContext context, ICasbinService casbinService, ILogger<JobService> logger)
+    public JobService(ApplicationDbContext context, ICasbinService casbinService, IUserAccessGrantService grantService, ILogger<JobService> logger)
     {
         _context = context;
         _casbinService = casbinService;
+        _grantService = grantService;
         _logger = logger;
     }
 
@@ -76,30 +78,30 @@ public class JobService : IJobService
     }
 
     /// <summary>
-    /// Access model: a caller with no workspace role (a client, who is never granted
-    /// workspace-level UserAccess) only sees jobs they're a JobParticipant on. Everyone
-    /// with a workspace role sees the full workspace job list. This is an explicit
-    /// service-level check, not a Casbin policy - Casbin is workspace-scoped and has no
-    /// concept of "this specific job," so object-level scoping has to happen here.
+    /// Access model: job-level access is granted via a UserAccess row scoped to the job
+    /// (ScopeType = Job, ScopeId = jobId) rather than a separate participants table - see
+    /// AddParticipantAsync. A caller holding job.view_all at the workspace scope (Admin,
+    /// Manager) sees every job; everyone else sees only jobs they hold a job-scoped
+    /// UserAccess row for.
     /// </summary>
     public async Task<List<Job>> GetJobsAsync(Guid workspaceId, Guid callerUserId)
     {
-        var hasWorkspaceRole = await _context.UserAccesses.AnyAsync(ua =>
-            ua.UserId == callerUserId && ua.IsActive &&
-            ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId);
+        await EnsureAllowedAsync(callerUserId, "view", workspaceId);
 
-        if (!hasWorkspaceRole)
+        if (await HasFullJobAccessAsync(callerUserId, workspaceId))
         {
             return await _context.Jobs
-                .Where(j => j.WorkspaceId == workspaceId &&
-                    j.Participants.Any(p => p.UserId == callerUserId && p.IsActive))
+                .Where(j => j.WorkspaceId == workspaceId)
                 .OrderByDescending(j => j.CreatedAt)
                 .ToListAsync();
         }
 
-        await EnsureAllowedAsync(callerUserId, "view", workspaceId);
+        var assignedJobIds = _context.UserAccesses
+            .Where(ua => ua.UserId == callerUserId && ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Job)
+            .Select(ua => ua.ScopeId);
+
         return await _context.Jobs
-            .Where(j => j.WorkspaceId == workspaceId)
+            .Where(j => j.WorkspaceId == workspaceId && assignedJobIds.Contains(j.Id))
             .OrderByDescending(j => j.CreatedAt)
             .ToListAsync();
     }
@@ -107,14 +109,14 @@ public class JobService : IJobService
     public async Task<Job> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid jobId)
     {
         var job = await FindJobAsync(workspaceId, jobId);
-        await EnsureCanViewJobAsync(callerUserId, workspaceId, job);
+        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
         return job;
     }
 
     public async Task<Job> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid jobId, JobRequest request)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
         var job = await FindJobAsync(workspaceId, jobId);
+        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
         job.Title = request.Title.Trim();
         job.Description = request.Description;
@@ -126,8 +128,8 @@ public class JobService : IJobService
 
     public async Task<Job> UpdateStatusAsync(Guid workspaceId, Guid callerUserId, Guid jobId, string status)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
         var job = await FindJobAsync(workspaceId, jobId);
+        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
         job.Status = status;
         job.UpdatedAt = DateTime.UtcNow;
@@ -138,89 +140,58 @@ public class JobService : IJobService
 
     public async Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid jobId)
     {
-        await EnsureAllowedAsync(callerUserId, "delete", workspaceId);
         var job = await FindJobAsync(workspaceId, jobId);
+        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "delete");
 
         job.IsActive = false;
         job.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
     }
 
-    public async Task<JobParticipant> AddParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId, string participantType)
+    /// <summary>
+    /// Grants job-scoped access: a UserAccess row at ScopeType=Job, ScopeId=jobId, using the
+    /// target's existing workspace role (no separate job-level role - see plan discussion).
+    /// The target must already be a workspace member; job assignment doesn't create members.
+    /// </summary>
+    public async Task<UserAccess> AddParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
         await FindJobAsync(workspaceId, jobId);
+        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
-        var targetUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == targetUserId && u.IsActive)
-            ?? throw new NotFoundException("User not found");
+        var workspaceAccess = await _context.UserAccesses
+            .FirstOrDefaultAsync(ua => ua.UserId == targetUserId && ua.IsActive &&
+                ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId)
+            ?? throw new AppException(Constants.ErrorCodes.UserNotFound,
+                "This person isn't a member of the workspace yet - add them as a member before assigning them to a job.", 400);
 
-        var existing = await _context.JobParticipants
-            .Include(p => p.User)
-            .FirstOrDefaultAsync(p => p.JobId == jobId && p.UserId == targetUserId && p.ParticipantType == participantType);
-
-        if (existing != null)
-        {
-            if (existing.IsActive)
-                return existing;
-
-            // Re-adding someone previously removed reactivates their row instead of
-            // creating a duplicate - the unique index on (JobId, UserId, ParticipantType)
-            // would reject a second insert anyway.
-            existing.IsActive = true;
-            existing.AddedBy = callerUserId;
-            existing.AddedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            return existing;
-        }
-
-        var participant = new JobParticipant
-        {
-            Id = Guid.NewGuid(),
-            JobId = jobId,
-            UserId = targetUserId,
-            ParticipantType = participantType,
-            IsActive = true,
-            AddedBy = callerUserId,
-            AddedAt = DateTime.UtcNow
-        };
-
-        await _context.JobParticipants.AddAsync(participant);
-        await _context.SaveChangesAsync();
-        participant.User = targetUser;
-        return participant;
+        return await _grantService.GrantAsync(targetUserId, workspaceAccess.RoleId, Constants.ScopeTypes.Job, jobId, callerUserId);
     }
 
     public async Task RemoveParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
         await FindJobAsync(workspaceId, jobId);
+        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
-        var participants = await _context.JobParticipants
-            .Where(p => p.JobId == jobId && p.UserId == targetUserId && p.IsActive)
-            .ToListAsync();
-
-        foreach (var p in participants)
-            p.IsActive = false;
-
-        await _context.SaveChangesAsync();
+        await _grantService.RevokeAsync(targetUserId, Constants.ScopeTypes.Job, jobId);
     }
 
-    public async Task<List<JobParticipant>> GetParticipantsAsync(Guid workspaceId, Guid callerUserId, Guid jobId)
+    public async Task<List<UserAccess>> GetParticipantsAsync(Guid workspaceId, Guid callerUserId, Guid jobId)
     {
-        var job = await FindJobAsync(workspaceId, jobId);
-        await EnsureCanViewJobAsync(callerUserId, workspaceId, job);
+        await FindJobAsync(workspaceId, jobId);
+        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
 
-        return await _context.JobParticipants
-            .Include(p => p.User)
-            .Where(p => p.JobId == jobId && p.IsActive)
-            .OrderBy(p => p.AddedAt)
+        return await _context.UserAccesses
+            .Include(ua => ua.User)
+            .Include(ua => ua.Role)
+            .Where(ua => ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == jobId && ua.IsActive)
+            .OrderBy(ua => ua.AssignedAt)
             .ToListAsync();
     }
 
     public async Task AddLandAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid landId)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
         await FindJobAsync(workspaceId, jobId);
+        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
         var land = await _context.Lands.FirstOrDefaultAsync(l => l.Id == landId && l.WorkspaceId == workspaceId)
             ?? throw new NotFoundException("Land not found");
@@ -249,11 +220,11 @@ public class JobService : IJobService
 
     public async Task RemoveLandAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid landId)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
         await FindJobAsync(workspaceId, jobId);
+        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
-        // Soft delete, matching JobParticipant - keeps the "was this land ever linked to
-        // this job" history instead of losing it, since RemoveLandAsync used to hard-delete.
+        // Soft delete, matching the job-access model - keeps the "was this land ever linked
+        // to this job" history instead of losing it.
         var link = await _context.JobLands.FirstOrDefaultAsync(jl => jl.JobId == jobId && jl.LandId == landId && jl.IsActive);
         if (link == null)
             return;
@@ -264,8 +235,8 @@ public class JobService : IJobService
 
     public async Task<List<Land>> GetLandsAsync(Guid workspaceId, Guid callerUserId, Guid jobId)
     {
-        var job = await FindJobAsync(workspaceId, jobId);
-        await EnsureCanViewJobAsync(callerUserId, workspaceId, job);
+        await FindJobAsync(workspaceId, jobId);
+        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
 
         return await _context.JobLands
             .Where(jl => jl.JobId == jobId && jl.IsActive)
@@ -290,27 +261,29 @@ public class JobService : IJobService
             ?? throw new NotFoundException("Job not found");
     }
 
-    /// <summary>
-    /// A caller with a workspace role can view any job in the workspace (subject to
-    /// Casbin's job.view policy); a caller without one (a client) can only view jobs
-    /// they're an active participant on.
-    /// </summary>
-    private async Task EnsureCanViewJobAsync(Guid callerUserId, Guid workspaceId, Job job)
-    {
-        var hasWorkspaceRole = await _context.UserAccesses.AnyAsync(ua =>
+    private Task<bool> HasFullJobAccessAsync(Guid callerUserId, Guid workspaceId) =>
+        _casbinService.EnforceAsync(callerUserId.ToString(), "job", "view_all", workspaceId.ToString());
+
+    private Task<bool> IsAssignedToJobAsync(Guid callerUserId, Guid jobId) =>
+        _context.UserAccesses.AnyAsync(ua =>
             ua.UserId == callerUserId && ua.IsActive &&
-            ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId);
+            ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == jobId);
 
-        if (hasWorkspaceRole)
-        {
-            await EnsureAllowedAsync(callerUserId, "view", workspaceId);
+    /// <summary>
+    /// Two-part check for any per-job action: the caller's workspace role must grant the
+    /// action at all (Casbin, workspace-scoped), and unless the role also grants
+    /// job.view_all (full workspace visibility - Admin/Manager), the caller must hold an
+    /// explicit job-scoped UserAccess row for this specific job. Applies uniformly to
+    /// view, edit, and delete so a role with workspace-wide job.edit still can't touch a
+    /// job it isn't assigned to and can't see.
+    /// </summary>
+    private async Task EnsureJobAccessAsync(Guid callerUserId, Guid workspaceId, Guid jobId, string action)
+    {
+        await EnsureAllowedAsync(callerUserId, action, workspaceId);
+        if (await HasFullJobAccessAsync(callerUserId, workspaceId))
             return;
-        }
-
-        var isParticipant = await _context.JobParticipants.AnyAsync(p =>
-            p.JobId == job.Id && p.UserId == callerUserId && p.IsActive);
-        if (!isParticipant)
-            throw new ForbiddenException("You do not have permission to view this job.");
+        if (!await IsAssignedToJobAsync(callerUserId, jobId))
+            throw new ForbiddenException($"You do not have permission to {action} this job.");
     }
 
     private async Task EnsureAllowedAsync(Guid callerUserId, string action, Guid workspaceId)

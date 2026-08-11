@@ -1,3 +1,5 @@
+using SurveyorLedger.API.Models.Land;
+
 namespace SurveyorLedger.API.Models.User;
 
 /// <summary>
@@ -24,6 +26,13 @@ public class UserProfileResponse
     /// The user's last name.
     /// </summary>
     public required string LastName { get; set; }
+
+    public string? Phone { get; set; }
+
+    public AddressDto? Address { get; set; }
+
+    /// <summary>Whether the email has been confirmed - false for someone added but not yet accepted.</summary>
+    public bool EmailVerified { get; set; }
 
     /// <summary>
     /// When the user account was created.

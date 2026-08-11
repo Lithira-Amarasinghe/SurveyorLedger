@@ -39,6 +39,7 @@ import { AuthService } from '../core/auth.service';
         @if (menuOpen()) {
           <div class="absolute right-0 mt-xs w-40 card p-xs shadow-lg" (mouseleave)="menuOpen.set(false)">
             <a routerLink="/app/profile" class="block px-md py-sm text-sm text-neutral-700 hover:bg-neutral-100 rounded" (click)="menuOpen.set(false)">Profile</a>
+            <a routerLink="/app/invitations" class="block px-md py-sm text-sm text-neutral-700 hover:bg-neutral-100 rounded" (click)="menuOpen.set(false)">Invitations</a>
             <button type="button" class="w-full text-left px-md py-sm text-sm text-neutral-700 hover:bg-neutral-100 rounded" (click)="logout()">Logout</button>
           </div>
         }

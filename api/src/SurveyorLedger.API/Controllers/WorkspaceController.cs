@@ -67,7 +67,15 @@ namespace SurveyorLedger.API.Controllers
                 LastName = m.LastName,
                 Role = m.Role,
                 AssignedAt = m.AssignedAt,
-                IsOwner = m.IsOwner
+                IsOwner = m.IsOwner,
+                FullAccessScopeTypes = m.FullAccessScopeTypes,
+                AdditionalScopes = m.AdditionalScopes.Select(s => new MemberScopeGrantResponse
+                {
+                    ScopeType = s.ScopeType,
+                    ScopeId = s.ScopeId,
+                    Label = s.Label,
+                    Role = s.Role
+                }).ToList()
             }).ToList();
 
             return Ok(ApiResponse<List<MemberResponse>>.Ok(response));

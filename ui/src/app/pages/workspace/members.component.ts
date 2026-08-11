@@ -6,31 +6,35 @@ import { WorkspaceService, Member } from '../../core/workspace.service';
 import { InvitationService, Invitation } from '../../core/invitation.service';
 import { AuthService } from '../../core/auth.service';
 import { CurrentWorkspaceService } from '../../core/current-workspace.service';
-import { InviteModalComponent } from './invite-modal/invite-modal.component';
+import { AddPersonModalComponent } from './add-person-modal/add-person-modal.component';
 
 interface MemberRow {
   key: string;
-  email: string;
   displayName: string;
   role: string;
   pendingRole?: string;
   dateLabel: string;
   isPending: boolean;
+  invitationStatus?: Invitation['status'];
   isOwner: boolean;
   isSelf: boolean;
   emailFailed: boolean;
+  /** True when the member's role grants blanket access to every job in the workspace. */
+  hasAllJobAccess: boolean;
+  /** Individual jobs this member is explicitly assigned to. */
+  jobLabels: string[];
 }
 
 @Component({
   selector: 'app-members',
   standalone: true,
-  imports: [CommonModule, InviteModalComponent],
+  imports: [CommonModule, AddPersonModalComponent],
   template: `
     <div class="p-lg max-w-4xl mx-auto">
       <div class="flex items-center justify-between mb-lg">
         <h1 class="text-lg font-semibold text-neutral-900">Members</h1>
         @if (isAdmin()) {
-          <button class="btn-primary" (click)="modalOpen.set(true)">Invite member</button>
+          <button class="btn-primary" (click)="modalOpen.set(true)">Add member</button>
         }
       </div>
 
@@ -48,6 +52,7 @@ interface MemberRow {
               <tr>
                 <th class="text-left px-lg py-sm font-medium">Member</th>
                 <th class="text-left px-lg py-sm font-medium">Role</th>
+                <th class="text-left px-lg py-sm font-medium">Job access</th>
                 <th class="text-left px-lg py-sm font-medium">Since</th>
                 <th class="px-lg py-sm"></th>
               </tr>
@@ -57,7 +62,13 @@ interface MemberRow {
                 <tr class="border-t border-neutral-200">
                   <td class="px-lg py-sm text-neutral-900">
                     {{ row.displayName }}
-                    @if (row.isPending) {
+                    @if (row.invitationStatus === 'Declined') {
+                      <span class="text-primary-500">· Declined</span>
+                    } @else if (row.invitationStatus === 'Expired') {
+                      <span class="text-neutral-500">· Expired</span>
+                    } @else if (row.invitationStatus === 'Revoked') {
+                      <span class="text-neutral-500">· Revoked</span>
+                    } @else if (row.isPending) {
                       <span class="text-neutral-500">· Pending</span>
                     }
                     @if (row.emailFailed) {
@@ -77,12 +88,26 @@ interface MemberRow {
                         (change)="onRoleSelect(row, $any($event.target).value)"
                       >
                         <option value="Admin">Admin</option>
-                        <option value="Manager">Manager</option>
                         <option value="Surveyor">Surveyor</option>
                         <option value="Client">Client</option>
                       </select>
                     } @else {
                       <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ row.role }}</span>
+                    }
+                  </td>
+                  <td class="px-lg py-sm">
+                    @if (row.isPending) {
+                      <span class="text-xs text-neutral-500">—</span>
+                    } @else if (row.hasAllJobAccess) {
+                      <span class="text-xs px-sm py-xs rounded bg-primary-50 text-primary-600">All jobs · via role</span>
+                    } @else if (row.jobLabels.length > 0) {
+                      <span class="flex flex-wrap gap-xs">
+                        @for (label of row.jobLabels; track label) {
+                          <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ label }}</span>
+                        }
+                      </span>
+                    } @else {
+                      <span class="text-xs text-neutral-500">No job access</span>
                     }
                   </td>
                   <td class="px-lg py-sm text-neutral-600">{{ row.dateLabel }}</td>
@@ -92,13 +117,15 @@ interface MemberRow {
                     } @else if (row.isPending) {
                       @if (isAdmin()) {
                         <button class="text-xs text-neutral-600 hover:text-neutral-900 mr-md" (click)="resend(row)">Resend</button>
-                        @if (confirming().has(row.key)) {
-                          <span class="text-xs">Sure?
-                            <button class="text-primary-500 font-medium" (click)="revoke(row)">Yes</button>
-                            <button class="text-neutral-500" (click)="cancelConfirm(row.key)">No</button>
-                          </span>
-                        } @else {
-                          <button class="text-xs text-primary-500 hover:text-primary-600" (click)="askConfirm(row.key)">Revoke</button>
+                        @if (row.invitationStatus === 'Pending') {
+                          @if (confirming().has(row.key)) {
+                            <span class="text-xs">Sure?
+                              <button class="text-primary-500 font-medium" (click)="revoke(row)">Yes</button>
+                              <button class="text-neutral-500" (click)="cancelConfirm(row.key)">No</button>
+                            </span>
+                          } @else {
+                            <button class="text-xs text-primary-500 hover:text-primary-600" (click)="askConfirm(row.key)">Revoke</button>
+                          }
                         }
                       }
                     } @else if (isAdmin() || row.isSelf) {
@@ -123,7 +150,7 @@ interface MemberRow {
     </div>
 
     @if (modalOpen()) {
-      <app-invite-modal [workspaceId]="workspaceId" (cancel)="modalOpen.set(false)" (created)="onInvited()" />
+      <app-add-person-modal [workspaceId]="workspaceId" (cancel)="modalOpen.set(false)" (created)="onAdded()" />
     }
   `
 })
@@ -155,7 +182,7 @@ export class MembersComponent implements OnInit {
   fetch(): void {
     this.loading.set(true);
     this.error.set('');
-    const currentEmail = this.authService.getCurrentEmail();
+    const currentUserId = this.authService.getCurrentUserId();
 
     // Pending invites are Admin-only server-side; skip the call entirely for non-Admins
     // instead of letting it 403 and failing the whole forkJoin.
@@ -164,7 +191,7 @@ export class MembersComponent implements OnInit {
       invitations: this.isAdmin() ? this.invitationService.list(this.workspaceId) : of([])
     }).subscribe({
       next: ({ members, invitations }) => {
-        this.rows.set(this.buildRows(members, invitations, currentEmail));
+        this.rows.set(this.buildRows(members, invitations, currentUserId));
         this.loading.set(false);
       },
       error: (err) => {
@@ -174,32 +201,38 @@ export class MembersComponent implements OnInit {
     });
   }
 
-  private buildRows(members: Member[], invitations: Invitation[], currentEmail: string | null): MemberRow[] {
+  private buildRows(members: Member[], invitations: Invitation[], currentUserId: string | null): MemberRow[] {
     const memberRows: MemberRow[] = members
       .slice()
       .sort((a, b) => (a.isOwner === b.isOwner ? 0 : a.isOwner ? -1 : 1))
       .map(m => ({
         key: m.userId,
-        email: m.email,
         displayName: `${m.firstName} ${m.lastName}`,
         role: m.role,
         dateLabel: new Date(m.assignedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
         isPending: false,
         isOwner: m.isOwner,
-        isSelf: m.email === currentEmail,
-        emailFailed: false
+        isSelf: m.userId === currentUserId,
+        emailFailed: false,
+        // Computed server-side so this page and the job screens can't disagree about
+        // who can see what - see WorkspaceService.GetMembersAsync.
+        hasAllJobAccess: (m.fullAccessScopeTypes ?? []).includes('Job'),
+        jobLabels: (m.additionalScopes ?? []).filter(s => s.scopeType === 'Job').map(s => s.label)
       }));
 
     const pendingRows: MemberRow[] = invitations.map(i => ({
       key: i.invitationId,
-      email: i.email,
       displayName: i.email,
       role: i.role,
       dateLabel: `Invited ${new Date(i.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`,
       isPending: true,
+      invitationStatus: i.status,
       isOwner: false,
       isSelf: false,
-      emailFailed: i.emailFailed
+      emailFailed: i.emailFailed,
+      // A pending invitee holds no UserAccess yet, so they have no job access to show.
+      hasAllJobAccess: false,
+      jobLabels: []
     }));
 
     return [...memberRows, ...pendingRows];
@@ -277,7 +310,7 @@ export class MembersComponent implements OnInit {
     });
   }
 
-  onInvited(): void {
+  onAdded(): void {
     this.modalOpen.set(false);
     this.fetch();
   }

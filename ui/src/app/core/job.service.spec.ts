@@ -45,11 +45,11 @@ describe('JobService', () => {
     req.flush({ success: true, data: {} });
   });
 
-  it('addParticipant() posts participantType in the body', () => {
-    service.addParticipant(workspaceId, 'j1', 'u2', 'Client').subscribe();
+  it('addParticipant() posts with no body - role is derived server-side from workspace membership', () => {
+    service.addParticipant(workspaceId, 'j1', 'u2').subscribe();
     const req = httpMock.expectOne(`${base}/j1/participants/u2`);
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ participantType: 'Client' });
+    expect(req.request.body).toEqual({});
     req.flush({ success: true, data: {} });
   });
 

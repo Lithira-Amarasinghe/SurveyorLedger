@@ -46,6 +46,7 @@ public class LandService : ILandService
     public async Task<Land> CreateAsync(Guid workspaceId, Guid callerUserId, LandRequest request)
     {
         await EnsureAllowedAsync(callerUserId, "create", workspaceId);
+        await ValidateOwnerAsync(request);
 
         var land = new Land
         {
@@ -56,6 +57,10 @@ public class LandService : ILandService
             SizeUnit = request.SizeUnit,
             GpsCoordinates = request.GpsCoordinates,
             Notes = request.Notes,
+            OwnerId = request.OwnerId,
+            OwnerName = request.OwnerId == null ? request.OwnerName?.Trim() : null,
+            OwnerPhone = request.OwnerId == null ? request.OwnerPhone?.Trim() : null,
+            OwnerEmail = request.OwnerId == null ? request.OwnerEmail?.Trim() : null,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -65,7 +70,7 @@ public class LandService : ILandService
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("Land {LandId} created in workspace {WorkspaceId} by {UserId}", land.Id, workspaceId, callerUserId);
-        return land;
+        return await FindLandAsync(workspaceId, land.Id);
     }
 
     /// <summary>
@@ -77,7 +82,7 @@ public class LandService : ILandService
     {
         await EnsureAllowedAsync(callerUserId, "view", workspaceId);
 
-        var lands = _context.Lands.Where(l => l.WorkspaceId == workspaceId);
+        var lands = _context.Lands.Include(l => l.Owner).Where(l => l.WorkspaceId == workspaceId);
 
         if (!string.IsNullOrWhiteSpace(query))
         {
@@ -102,6 +107,7 @@ public class LandService : ILandService
     public async Task<Land> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandRequest request)
     {
         await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await ValidateOwnerAsync(request);
         var land = await FindLandAsync(workspaceId, landId);
 
         land.Address = ToAddress(request.Address);
@@ -109,10 +115,14 @@ public class LandService : ILandService
         land.SizeUnit = request.SizeUnit;
         land.GpsCoordinates = request.GpsCoordinates;
         land.Notes = request.Notes;
+        land.OwnerId = request.OwnerId;
+        land.OwnerName = request.OwnerId == null ? request.OwnerName?.Trim() : null;
+        land.OwnerPhone = request.OwnerId == null ? request.OwnerPhone?.Trim() : null;
+        land.OwnerEmail = request.OwnerId == null ? request.OwnerEmail?.Trim() : null;
         land.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
-        return land;
+        return await FindLandAsync(workspaceId, landId);
     }
 
     public async Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid landId)
@@ -318,8 +328,30 @@ public class LandService : ILandService
 
     private async Task<Land> FindLandAsync(Guid workspaceId, Guid landId)
     {
-        return await _context.Lands.FirstOrDefaultAsync(l => l.Id == landId && l.WorkspaceId == workspaceId)
+        return await _context.Lands.Include(l => l.Owner)
+            .FirstOrDefaultAsync(l => l.Id == landId && l.WorkspaceId == workspaceId)
             ?? throw new NotFoundException("Land not found");
+    }
+
+    /// <summary>
+    /// Enforces "exactly one owner form" - either an existing account (OwnerId) or plain
+    /// contact info (OwnerName), never both. OwnerId isn't restricted to this workspace's
+    /// members - land ownership is a data-tracking concern, decoupled from workspace access.
+    /// </summary>
+    private async Task ValidateOwnerAsync(LandRequest request)
+    {
+        var hasAccountOwner = request.OwnerId.HasValue;
+        var hasPlainOwner = !string.IsNullOrWhiteSpace(request.OwnerName);
+
+        if (hasAccountOwner && hasPlainOwner)
+            throw new ValidationException("Set either OwnerId or OwnerName, not both.");
+
+        if (hasAccountOwner)
+        {
+            var ownerExists = await _context.Users.AnyAsync(u => u.Id == request.OwnerId!.Value && u.IsActive);
+            if (!ownerExists)
+                throw new ValidationException("OwnerId does not match an existing account.");
+        }
     }
 
     private async Task<LandSurvey> FindSurveyAsync(Guid landId, Guid surveyId)

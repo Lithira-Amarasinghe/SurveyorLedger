@@ -70,7 +70,7 @@
 
 ## Git & PR Workflow
 
-**Commits:** Conventional (feat:, fix:, test:, docs:, refactor:, chore:). Keep messages short.
+**Commits:** Conventional (feat:, fix:, test:, docs:, refactor:, chore:). Keep messages short. Don't commit code changes until the user explicitly says to — implement and verify, then wait.
 
 **Branches:** Feature branches off main, PR back to main.
 

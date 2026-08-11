@@ -24,7 +24,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<LandDeed> LandDeeds { get; set; }
     public DbSet<LandBoundary> LandBoundaries { get; set; }
     public DbSet<Job> Jobs { get; set; }
-    public DbSet<JobParticipant> JobParticipants { get; set; }
     public DbSet<JobLand> JobLands { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

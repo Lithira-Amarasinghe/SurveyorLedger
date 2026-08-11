@@ -43,6 +43,9 @@ import { AuthService } from '../../core/auth.service';
         </form>
 
         <p class="text-sm text-neutral-600 mt-lg text-center">
+          <a routerLink="/auth/forgot-password">Forgot your password?</a>
+        </p>
+        <p class="text-sm text-neutral-600 mt-sm text-center">
           No account? <a routerLink="/auth/register">Register</a>
         </p>
       </div>
@@ -60,6 +63,9 @@ export class LoginComponent {
   constructor(private authService: AuthService, private router: Router, private route: ActivatedRoute) {
     if (this.route.snapshot.queryParamMap.get('verified') === '1') {
       this.verifiedMessage.set('Email verified. Please log in to continue.');
+      this.email = this.route.snapshot.queryParamMap.get('email') ?? '';
+    } else if (this.route.snapshot.queryParamMap.get('reset') === '1') {
+      this.verifiedMessage.set('Password reset. Sign in with your new password.');
       this.email = this.route.snapshot.queryParamMap.get('email') ?? '';
     }
   }

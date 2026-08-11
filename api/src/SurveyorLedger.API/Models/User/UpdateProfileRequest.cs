@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using SurveyorLedger.API.Models.Land;
 
 namespace SurveyorLedger.API.Models.User;
 
@@ -20,4 +21,9 @@ public class UpdateProfileRequest
     [Required(ErrorMessage = "LastName is required.")]
     [StringLength(100, MinimumLength = 1, ErrorMessage = "LastName must be between 1 and 100 characters.")]
     public required string LastName { get; set; }
+
+    [StringLength(30)]
+    public string? Phone { get; set; }
+
+    public AddressDto? Address { get; set; }
 }
