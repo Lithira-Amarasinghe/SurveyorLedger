@@ -25,3 +25,6 @@ appsettings.*.local.json
 
 # Local tooling cache
 graphify-out/
+
+# Local dev file uploads (LocalFileStorageService)
+api/src/SurveyorLedger.API/uploads/
