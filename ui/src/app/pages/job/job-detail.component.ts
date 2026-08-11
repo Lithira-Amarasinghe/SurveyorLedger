@@ -1,4 +1,4 @@
-import { Component, OnInit, ViewChild, signal } from '@angular/core';
+import { Component, OnInit, ViewChild, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -8,10 +8,14 @@ import { Job, JobParticipant, JobService } from '../../core/job.service';
 import { Land, addressLine } from '../../core/land.service';
 import { Person } from '../../core/person.service';
 import { Milestone, MilestoneService } from '../../core/milestone.service';
+import { Document, DocumentService } from '../../core/document.service';
+import { DocumentRequest, DocumentRequestService } from '../../core/document-request.service';
 import { CurrentWorkspaceService } from '../../core/current-workspace.service';
 import { AddPersonWidgetComponent } from './add-person-widget/add-person-widget.component';
 import { AddLandWidgetComponent } from './add-land-widget/add-land-widget.component';
 import { LandDetailPanelComponent } from '../land/land-detail-panel/land-detail-panel.component';
+import { DocumentUploadWidgetComponent } from './document-upload-widget/document-upload-widget.component';
+import { DocumentViewerModalComponent } from './document-viewer-modal/document-viewer-modal.component';
 import { HasUnsavedChanges } from '../../core/unsaved-changes.guard';
 
 const STATUSES = ['Draft', 'Scheduled', 'InProgress', 'Completed', 'Cancelled'];
@@ -20,7 +24,16 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
 @Component({
   selector: 'app-job-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, DragDropModule, AddPersonWidgetComponent, AddLandWidgetComponent, LandDetailPanelComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    DragDropModule,
+    AddPersonWidgetComponent,
+    AddLandWidgetComponent,
+    LandDetailPanelComponent,
+    DocumentUploadWidgetComponent,
+    DocumentViewerModalComponent
+  ],
   template: `
     @if (loading()) {
       <p class="p-lg text-sm text-neutral-500">Loading…</p>
@@ -178,6 +191,106 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
             }
           }
         </div>
+
+        <div class="card">
+          <h2 class="text-sm font-semibold text-neutral-900 mb-md">Documents</h2>
+          @if (documentRows().length > 0) {
+            <div class="space-y-xs mb-md">
+              @for (row of documentRows(); track (row.request?.requestId ?? row.document?.documentId)) {
+                @if (row.kind === 'request' && row.request!.status === 'Pending') {
+                  <div class="flex items-center justify-between gap-sm px-md py-sm rounded border border-dashed border-neutral-300">
+                    <div class="min-w-0">
+                      <span class="text-sm text-neutral-900 truncate block">Requested: {{ row.request!.title }}</span>
+                      <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ row.request!.category }}</span>
+                    </div>
+                    <div class="flex items-center gap-sm flex-shrink-0 whitespace-nowrap">
+                      <input #fulfillInput type="file" class="hidden" (change)="fulfillRequest(row.request!, fulfillInput.files); fulfillInput.value = ''" />
+                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="fulfillInput.click()">Upload</button>
+                      @if (!isClient()) {
+                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="cancelRequest(row.request!)">Cancel</button>
+                      }
+                    </div>
+                  </div>
+                } @else if (row.document; as d) {
+                  <div class="flex items-center justify-between gap-sm px-md py-sm rounded bg-neutral-50">
+                    <div class="min-w-0">
+                      <span class="text-sm text-neutral-900 truncate block">{{ d.fileName }}</span>
+                      <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600 mr-xs">{{ d.category }}</span>
+                      @if (!isClient()) {
+                        <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ d.visibility }}</span>
+                      }
+                    </div>
+                    <div class="flex items-center gap-sm flex-shrink-0 whitespace-nowrap">
+                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="viewDocument(d)">View</button>
+                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="downloadDocument(d)">Download</button>
+                      @if (!isClient() && row.request) {
+                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="reopenRequest(row.request!)">Reopen</button>
+                      }
+                      @if (!isClient() && !row.request) {
+                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="confirmingDeleteDocument.set(d)">Remove</button>
+                      }
+                    </div>
+                  </div>
+                }
+              }
+            </div>
+          }
+          @if (documentError()) {
+            <p class="text-xs text-primary-500 mb-sm">{{ documentError() }}</p>
+          }
+          <app-document-upload-widget
+            [workspaceId]="workspaceId"
+            [jobId]="jobId"
+            [isClient]="isClient()"
+            (added)="onDocumentAdded($event)"
+          />
+          @if (requestError()) {
+            <p class="text-xs text-primary-500 mt-sm">{{ requestError() }}</p>
+          }
+          @if (!isClient()) {
+            @if (requestingDocument()) {
+              <div class="rounded bg-neutral-50 p-md space-y-sm mt-sm">
+                <input class="input-field text-sm" placeholder="What do you need? (e.g. Legal Deed)" [(ngModel)]="requestTitleDraft" />
+                <textarea class="input-field text-sm" rows="2" placeholder="Description (optional)" [(ngModel)]="requestDescriptionDraft"></textarea>
+                <select class="input-field text-sm" [(ngModel)]="requestCategoryDraft">
+                  <option value="SurveyPlan">SurveyPlan</option>
+                  <option value="LegalDocument">LegalDocument</option>
+                  <option value="Photo">Photo</option>
+                  <option value="Other">Other</option>
+                </select>
+                <div class="flex items-center justify-end gap-sm">
+                  <button type="button" class="btn-secondary text-xs" (click)="cancelAddRequest()">Cancel</button>
+                  <button type="button" class="btn-primary text-xs" (click)="submitRequest()">Request</button>
+                </div>
+              </div>
+            } @else {
+              <button type="button" class="text-xs text-primary-500 hover:text-primary-600 mt-sm" (click)="requestingDocument.set(true)">
+                + Request document
+              </button>
+            }
+          }
+        </div>
+      </div>
+    }
+
+    @if (viewingDocument(); as doc) {
+      @if (viewingBlobUrl(); as url) {
+        <app-document-viewer-modal [document]="doc" [blobUrl]="url" (closed)="closeViewer()" />
+      }
+    }
+
+    @if (confirmingDeleteDocument(); as doc) {
+      <div class="fixed inset-0 z-50 bg-neutral-900/40 flex items-center justify-center px-lg">
+        <div class="card w-full max-w-sm">
+          <h2 class="text-base font-semibold text-neutral-900">Remove document?</h2>
+          <p class="text-sm text-neutral-600 mt-xs">
+            "{{ doc.fileName }}" will be removed. This can't be undone from here.
+          </p>
+          <div class="flex items-center justify-end gap-sm mt-lg">
+            <button type="button" class="btn-secondary text-xs" (click)="confirmingDeleteDocument.set(null)">Cancel</button>
+            <button type="button" class="btn-primary text-xs" (click)="deleteDocument(doc)">Remove</button>
+          </div>
+        </div>
       </div>
     }
 
@@ -208,6 +321,35 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   lands = signal<Land[]>([]);
   milestones = signal<Milestone[]>([]);
   milestoneStatuses = MILESTONE_STATUSES;
+  documents = signal<Document[]>([]);
+  viewingDocument = signal<Document | null>(null);
+  viewingBlobUrl = signal<string | null>(null);
+  confirmingDeleteDocument = signal<Document | null>(null);
+  documentError = signal('');
+  documentRequests = signal<DocumentRequest[]>([]);
+  requestingDocument = signal(false);
+  requestTitleDraft = '';
+  requestDescriptionDraft = '';
+  requestCategoryDraft = 'Other';
+  requestError = signal('');
+
+  documentRows = computed(() => {
+    const requests = this.documentRequests();
+    const linkedDocIds = new Set(requests.filter(r => r.fulfilledDocumentId).map(r => r.fulfilledDocumentId));
+
+    const plainDocRows = this.documents()
+      .filter(d => !linkedDocIds.has(d.documentId))
+      .map(d => ({ kind: 'document' as const, document: d, request: null as DocumentRequest | null, createdAt: d.createdAt }));
+
+    const requestRows = requests.map(r => ({
+      kind: 'request' as const,
+      document: r.fulfilledDocumentId ? this.documents().find(d => d.documentId === r.fulfilledDocumentId) ?? null : null,
+      request: r,
+      createdAt: r.createdAt
+    }));
+
+    return [...plainDocRows, ...requestRows].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  });
   addingMilestone = signal(false);
   milestoneTitleDraft = '';
   milestoneDescriptionDraft = '';
@@ -233,6 +375,8 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   constructor(
     private jobService: JobService,
     private milestoneService: MilestoneService,
+    private documentService: DocumentService,
+    private documentRequestService: DocumentRequestService,
     private currentWorkspace: CurrentWorkspaceService,
     private route: ActivatedRoute
   ) {}
@@ -258,15 +402,19 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
       job: this.jobService.getById(this.workspaceId, this.jobId),
       participants: this.jobService.getParticipants(this.workspaceId, this.jobId),
       lands: this.jobService.getLands(this.workspaceId, this.jobId),
-      milestones: this.milestoneService.list(this.workspaceId, this.jobId)
+      milestones: this.milestoneService.list(this.workspaceId, this.jobId),
+      documents: this.documentService.list(this.workspaceId, this.jobId),
+      documentRequests: this.documentRequestService.list(this.workspaceId, this.jobId)
     }).subscribe({
-      next: ({ job, participants, lands, milestones }) => {
+      next: ({ job, participants, lands, milestones, documents, documentRequests }) => {
         this.job.set(job);
         this.titleDraft = job.title;
         this.descriptionDraft = job.description ?? '';
         this.participants.set(participants);
         this.lands.set(lands);
         this.milestones.set(milestones);
+        this.documents.set(documents);
+        this.documentRequests.set(documentRequests);
         this.loading.set(false);
       },
       error: (err) => {
@@ -459,6 +607,110 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
         this.milestones.set(previous);
         this.error.set(err.error?.message ?? 'Could not reorder milestones.');
       }
+    });
+  }
+
+  onDocumentAdded(doc: Document): void {
+    this.documents.update(list => [doc, ...list]);
+  }
+
+  viewDocument(doc: Document): void {
+    this.documentError.set('');
+    this.documentService.getFileBlob(this.workspaceId, this.jobId, doc.documentId).subscribe({
+      next: (blob) => {
+        this.viewingDocument.set(doc);
+        this.viewingBlobUrl.set(URL.createObjectURL(blob));
+      },
+      error: (err) => this.documentError.set(err.error?.message ?? 'Could not open document.')
+    });
+  }
+
+  closeViewer(): void {
+    const url = this.viewingBlobUrl();
+    if (url) URL.revokeObjectURL(url);
+    this.viewingDocument.set(null);
+    this.viewingBlobUrl.set(null);
+  }
+
+  downloadDocument(doc: Document): void {
+    this.documentError.set('');
+    this.documentService.getFileBlob(this.workspaceId, this.jobId, doc.documentId).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const link = window.document.createElement('a');
+        link.href = url;
+        link.download = doc.fileName;
+        link.click();
+        URL.revokeObjectURL(url);
+      },
+      error: (err) => this.documentError.set(err.error?.message ?? 'Could not download document.')
+    });
+  }
+
+  deleteDocument(doc: Document): void {
+    this.documentService.delete(this.workspaceId, this.jobId, doc.documentId).subscribe({
+      next: () => {
+        this.documents.update(list => list.filter(d => d.documentId !== doc.documentId));
+        this.confirmingDeleteDocument.set(null);
+      },
+      error: (err) => {
+        this.documentError.set(err.error?.message ?? 'Could not remove document.');
+        this.confirmingDeleteDocument.set(null);
+      }
+    });
+  }
+
+  submitRequest(): void {
+    if (!this.requestTitleDraft.trim()) {
+      this.requestError.set('Title is required.');
+      return;
+    }
+    this.requestError.set('');
+    this.documentRequestService
+      .create(this.workspaceId, this.jobId, this.requestTitleDraft.trim(), this.requestDescriptionDraft.trim() || null, this.requestCategoryDraft)
+      .subscribe({
+        next: (request) => {
+          this.documentRequests.update(list => [request, ...list]);
+          this.cancelAddRequest();
+        },
+        error: (err) => this.requestError.set(err.error?.message ?? 'Could not create request.')
+      });
+  }
+
+  cancelAddRequest(): void {
+    this.requestingDocument.set(false);
+    this.requestTitleDraft = '';
+    this.requestDescriptionDraft = '';
+    this.requestCategoryDraft = 'Other';
+    this.requestError.set('');
+  }
+
+  fulfillRequest(request: DocumentRequest, files: FileList | null): void {
+    const file = files?.item(0);
+    if (!file) return;
+    const visibility = this.isClient() ? 'ClientVisible' : 'Internal';
+
+    this.documentError.set('');
+    this.documentRequestService.fulfill(this.workspaceId, this.jobId, request.requestId, file, visibility).subscribe({
+      next: (fulfilled) => {
+        this.documentRequests.update(list => list.map(r => (r.requestId === fulfilled.requestId ? fulfilled : r)));
+        this.documentService.list(this.workspaceId, this.jobId).subscribe(documents => this.documents.set(documents));
+      },
+      error: (err) => this.documentError.set(err.error?.message ?? 'Could not upload document.')
+    });
+  }
+
+  reopenRequest(request: DocumentRequest): void {
+    this.documentRequestService.reopen(this.workspaceId, this.jobId, request.requestId).subscribe({
+      next: (reopened) => this.documentRequests.update(list => list.map(r => (r.requestId === reopened.requestId ? reopened : r))),
+      error: (err) => this.documentError.set(err.error?.message ?? 'Could not reopen request.')
+    });
+  }
+
+  cancelRequest(request: DocumentRequest): void {
+    this.documentRequestService.cancel(this.workspaceId, this.jobId, request.requestId).subscribe({
+      next: () => this.documentRequests.update(list => list.filter(r => r.requestId !== request.requestId)),
+      error: (err) => this.documentError.set(err.error?.message ?? 'Could not cancel request.')
     });
   }
 }

@@ -10,7 +10,12 @@ using SurveyorLedger.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+// String enum JSON conversion, registered once here rather than per-DTO with
+// [JsonConverter] attributes - every enum in this API (DocumentCategory, DocumentVisibility,
+// SubscriptionTier, etc) round-trips as its name, matching what every client (this API's own
+// TypeScript interfaces) expects on both request bodies and response payloads.
+builder.Services.AddControllers()
+    .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 builder.Services.AddOpenApi();
 
 // Model validation failures ([Required], [RegularExpression], etc.) go through the same
@@ -104,6 +109,9 @@ builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
 
 // Register document service
 builder.Services.AddScoped<IDocumentService, DocumentService>();
+
+// Register document request service
+builder.Services.AddScoped<IDocumentRequestService, DocumentRequestService>();
 
 // Register the shared UserAccess grant/revoke service (workspace-scope and job-scope
 // membership both go through this - see UserAccessGrantService for why).
