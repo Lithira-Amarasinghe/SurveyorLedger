@@ -102,6 +102,9 @@ builder.Services.AddScoped<IMilestoneService, MilestoneService>();
 // swap-to-Azure-Blob path.
 builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
 
+// Register document service
+builder.Services.AddScoped<IDocumentService, DocumentService>();
+
 // Register the shared UserAccess grant/revoke service (workspace-scope and job-scope
 // membership both go through this - see UserAccessGrantService for why).
 builder.Services.AddScoped<IUserAccessGrantService, UserAccessGrantService>();
