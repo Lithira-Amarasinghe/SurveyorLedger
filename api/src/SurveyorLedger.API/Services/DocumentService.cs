@@ -28,7 +28,9 @@ public class DocumentService : IDocumentService
 {
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".jpg", ".jpeg", ".png" };
-    private const long MaxFileSizeBytes = 25 * 1024 * 1024;
+
+    /// <summary>Also referenced by DocumentController's [RequestSizeLimit] - single source for the cap.</summary>
+    public const long MaxFileSizeBytes = 25 * 1024 * 1024;
 
     private readonly ApplicationDbContext _context;
     private readonly ICasbinService _casbinService;
