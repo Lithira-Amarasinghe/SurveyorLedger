@@ -11,8 +11,8 @@
     {
       "name": "SurveyorLedger UI",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "ui", "run", "start"],
-      "port": 4200
+      "runtimeArgs": ["--prefix", "ui", "run", "start", "--", "--port", "4201"],
+      "port": 4201
     }
   ]
 }
