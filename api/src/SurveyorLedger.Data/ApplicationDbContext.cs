@@ -26,6 +26,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Job> Jobs { get; set; }
     public DbSet<JobLand> JobLands { get; set; }
     public DbSet<Milestone> Milestones { get; set; }
+    public DbSet<Document> Documents { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

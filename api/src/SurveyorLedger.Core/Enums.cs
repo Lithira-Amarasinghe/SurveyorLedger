@@ -26,3 +26,17 @@ public enum SubscriptionTier
     Free,
     Paid
 }
+
+public enum DocumentCategory
+{
+    SurveyPlan,
+    LegalDocument,
+    Photo,
+    Other
+}
+
+public enum DocumentVisibility
+{
+    Internal,
+    ClientVisible
+}
