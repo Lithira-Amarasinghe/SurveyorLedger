@@ -2,10 +2,12 @@ import { Component, OnInit, ViewChild, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
+import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { Observable, Subject, forkJoin } from 'rxjs';
 import { Job, JobParticipant, JobService } from '../../core/job.service';
 import { Land, addressLine } from '../../core/land.service';
 import { Person } from '../../core/person.service';
+import { Milestone, MilestoneService } from '../../core/milestone.service';
 import { CurrentWorkspaceService } from '../../core/current-workspace.service';
 import { AddPersonWidgetComponent } from './add-person-widget/add-person-widget.component';
 import { AddLandWidgetComponent } from './add-land-widget/add-land-widget.component';
@@ -13,11 +15,12 @@ import { LandDetailPanelComponent } from '../land/land-detail-panel/land-detail-
 import { HasUnsavedChanges } from '../../core/unsaved-changes.guard';
 
 const STATUSES = ['Draft', 'Scheduled', 'InProgress', 'Completed', 'Cancelled'];
+const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
 
 @Component({
   selector: 'app-job-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, AddPersonWidgetComponent, AddLandWidgetComponent, LandDetailPanelComponent],
+  imports: [CommonModule, FormsModule, DragDropModule, AddPersonWidgetComponent, AddLandWidgetComponent, LandDetailPanelComponent],
   template: `
     @if (loading()) {
       <p class="p-lg text-sm text-neutral-500">Loading…</p>
@@ -112,6 +115,69 @@ const STATUSES = ['Draft', 'Scheduled', 'InProgress', 'Completed', 'Cancelled'];
           }
           <app-add-land-widget [workspaceId]="workspaceId" (added)="onLandAdded($event)" />
         </div>
+
+        <div class="card">
+          <h2 class="text-sm font-semibold text-neutral-900 mb-md">Milestones</h2>
+          @if (milestones().length > 0) {
+            <div cdkDropList class="space-y-xs mb-md" (cdkDropListDropped)="onMilestoneDropped($event)">
+              @for (m of milestones(); track m.milestoneId) {
+                <div cdkDrag [cdkDragDisabled]="isClient()" class="flex items-center justify-between gap-sm px-md py-sm rounded bg-neutral-50">
+                  <div class="flex items-center gap-sm min-w-0">
+                    @if (!isClient()) {
+                      <span cdkDragHandle class="cursor-grab text-neutral-400 select-none flex-shrink-0">⠿</span>
+                    }
+                    <span class="flex-shrink-0">{{ milestoneStatusIcon(m.status) }}</span>
+                    <div class="min-w-0">
+                      <span class="text-sm text-neutral-900 truncate block">{{ m.title }}</span>
+                      @if (m.description) {
+                        <span class="text-xs text-neutral-500 truncate block">{{ m.description }}</span>
+                      }
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-sm flex-shrink-0 whitespace-nowrap">
+                    @if (m.status === 'Completed') {
+                      <span class="text-xs text-neutral-500">Completed {{ m.completedAt | date: 'mediumDate' }}</span>
+                    } @else if (m.dueDate) {
+                      <span class="text-xs text-neutral-500">Due: {{ m.dueDate | date: 'mediumDate' }}</span>
+                    }
+                    @if (isClient()) {
+                      <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ m.status }}</span>
+                    } @else {
+                      <select class="input-field w-32 py-xs text-xs" [ngModel]="m.status" (ngModelChange)="onMilestoneStatusChange(m, $event)">
+                        @for (s of milestoneStatuses; track s) {
+                          <option [value]="s">{{ s }}</option>
+                        }
+                      </select>
+                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="removeMilestone(m)">
+                        Remove
+                      </button>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          }
+          @if (!isClient()) {
+            @if (addingMilestone()) {
+              <div class="rounded bg-neutral-50 p-md space-y-sm">
+                <input class="input-field text-sm" placeholder="Title" [(ngModel)]="milestoneTitleDraft" />
+                <textarea class="input-field text-sm" rows="2" placeholder="Description (optional)" [(ngModel)]="milestoneDescriptionDraft"></textarea>
+                <input class="input-field text-sm" type="date" [(ngModel)]="milestoneDueDateDraft" />
+                @if (milestoneError()) {
+                  <p class="text-xs text-primary-500">{{ milestoneError() }}</p>
+                }
+                <div class="flex items-center justify-end gap-sm">
+                  <button type="button" class="btn-secondary text-xs" (click)="cancelAddMilestone()">Cancel</button>
+                  <button type="button" class="btn-primary text-xs" (click)="submitMilestone()">Add</button>
+                </div>
+              </div>
+            } @else {
+              <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="addingMilestone.set(true)">
+                + Add milestone
+              </button>
+            }
+          }
+        </div>
       </div>
     }
 
@@ -140,6 +206,13 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   job = signal<Job | null>(null);
   participants = signal<JobParticipant[]>([]);
   lands = signal<Land[]>([]);
+  milestones = signal<Milestone[]>([]);
+  milestoneStatuses = MILESTONE_STATUSES;
+  addingMilestone = signal(false);
+  milestoneTitleDraft = '';
+  milestoneDescriptionDraft = '';
+  milestoneDueDateDraft = '';
+  milestoneError = signal('');
   loading = signal(true);
   savingHeader = signal(false);
   headerError = signal('');
@@ -159,9 +232,18 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
 
   constructor(
     private jobService: JobService,
+    private milestoneService: MilestoneService,
     private currentWorkspace: CurrentWorkspaceService,
     private route: ActivatedRoute
   ) {}
+
+  isClient(): boolean {
+    return this.currentWorkspace.current()?.role === 'Client';
+  }
+
+  milestoneStatusIcon(status: string): string {
+    return status === 'Completed' ? '✓' : status === 'InProgress' ? '◐' : '○';
+  }
 
   ngOnInit(): void {
     this.workspaceId = this.currentWorkspace.current()?.workspaceId ?? '';
@@ -175,14 +257,16 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     forkJoin({
       job: this.jobService.getById(this.workspaceId, this.jobId),
       participants: this.jobService.getParticipants(this.workspaceId, this.jobId),
-      lands: this.jobService.getLands(this.workspaceId, this.jobId)
+      lands: this.jobService.getLands(this.workspaceId, this.jobId),
+      milestones: this.milestoneService.list(this.workspaceId, this.jobId)
     }).subscribe({
-      next: ({ job, participants, lands }) => {
+      next: ({ job, participants, lands, milestones }) => {
         this.job.set(job);
         this.titleDraft = job.title;
         this.descriptionDraft = job.description ?? '';
         this.participants.set(participants);
         this.lands.set(lands);
+        this.milestones.set(milestones);
         this.loading.set(false);
       },
       error: (err) => {
@@ -311,5 +395,70 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   onLandDeleted(landId: string): void {
     this.lands.update(list => list.filter(l => l.landId !== landId));
     this.expandedLandId.set(null);
+  }
+
+  cancelAddMilestone(): void {
+    this.addingMilestone.set(false);
+    this.milestoneTitleDraft = '';
+    this.milestoneDescriptionDraft = '';
+    this.milestoneDueDateDraft = '';
+    this.milestoneError.set('');
+  }
+
+  submitMilestone(): void {
+    if (!this.milestoneTitleDraft.trim()) {
+      this.milestoneError.set('Title is required.');
+      return;
+    }
+    this.milestoneService
+      .create(this.workspaceId, this.jobId, {
+        title: this.milestoneTitleDraft.trim(),
+        description: this.milestoneDescriptionDraft.trim() || null,
+        dueDate: this.milestoneDueDateDraft || null
+      })
+      .subscribe({
+        next: (milestone) => {
+          this.milestones.update(list => [...list, milestone]);
+          this.cancelAddMilestone();
+        },
+        error: (err) => this.milestoneError.set(err.error?.message ?? 'Could not add milestone.')
+      });
+  }
+
+  onMilestoneStatusChange(milestone: Milestone, status: string): void {
+    if (milestone.status === status) return;
+    const previous = milestone.status;
+    this.milestones.update(list => list.map(m => (m.milestoneId === milestone.milestoneId ? { ...m, status } : m)));
+
+    this.milestoneService.updateStatus(this.workspaceId, this.jobId, milestone.milestoneId, status).subscribe({
+      next: (updated) => this.milestones.update(list => list.map(m => (m.milestoneId === updated.milestoneId ? updated : m))),
+      error: (err) => {
+        this.milestones.update(list => list.map(m => (m.milestoneId === milestone.milestoneId ? { ...m, status: previous } : m)));
+        this.error.set(err.error?.message ?? 'Could not change milestone status.');
+      }
+    });
+  }
+
+  removeMilestone(milestone: Milestone): void {
+    this.milestoneService.delete(this.workspaceId, this.jobId, milestone.milestoneId).subscribe({
+      next: () => this.milestones.update(list => list.filter(m => m.milestoneId !== milestone.milestoneId)),
+      error: (err) => this.error.set(err.error?.message ?? 'Could not remove milestone.')
+    });
+  }
+
+  onMilestoneDropped(event: CdkDragDrop<Milestone[]>): void {
+    if (event.previousIndex === event.currentIndex) return;
+    const previous = this.milestones();
+    const reordered = [...previous];
+    moveItemInArray(reordered, event.previousIndex, event.currentIndex);
+    this.milestones.set(reordered);
+
+    this.milestoneService.reorder(this.workspaceId, this.jobId, reordered.map(m => m.milestoneId)).subscribe({
+      next: (updated) => this.milestones.set(updated),
+      error: (err) => {
+        this.milestones.set(previous);
+        this.error.set(err.error?.message ?? 'Could not reorder milestones.');
+      }
+    });
   }
 }
