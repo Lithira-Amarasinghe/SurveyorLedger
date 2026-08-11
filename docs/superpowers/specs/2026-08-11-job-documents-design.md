@@ -92,9 +92,11 @@ Swapping to Azure Blob later = add `AzureBlobFileStorageService` implementing th
 `DocumentService` (`api/src/SurveyorLedger.API/Services/DocumentService.cs`), following Controllers → Services → Data:
 
 - `UploadAsync(jobId, workspaceId, file, category, visibility, userId)` — resolves Job within workspace (tenant check), validates file, saves via `IFileStorageService`, inserts `Document` row.
-- `GetForJobAsync(jobId, workspaceId, requestingUserRole)` — lists active documents for the job; filters out `Internal` documents when caller's role is Client. Enforced server-side, not just hidden in UI.
-- `GetFileAsync(documentId, workspaceId, requestingUserRole)` — same visibility check, returns stream + filename + content-type. Used for both preview and download; caller sets `Content-Disposition` (`inline` vs `attachment`) based on a query flag.
+- `GetForJobAsync(jobId, workspaceId, requestingUserRole)` — lists active documents for the job, filtered through the shared visibility rule below.
+- `GetFileAsync(documentId, workspaceId, requestingUserRole)` — resolves one document through the same visibility rule, returns stream + filename + content-type. Used for both preview and download; caller sets `Content-Disposition` (`inline` vs `attachment`) based on a query flag — one endpoint, no duplicate download route.
 - `DeleteAsync(documentId, workspaceId, userId)` — soft delete (`IsActive = false`); file stays on disk (cleanup job is future work, out of scope for v1).
+
+**Shared visibility rule** — one private helper, `bool IsVisible(Document doc, string role) => role != "Client" || doc.Visibility == DocumentVisibility.ClientVisible`, called from both `GetForJobAsync` (as a filter) and `GetFileAsync` (as a guard before returning the stream). Keeps the Internal/ClientVisible check in exactly one place instead of two parallel copies.
 
 ## API
 
