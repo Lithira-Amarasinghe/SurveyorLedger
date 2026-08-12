@@ -12,6 +12,9 @@ public class LandConfiguration : IEntityTypeConfiguration<Land>
         builder.Property(x => x.Size).HasColumnType("decimal(18,2)");
         builder.Property(x => x.SizeUnit).HasMaxLength(20);
         builder.Property(x => x.GpsCoordinates).HasMaxLength(100);
+        builder.Property(x => x.Latitude).HasColumnType("decimal(9,6)");
+        builder.Property(x => x.Longitude).HasColumnType("decimal(9,6)");
+        builder.Property(x => x.LocationShareToken).HasMaxLength(64);
         builder.Property(x => x.Notes).HasMaxLength(2000);
         builder.Property(x => x.OwnerName).HasMaxLength(200);
         builder.Property(x => x.OwnerPhone).HasMaxLength(30);
@@ -30,6 +33,7 @@ public class LandConfiguration : IEntityTypeConfiguration<Land>
 
         builder.HasIndex(x => x.WorkspaceId);
         builder.HasIndex(x => x.IsActive);
+        builder.HasIndex(x => x.LocationShareToken).IsUnique().HasFilter("[LocationShareToken] IS NOT NULL");
 
         builder.HasOne(x => x.Workspace).WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Owner).WithMany().HasForeignKey(x => x.OwnerId).OnDelete(DeleteBehavior.Restrict);

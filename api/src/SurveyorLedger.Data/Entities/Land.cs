@@ -8,6 +8,9 @@ public class Land
     public decimal? Size { get; set; }
     public string? SizeUnit { get; set; }
     public string? GpsCoordinates { get; set; }
+    public decimal? Latitude { get; set; }
+    public decimal? Longitude { get; set; }
+    public string? LocationShareToken { get; set; }
     public string? Notes { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
