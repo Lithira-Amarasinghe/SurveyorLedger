@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SurveyorLedger.Data;
 
@@ -11,9 +12,11 @@ using SurveyorLedger.Data;
 namespace SurveyorLedger.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260812075153_AddLandViewAllPermission")]
+    partial class AddLandViewAllPermission
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -998,15 +1001,6 @@ namespace SurveyorLedger.Data.Migrations
                             IsSystem = true,
                             Name = "Client",
                             UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000005"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Workspace membership only. No access to jobs or land until assigned.",
-                            IsSystem = true,
-                            Name = "Member",
-                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
                         });
                 });
 
@@ -1172,6 +1166,13 @@ namespace SurveyorLedger.Data.Migrations
                         },
                         new
                         {
+                            Id = new Guid("00000000-0000-0000-0000-000000000229"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000110"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
+                        },
+                        new
+                        {
                             Id = new Guid("00000000-0000-0000-0000-000000000230"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             PermissionId = new Guid("00000000-0000-0000-0000-000000000111"),
@@ -1232,13 +1233,6 @@ namespace SurveyorLedger.Data.Migrations
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             PermissionId = new Guid("00000000-0000-0000-0000-000000000116"),
                             RoleId = new Guid("00000000-0000-0000-0000-000000000003")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000241"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000101"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000005")
                         });
                 });
 

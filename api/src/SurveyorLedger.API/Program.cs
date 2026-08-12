@@ -117,6 +117,10 @@ builder.Services.AddScoped<IDocumentRequestService, DocumentRequestService>();
 // membership both go through this - see UserAccessGrantService for why).
 builder.Services.AddScoped<IUserAccessGrantService, UserAccessGrantService>();
 
+// Register the shared record-level access check (job/land second-step scoping) - see
+// ScopedAccessService for why this replaced four copy-pasted implementations.
+builder.Services.AddScoped<IScopedAccessService, ScopedAccessService>();
+
 // Register RBAC service. Singleton: the enforcer is shared in-memory state that must
 // survive across requests, not per-request scoped state.
 builder.Services.AddSingleton<ICasbinService, CasbinService>();
@@ -147,6 +151,15 @@ var app = builder.Build();
 // Initialize Casbin after DB migration
 using (var scope = app.Services.CreateScope())
 {
+    // Client stopped being a workspace-level role (AddMemberRoleAndDecoupleJobRoles migration) -
+    // convert any pre-existing workspace-scope Client grants to Member before Casbin loads
+    // roles from the DB. Safe to run every startup: the WHERE clause matches zero rows once
+    // the conversion has happened once, so this is a no-op forever after.
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await dbContext.Database.ExecuteSqlRawAsync(
+        "UPDATE UserAccesses SET RoleId = '00000000-0000-0000-0000-000000000005' " +
+        "WHERE ScopeType = 'Workspace' AND RoleId = '00000000-0000-0000-0000-000000000004'");
+
     var casbinService = scope.ServiceProvider.GetRequiredService<ICasbinService>();
     await casbinService.InitializeAsync();
 }

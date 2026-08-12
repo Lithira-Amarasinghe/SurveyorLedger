@@ -1,10 +1,16 @@
-import { Component, EventEmitter, Input, Output, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
 import { Person, PersonService } from '../../../core/person.service';
+import { WorkspaceService } from '../../../core/workspace.service';
+
+export interface PersonWithRole {
+  person: Person;
+  role: string;
+}
 
 @Component({
   selector: 'app-add-person-widget',
@@ -12,13 +18,20 @@ import { Person, PersonService } from '../../../core/person.service';
   imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="border border-neutral-200 rounded-md p-md">
-      <input
-        class="input-field"
-        type="text"
-        placeholder="Search by name or email…"
-        [(ngModel)]="query"
-        (ngModelChange)="onQueryChange($event)"
-      />
+      <div class="flex gap-sm mb-sm">
+        <input
+          class="input-field flex-1"
+          type="text"
+          placeholder="Search by name or email…"
+          [(ngModel)]="query"
+          (ngModelChange)="onQueryChange($event)"
+        />
+        <select class="input-field w-32" [(ngModel)]="role">
+          @for (r of eligibleRoles(); track r) {
+            <option [value]="r">{{ r }}</option>
+          }
+        </select>
+      </div>
 
       @if (searching()) {
         <p class="text-xs text-neutral-500 mt-sm">Searching…</p>
@@ -48,11 +61,13 @@ import { Person, PersonService } from '../../../core/person.service';
     </div>
   `
 })
-export class AddPersonWidgetComponent {
+export class AddPersonWidgetComponent implements OnInit {
   @Input() workspaceId = '';
-  @Output() added = new EventEmitter<Person>();
+  @Output() added = new EventEmitter<PersonWithRole>();
 
   query = '';
+  role = 'Client';
+  eligibleRoles = signal<string[]>(['Client', 'Surveyor']);
   results = signal<Person[]>([]);
   searching = signal(false);
   adding = signal(false);
@@ -60,7 +75,7 @@ export class AddPersonWidgetComponent {
 
   private queryChanged = new Subject<string>();
 
-  constructor(private personService: PersonService) {
+  constructor(private personService: PersonService, private workspaceService: WorkspaceService) {
     this.queryChanged
       .pipe(
         debounceTime(300),
@@ -83,6 +98,13 @@ export class AddPersonWidgetComponent {
       });
   }
 
+  ngOnInit(): void {
+    this.workspaceService.getEligibleRoles(this.workspaceId, 'Job').subscribe(roles => {
+      this.eligibleRoles.set(roles);
+      if (!roles.includes(this.role)) this.role = roles[0] ?? this.role;
+    });
+  }
+
   onQueryChange(value: string): void {
     this.queryChanged.next(value);
   }
@@ -90,7 +112,7 @@ export class AddPersonWidgetComponent {
   choose(person: Person): void {
     this.error.set('');
     this.adding.set(true);
-    this.added.emit(person);
+    this.added.emit({ person, role: this.role });
   }
 
   /** Call after successfully handling the `added` event - resets to the search state. */

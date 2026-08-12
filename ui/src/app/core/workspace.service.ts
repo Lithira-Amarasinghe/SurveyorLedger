@@ -78,6 +78,13 @@ export class WorkspaceService {
     return this.http.get<ApiResponse<Member[]>>(`${this.apiUrl}/${workspaceId}/members`).pipe(map(res => res.data));
   }
 
+  /** Role names valid to pick for this scope - "Workspace" for invite/role-change, "Job" for job assignment. Backend is the single source of truth. */
+  getEligibleRoles(workspaceId: string, scope: 'Workspace' | 'Job'): Observable<string[]> {
+    return this.http
+      .get<ApiResponse<string[]>>(`${this.apiUrl}/${workspaceId}/roles/eligible`, { params: { scope } })
+      .pipe(map(res => res.data));
+  }
+
   updateMemberRole(workspaceId: string, userId: string, role: string): Observable<void> {
     return this.http.put<void>(`${this.apiUrl}/${workspaceId}/members/${userId}`, { role });
   }

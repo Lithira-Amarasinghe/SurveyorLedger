@@ -106,6 +106,14 @@ namespace SurveyorLedger.API.Controllers
             return Ok(ApiResponse<List<RoleResponse>>.Ok(response));
         }
 
+        /// <summary>Role names valid to pick for the given scope - "Workspace" for invite/role-change, "Job" for assigning someone to a job.</summary>
+        [HttpGet("{id}/roles/eligible")]
+        public ActionResult<ApiResponse<List<string>>> GetEligibleRoles(Guid id, [FromQuery] string scope)
+        {
+            var names = _workspaceService.GetEligibleRoleNames(scope);
+            return Ok(ApiResponse<List<string>>.Ok(names));
+        }
+
         [HttpPut("{id}/members/{userId}")]
         public async Task<ActionResult<ApiResponse<object>>> UpdateMemberRole(Guid id, Guid userId, [FromBody] UpdateMemberRoleRequest request)
         {

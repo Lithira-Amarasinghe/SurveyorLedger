@@ -34,14 +34,14 @@ public class DocumentService : IDocumentService
     public const long MaxFileSizeBytes = 25 * 1024 * 1024;
 
     private readonly ApplicationDbContext _context;
-    private readonly ICasbinService _casbinService;
+    private readonly IScopedAccessService _access;
     private readonly IFileStorageService _fileStorageService;
     private readonly ILogger<DocumentService> _logger;
 
-    public DocumentService(ApplicationDbContext context, ICasbinService casbinService, IFileStorageService fileStorageService, ILogger<DocumentService> logger)
+    public DocumentService(ApplicationDbContext context, IScopedAccessService access, IFileStorageService fileStorageService, ILogger<DocumentService> logger)
     {
         _context = context;
-        _casbinService = casbinService;
+        _access = access;
         _fileStorageService = fileStorageService;
         _logger = logger;
     }
@@ -49,8 +49,8 @@ public class DocumentService : IDocumentService
     public async Task<List<Document>> GetDocumentsAsync(Guid workspaceId, Guid callerUserId, Guid jobId)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
-        var callerRole = await GetCallerRoleAsync(callerUserId, workspaceId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
+        var callerRole = await _access.GetEffectiveJobRoleAsync(callerUserId, workspaceId, jobId);
 
         var documents = await _context.Documents
             .Include(d => d.UploadedByUser)
@@ -64,7 +64,7 @@ public class DocumentService : IDocumentService
     public async Task<Document> UploadAsync(Guid workspaceId, Guid callerUserId, Guid jobId, IFormFile file, DocumentCategory category, DocumentVisibility visibility, string? displayFileName = null)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
 
         var extension = Path.GetExtension(file.FileName);
         if (!AllowedExtensions.Contains(extension))
@@ -116,8 +116,8 @@ public class DocumentService : IDocumentService
     public async Task<(Document Document, Stream Content)> GetFileAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
-        var callerRole = await GetCallerRoleAsync(callerUserId, workspaceId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
+        var callerRole = await _access.GetEffectiveJobRoleAsync(callerUserId, workspaceId, jobId);
 
         var document = await FindDocumentAsync(jobId, documentId);
         if (!IsVisible(document, callerRole))
@@ -130,7 +130,7 @@ public class DocumentService : IDocumentService
     public async Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
         var document = await FindDocumentAsync(jobId, documentId);
         document.IsActive = false;
@@ -141,7 +141,7 @@ public class DocumentService : IDocumentService
     public async Task<Document> UpdateVisibilityAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId, DocumentVisibility visibility)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
         var document = await FindDocumentAsync(jobId, documentId);
         document.Visibility = visibility;
@@ -152,17 +152,6 @@ public class DocumentService : IDocumentService
 
     private static bool IsVisible(Document document, string callerRole) =>
         callerRole != Constants.SystemRoles.Client || document.Visibility == DocumentVisibility.ClientVisible;
-
-    private async Task<string> GetCallerRoleAsync(Guid callerUserId, Guid workspaceId)
-    {
-        var role = await _context.UserAccesses
-            .Where(ua => ua.UserId == callerUserId && ua.IsActive &&
-                         ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId)
-            .Select(ua => ua.Role.Name)
-            .FirstOrDefaultAsync();
-
-        return role ?? throw new ForbiddenException("You are not a member of this workspace.");
-    }
 
     private async Task<Job> FindJobAsync(Guid workspaceId, Guid jobId)
     {
@@ -177,23 +166,4 @@ public class DocumentService : IDocumentService
             ?? throw new NotFoundException("Document not found");
     }
 
-    private Task<bool> HasFullJobAccessAsync(Guid callerUserId, Guid workspaceId) =>
-        _casbinService.EnforceAsync(callerUserId.ToString(), "job", "view_all", workspaceId.ToString());
-
-    private Task<bool> IsAssignedToJobAsync(Guid callerUserId, Guid jobId) =>
-        _context.UserAccesses.AnyAsync(ua =>
-            ua.UserId == callerUserId && ua.IsActive &&
-            ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == jobId);
-
-    private async Task EnsureJobAccessAsync(Guid callerUserId, Guid workspaceId, Guid jobId, string action)
-    {
-        var allowed = await _casbinService.EnforceAsync(callerUserId.ToString(), "job", action, workspaceId.ToString());
-        if (!allowed)
-            throw new ForbiddenException($"You do not have permission to {action} documents in this workspace.");
-
-        if (await HasFullJobAccessAsync(callerUserId, workspaceId))
-            return;
-        if (!await IsAssignedToJobAsync(callerUserId, jobId))
-            throw new ForbiddenException($"You do not have permission to {action} documents on this job.");
-    }
 }

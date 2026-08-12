@@ -61,7 +61,7 @@ public class UserAccessGrantService : IUserAccessGrantService
             };
             await _context.UserAccesses.AddAsync(access);
             await _context.SaveChangesAsync();
-            await _casbinService.AddRoleForUserAsync(userId.ToString(), role.Name, scopeId.ToString());
+            await SyncCasbinAsync(() => _casbinService.AddRoleForUserAsync(userId.ToString(), role.Name, scopeId.ToString()));
 
             access.Role = role;
             access.User = user;
@@ -72,7 +72,7 @@ public class UserAccessGrantService : IUserAccessGrantService
         var wasInactive = !existing.IsActive;
 
         if (roleChanged && existing.IsActive)
-            await _casbinService.RemoveRoleForUserAsync(userId.ToString(), existing.Role.Name, scopeId.ToString());
+            await SyncCasbinAsync(() => _casbinService.RemoveRoleForUserAsync(userId.ToString(), existing.Role.Name, scopeId.ToString()));
 
         existing.RoleId = roleId;
         existing.Role = role;
@@ -83,7 +83,7 @@ public class UserAccessGrantService : IUserAccessGrantService
         await _context.SaveChangesAsync();
 
         if (roleChanged || wasInactive)
-            await _casbinService.AddRoleForUserAsync(userId.ToString(), role.Name, scopeId.ToString());
+            await SyncCasbinAsync(() => _casbinService.AddRoleForUserAsync(userId.ToString(), role.Name, scopeId.ToString()));
 
         return existing;
     }
@@ -99,9 +99,27 @@ public class UserAccessGrantService : IUserAccessGrantService
         {
             access.IsActive = false;
             access.UpdatedAt = DateTime.UtcNow;
-            await _casbinService.RemoveRoleForUserAsync(userId.ToString(), access.Role.Name, scopeId.ToString());
+            await SyncCasbinAsync(() => _casbinService.RemoveRoleForUserAsync(userId.ToString(), access.Role.Name, scopeId.ToString()));
         }
 
         await _context.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// The DB row is always committed first - it's the source of truth. If the matching
+    /// Casbin write then fails, the enforcer's in-memory state has drifted from what the DB
+    /// says. Rather than leave that silently wrong until the next process restart, fall back
+    /// to a full reload so the enforcer catches up to the DB immediately.
+    /// </summary>
+    private async Task SyncCasbinAsync(Func<Task> casbinWrite)
+    {
+        try
+        {
+            await casbinWrite();
+        }
+        catch
+        {
+            await _casbinService.ReloadAsync();
+        }
     }
 }

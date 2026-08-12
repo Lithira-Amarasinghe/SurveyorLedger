@@ -31,7 +31,7 @@ public class WorkspaceMemberRemovalTests : WorkspaceIntegrationTestBase
         _workspaceService = GetService<IWorkspaceService>();
 
         var job = await _jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Job A" });
-        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, SurveyorId);
+        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, SurveyorId, "Surveyor");
 
         var jobAccessBefore = await Context.UserAccesses.AnyAsync(ua =>
             ua.UserId == SurveyorId && ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == job.Id);

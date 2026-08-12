@@ -31,20 +31,20 @@ public class MilestoneService : IMilestoneService
     private static readonly HashSet<string> ValidStatuses = new() { "Pending", "InProgress", "Completed" };
 
     private readonly ApplicationDbContext _context;
-    private readonly ICasbinService _casbinService;
+    private readonly IScopedAccessService _access;
     private readonly ILogger<MilestoneService> _logger;
 
-    public MilestoneService(ApplicationDbContext context, ICasbinService casbinService, ILogger<MilestoneService> logger)
+    public MilestoneService(ApplicationDbContext context, IScopedAccessService access, ILogger<MilestoneService> logger)
     {
         _context = context;
-        _casbinService = casbinService;
+        _access = access;
         _logger = logger;
     }
 
     public async Task<List<Milestone>> GetMilestonesAsync(Guid workspaceId, Guid callerUserId, Guid jobId)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
 
         return await _context.Milestones
             .Where(m => m.JobId == jobId)
@@ -55,14 +55,14 @@ public class MilestoneService : IMilestoneService
     public async Task<Milestone> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
         return await FindMilestoneAsync(jobId, milestoneId);
     }
 
     public async Task<Milestone> CreateAsync(Guid workspaceId, Guid callerUserId, Guid jobId, MilestoneRequest request)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
         var nextSortOrder = await _context.Milestones
             .Where(m => m.JobId == jobId)
@@ -94,7 +94,7 @@ public class MilestoneService : IMilestoneService
     public async Task<Milestone> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId, MilestoneRequest request)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
         var milestone = await FindMilestoneAsync(jobId, milestoneId);
         milestone.Title = request.Title.Trim();
@@ -112,7 +112,7 @@ public class MilestoneService : IMilestoneService
             throw new ValidationException($"Status must be one of: {string.Join(", ", ValidStatuses)}.");
 
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
         var milestone = await FindMilestoneAsync(jobId, milestoneId);
         milestone.Status = status;
@@ -138,7 +138,7 @@ public class MilestoneService : IMilestoneService
     public async Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
         var milestone = await FindMilestoneAsync(jobId, milestoneId);
         milestone.IsActive = false;
@@ -156,7 +156,7 @@ public class MilestoneService : IMilestoneService
     public async Task<List<Milestone>> ReorderAsync(Guid workspaceId, Guid callerUserId, Guid jobId, List<Guid> orderedMilestoneIds)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
         var milestones = await _context.Milestones.Where(m => m.JobId == jobId).ToListAsync();
         var byId = milestones.ToDictionary(m => m.Id);
@@ -188,27 +188,4 @@ public class MilestoneService : IMilestoneService
             ?? throw new NotFoundException("Milestone not found");
     }
 
-    private Task<bool> HasFullJobAccessAsync(Guid callerUserId, Guid workspaceId) =>
-        _casbinService.EnforceAsync(callerUserId.ToString(), "job", "view_all", workspaceId.ToString());
-
-    private Task<bool> IsAssignedToJobAsync(Guid callerUserId, Guid jobId) =>
-        _context.UserAccesses.AnyAsync(ua =>
-            ua.UserId == callerUserId && ua.IsActive &&
-            ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == jobId);
-
-    private async Task EnsureJobAccessAsync(Guid callerUserId, Guid workspaceId, Guid jobId, string action)
-    {
-        await EnsureAllowedAsync(callerUserId, action, workspaceId);
-        if (await HasFullJobAccessAsync(callerUserId, workspaceId))
-            return;
-        if (!await IsAssignedToJobAsync(callerUserId, jobId))
-            throw new ForbiddenException($"You do not have permission to {action} milestones on this job.");
-    }
-
-    private async Task EnsureAllowedAsync(Guid callerUserId, string action, Guid workspaceId)
-    {
-        var allowed = await _casbinService.EnforceAsync(callerUserId.ToString(), "job", action, workspaceId.ToString());
-        if (!allowed)
-            throw new ForbiddenException($"You do not have permission to {action} milestones in this workspace.");
-    }
 }

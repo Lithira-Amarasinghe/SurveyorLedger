@@ -76,6 +76,53 @@ m = g(r.sub, p.sub, r.scp) && r.obj == p.obj && r.act == p.act
         }
     }
 
+    public async Task ReloadAsync()
+    {
+        if (_enforcer == null)
+            throw new InvalidOperationException("Casbin not initialized");
+
+        try
+        {
+            // ClearPolicy wipes both p and g rows; LoadRulesFromDatabaseAsync re-derives
+            // everything from UserAccess/RolePermission, the actual source of truth. Without
+            // the clear, reloading would duplicate every grouping rule already in memory.
+            _enforcer.ClearPolicy();
+            await LoadRulesFromDatabaseAsync();
+            _logger.LogInformation("Casbin policy reloaded from database");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to reload Casbin policy");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Walks the fixed permission set (small and near-static, unlike UserAccess rows) and
+    /// asks Casbin yes/no for each - simpler and more robust than relying on the generic
+    /// "implicit permissions" API, which assumes a plainer domain shape than our
+    /// g(sub, role, scope) matcher uses.
+    /// </summary>
+    public Task<List<(string Resource, string Action)>> GetPermissionsAsync(string subject, string scope)
+    {
+        if (_enforcer == null)
+            throw new InvalidOperationException("Casbin not initialized");
+
+        var candidates = _enforcer.GetPolicy()
+            .Select(row => row.ToList())
+            .Select(row => (Resource: row[1], Action: row[2]))
+            .Distinct()
+            .ToList();
+
+        var granted = new List<(string, string)>();
+        foreach (var (resource, action) in candidates)
+        {
+            if (_enforcer.Enforce(subject, resource, action, scope))
+                granted.Add((resource, action));
+        }
+        return Task.FromResult(granted);
+    }
+
     public Task AddRoleForUserAsync(string userId, string role, string scope)
     {
         if (_enforcer == null)

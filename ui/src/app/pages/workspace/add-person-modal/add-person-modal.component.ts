@@ -1,10 +1,11 @@
-import { Component, EventEmitter, Input, Output, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
 import { InvitationService } from '../../../core/invitation.service';
 import { PersonService, Account } from '../../../core/person.service';
+import { WorkspaceService } from '../../../core/workspace.service';
 
 @Component({
   selector: 'app-add-person-modal',
@@ -42,9 +43,9 @@ import { PersonService, Account } from '../../../core/person.service';
           <div>
             <label class="block text-xs font-medium text-neutral-700 mb-xs">Role</label>
             <select class="input-field" name="role" [(ngModel)]="role">
-              <option value="Admin">Admin</option>
-              <option value="Surveyor">Surveyor</option>
-              <option value="Client">Client</option>
+              @for (r of eligibleRoles(); track r) {
+                <option [value]="r">{{ r }}</option>
+              }
             </select>
           </div>
 
@@ -63,7 +64,7 @@ import { PersonService, Account } from '../../../core/person.service';
     </div>
   `
 })
-export class AddPersonModalComponent {
+export class AddPersonModalComponent implements OnInit {
   @Input({ required: true }) workspaceId!: string;
   @Output() cancel = new EventEmitter<void>();
   @Output() created = new EventEmitter<void>();
@@ -74,7 +75,8 @@ export class AddPersonModalComponent {
   phone = '';
   street = '';
   city = '';
-  role = 'Client';
+  role = 'Member';
+  eligibleRoles = signal<string[]>(['Admin', 'Surveyor', 'Member']);
   loading = signal(false);
   error = signal('');
 
@@ -87,7 +89,11 @@ export class AddPersonModalComponent {
 
   private emailInput$ = new Subject<string>();
 
-  constructor(private invitationService: InvitationService, private personService: PersonService) {
+  constructor(
+    private invitationService: InvitationService,
+    private personService: PersonService,
+    private workspaceService: WorkspaceService
+  ) {
     this.emailInput$
       .pipe(
         debounceTime(400),
@@ -105,6 +111,13 @@ export class AddPersonModalComponent {
         const match = accounts.find(a => a.email?.toLowerCase() === typed) ?? null;
         this.applyMatch(match);
       });
+  }
+
+  ngOnInit(): void {
+    this.workspaceService.getEligibleRoles(this.workspaceId, 'Workspace').subscribe(roles => {
+      this.eligibleRoles.set(roles);
+      if (!roles.includes(this.role)) this.role = roles[0] ?? this.role;
+    });
   }
 
   onEmailChange(value: string): void {

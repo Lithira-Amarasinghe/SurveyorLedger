@@ -33,19 +33,20 @@ public interface ILandService
 public class LandService : ILandService
 {
     private readonly ApplicationDbContext _context;
-    private readonly ICasbinService _casbinService;
+    private readonly IScopedAccessService _access;
     private readonly ILogger<LandService> _logger;
 
-    public LandService(ApplicationDbContext context, ICasbinService casbinService, ILogger<LandService> logger)
+    public LandService(ApplicationDbContext context, IScopedAccessService access, ILogger<LandService> logger)
     {
         _context = context;
-        _casbinService = casbinService;
+        _access = access;
         _logger = logger;
     }
 
     public async Task<Land> CreateAsync(Guid workspaceId, Guid callerUserId, LandRequest request)
     {
-        await EnsureAllowedAsync(callerUserId, "create", workspaceId);
+        // No record exists yet, so only the workspace-level create right applies here.
+        await _access.EnsureAllowedAsync(callerUserId, "land", "create", workspaceId);
         await ValidateOwnerAsync(request);
 
         var land = new Land
@@ -80,9 +81,18 @@ public class LandService : ILandService
     /// </summary>
     public async Task<List<Land>> SearchAsync(Guid workspaceId, Guid callerUserId, string? query)
     {
-        await EnsureAllowedAsync(callerUserId, "view", workspaceId);
+        await _access.EnsureListAllowedAsync(callerUserId, workspaceId);
 
         var lands = _context.Lands.Include(l => l.Owner).Where(l => l.WorkspaceId == workspaceId);
+
+        // Without land.view_all (Admin/Surveyor), land is only visible through a job the
+        // caller is assigned to - otherwise a Client with zero job assignments could list
+        // every land record in the workspace, including other clients' properties.
+        if (!await _access.HasViewAllAsync(callerUserId, "land", workspaceId))
+        {
+            var accessibleLandIds = _access.AccessibleLandIds(callerUserId);
+            lands = lands.Where(l => accessibleLandIds.Contains(l.Id));
+        }
 
         if (!string.IsNullOrWhiteSpace(query))
         {
@@ -100,13 +110,13 @@ public class LandService : ILandService
 
     public async Task<Land> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid landId)
     {
-        await EnsureAllowedAsync(callerUserId, "view", workspaceId);
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "view");
         return await FindLandAsync(workspaceId, landId);
     }
 
     public async Task<Land> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandRequest request)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
         await ValidateOwnerAsync(request);
         var land = await FindLandAsync(workspaceId, landId);
 
@@ -127,7 +137,7 @@ public class LandService : ILandService
 
     public async Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid landId)
     {
-        await EnsureAllowedAsync(callerUserId, "delete", workspaceId);
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "delete");
         var land = await FindLandAsync(workspaceId, landId);
 
         land.IsActive = false;
@@ -137,7 +147,7 @@ public class LandService : ILandService
 
     public async Task<LandSurvey> AddSurveyAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandSurveyRequest request)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
         await FindLandAsync(workspaceId, landId);
 
         var survey = new LandSurvey
@@ -158,7 +168,7 @@ public class LandService : ILandService
 
     public async Task<List<LandSurvey>> GetSurveysAsync(Guid workspaceId, Guid callerUserId, Guid landId)
     {
-        await EnsureAllowedAsync(callerUserId, "view", workspaceId);
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "view");
         await FindLandAsync(workspaceId, landId);
 
         return await _context.LandSurveys
@@ -169,7 +179,7 @@ public class LandService : ILandService
 
     public async Task<LandSurvey> UpdateSurveyAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid surveyId, LandSurveyRequest request)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
         await FindLandAsync(workspaceId, landId);
         var survey = await FindSurveyAsync(landId, surveyId);
 
@@ -185,7 +195,7 @@ public class LandService : ILandService
     /// <summary>Hard delete - corrects a mis-entered record, not meaningful history to preserve once wrong.</summary>
     public async Task DeleteSurveyAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid surveyId)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
         await FindLandAsync(workspaceId, landId);
         var survey = await FindSurveyAsync(landId, surveyId);
 
@@ -195,7 +205,7 @@ public class LandService : ILandService
 
     public async Task<LandDeed> AddDeedAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandDeedRequest request)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
         await FindLandAsync(workspaceId, landId);
 
         // A new current deed supersedes whichever one was current before - old deeds
@@ -228,7 +238,7 @@ public class LandService : ILandService
 
     public async Task<List<LandDeed>> GetDeedsAsync(Guid workspaceId, Guid callerUserId, Guid landId)
     {
-        await EnsureAllowedAsync(callerUserId, "view", workspaceId);
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "view");
         await FindLandAsync(workspaceId, landId);
 
         return await _context.LandDeeds
@@ -239,7 +249,7 @@ public class LandService : ILandService
 
     public async Task<LandDeed> UpdateDeedAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid deedId, LandDeedRequest request)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
         await FindLandAsync(workspaceId, landId);
         var deed = await FindDeedAsync(landId, deedId);
 
@@ -264,7 +274,7 @@ public class LandService : ILandService
     /// <summary>Hard delete - corrects a mis-entered record, not meaningful history to preserve once wrong.</summary>
     public async Task DeleteDeedAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid deedId)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
         await FindLandAsync(workspaceId, landId);
         var deed = await FindDeedAsync(landId, deedId);
 
@@ -274,7 +284,7 @@ public class LandService : ILandService
 
     public async Task<LandBoundary> AddBoundaryAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandBoundaryRequest request)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
         await FindLandAsync(workspaceId, landId);
 
         var boundary = new LandBoundary
@@ -293,7 +303,7 @@ public class LandService : ILandService
 
     public async Task<List<LandBoundary>> GetBoundariesAsync(Guid workspaceId, Guid callerUserId, Guid landId)
     {
-        await EnsureAllowedAsync(callerUserId, "view", workspaceId);
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "view");
         await FindLandAsync(workspaceId, landId);
 
         return await _context.LandBoundaries
@@ -304,7 +314,7 @@ public class LandService : ILandService
 
     public async Task<LandBoundary> UpdateBoundaryAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid boundaryId, LandBoundaryRequest request)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
         await FindLandAsync(workspaceId, landId);
         var boundary = await FindBoundaryAsync(landId, boundaryId);
 
@@ -318,7 +328,7 @@ public class LandService : ILandService
     /// <summary>Hard delete - corrects a mis-entered record, not meaningful history to preserve once wrong.</summary>
     public async Task DeleteBoundaryAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid boundaryId)
     {
-        await EnsureAllowedAsync(callerUserId, "edit", workspaceId);
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
         await FindLandAsync(workspaceId, landId);
         var boundary = await FindBoundaryAsync(landId, boundaryId);
 
@@ -370,13 +380,6 @@ public class LandService : ILandService
     {
         return await _context.LandBoundaries.FirstOrDefaultAsync(b => b.Id == boundaryId && b.LandId == landId)
             ?? throw new NotFoundException("Boundary record not found");
-    }
-
-    private async Task EnsureAllowedAsync(Guid callerUserId, string action, Guid workspaceId)
-    {
-        var allowed = await _casbinService.EnforceAsync(callerUserId.ToString(), "land", action, workspaceId.ToString());
-        if (!allowed)
-            throw new ForbiddenException($"You do not have permission to {action} land records in this workspace.");
     }
 
     private static Address ToAddress(AddressDto? dto) => new()

@@ -43,9 +43,9 @@ public class RolePermissionConfiguration : IEntityTypeConfiguration<RolePermissi
             Grant(new Guid("00000000-0000-0000-0000-000000000221"), RoleConfiguration.AdminRoleId, PermissionConfiguration.CreateJobId),
             Grant(new Guid("00000000-0000-0000-0000-000000000222"), RoleConfiguration.AdminRoleId, PermissionConfiguration.EditJobId),
             Grant(new Guid("00000000-0000-0000-0000-000000000223"), RoleConfiguration.AdminRoleId, PermissionConfiguration.DeleteJobId),
-            // Job - Surveyor: view/create/edit, not delete
+            // Job - Surveyor: view/edit only - job creation is an Admin decision, not
+            // something a Surveyor can do on their own.
             Grant(new Guid("00000000-0000-0000-0000-000000000228"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.ViewJobId),
-            Grant(new Guid("00000000-0000-0000-0000-000000000229"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.CreateJobId),
             Grant(new Guid("00000000-0000-0000-0000-000000000230"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.EditJobId),
             // Job - Client: view only (further scoped to their own jobs in JobService, not Casbin)
             Grant(new Guid("00000000-0000-0000-0000-000000000231"), RoleConfiguration.ClientRoleId, PermissionConfiguration.ViewJobId),
@@ -58,7 +58,15 @@ public class RolePermissionConfiguration : IEntityTypeConfiguration<RolePermissi
             Grant(new Guid("00000000-0000-0000-0000-000000000237"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.CreateClientId),
             // Job view-all - Admin sees every job in the workspace; Surveyor/Client
             // are scoped to jobs they've been explicitly assigned (job-scoped UserAccess).
-            Grant(new Guid("00000000-0000-0000-0000-000000000238"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewAllJobId)
+            Grant(new Guid("00000000-0000-0000-0000-000000000238"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewAllJobId),
+            // Land view-all - staff (Admin, Surveyor) see every land record in the
+            // workspace; Client is scoped to land linked to a job they're assigned to
+            // (see ScopedAccessService.EnsureLandAccessAsync / AccessibleLandIds).
+            Grant(new Guid("00000000-0000-0000-0000-000000000239"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewAllLandId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000240"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.ViewAllLandId),
+            // Member: workspace membership only. No job/land access at workspace scope -
+            // capability comes purely from job-scope grants (Surveyor or Client on a job).
+            Grant(new Guid("00000000-0000-0000-0000-000000000241"), RoleConfiguration.MemberRoleId, PermissionConfiguration.ViewWorkspaceId)
         );
     }
 }

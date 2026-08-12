@@ -80,10 +80,10 @@ namespace SurveyorLedger.API.Controllers
         }
 
         [HttpPost("{id}/participants/{userId}")]
-        public async Task<ActionResult<ApiResponse<JobParticipantResponse>>> AddParticipant(Guid workspaceId, Guid id, Guid userId)
+        public async Task<ActionResult<ApiResponse<JobParticipantResponse>>> AddParticipant(Guid workspaceId, Guid id, Guid userId, [FromBody] AddParticipantRequest request)
         {
             var callerId = CallerId();
-            var participant = await _jobService.AddParticipantAsync(workspaceId, callerId, id, userId);
+            var participant = await _jobService.AddParticipantAsync(workspaceId, callerId, id, userId, request.Role);
             return Ok(ApiResponse<JobParticipantResponse>.Ok(ToResponse(participant)));
         }
 

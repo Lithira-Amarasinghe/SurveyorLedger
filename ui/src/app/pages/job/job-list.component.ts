@@ -21,7 +21,9 @@ const STATUS_STYLES: Record<string, string> = {
     <div class="p-lg max-w-4xl mx-auto">
       <div class="flex items-center justify-between mb-lg">
         <h1 class="text-lg font-semibold text-neutral-900">Jobs</h1>
-        <button class="btn-primary" (click)="modalOpen.set(true)">New job</button>
+        @if (isAdmin()) {
+          <button class="btn-primary" (click)="modalOpen.set(true)">New job</button>
+        }
       </div>
 
       @if (loading()) {
@@ -82,6 +84,10 @@ export class JobListComponent implements OnInit {
   ngOnInit(): void {
     this.workspaceId = this.currentWorkspace.current()?.workspaceId ?? '';
     this.fetch();
+  }
+
+  isAdmin(): boolean {
+    return this.currentWorkspace.current()?.role === 'Admin';
   }
 
   fetch(): void {

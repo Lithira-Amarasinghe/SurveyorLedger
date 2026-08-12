@@ -6,7 +6,8 @@ import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-
 import { Observable, Subject, forkJoin } from 'rxjs';
 import { Job, JobParticipant, JobService } from '../../core/job.service';
 import { Land, addressLine } from '../../core/land.service';
-import { Person } from '../../core/person.service';
+import { AuthService } from '../../core/auth.service';
+import { PersonWithRole } from './add-person-widget/add-person-widget.component';
 import { Milestone, MilestoneService } from '../../core/milestone.service';
 import { Document, DocumentService } from '../../core/document.service';
 import { DocumentRequest, DocumentRequestService } from '../../core/document-request.service';
@@ -459,11 +460,19 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     private documentService: DocumentService,
     private documentRequestService: DocumentRequestService,
     private currentWorkspace: CurrentWorkspaceService,
+    private authService: AuthService,
     private route: ActivatedRoute
   ) {}
 
+  /**
+   * Client is job-scoped now, not a workspace role - derive it from this job's own
+   * participants list (already loaded) by finding the caller's own entry, rather than the
+   * workspace-wide role which no longer applies at this level.
+   */
   isClient(): boolean {
-    return this.currentWorkspace.current()?.role === 'Client';
+    const myId = this.authService.getCurrentUserId();
+    const me = this.participants().find(p => p.userId === myId);
+    return me?.role === 'Client';
   }
 
   milestoneStatusIcon(status: string): string {
@@ -589,8 +598,8 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     });
   }
 
-  onPersonAdded(person: Person): void {
-    this.jobService.addParticipant(this.workspaceId, this.jobId, person.userId).subscribe({
+  onPersonAdded({ person, role }: PersonWithRole): void {
+    this.jobService.addParticipant(this.workspaceId, this.jobId, person.userId, role).subscribe({
       next: () => {
         this.personWidget?.markAdded();
         this.jobService.getParticipants(this.workspaceId, this.jobId).subscribe(participants => this.participants.set(participants));

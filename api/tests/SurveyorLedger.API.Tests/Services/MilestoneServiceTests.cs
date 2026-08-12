@@ -38,8 +38,8 @@ public class MilestoneServiceTests : WorkspaceIntegrationTestBase
         _jobBId = jobB.Id;
 
         // Surveyor and Client both assigned to Job A only; neither is assigned to Job B.
-        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobAId, SurveyorId);
-        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobAId, ClientId);
+        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobAId, SurveyorId, "Surveyor");
+        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobAId, ClientId, "Client");
     }
 
     [Fact]

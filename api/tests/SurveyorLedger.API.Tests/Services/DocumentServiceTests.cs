@@ -42,8 +42,8 @@ public class DocumentServiceTests : WorkspaceIntegrationTestBase
         _jobAId = jobA.Id;
         _jobBId = jobB.Id;
 
-        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobAId, SurveyorId);
-        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobAId, ClientId);
+        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobAId, SurveyorId, "Surveyor");
+        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobAId, ClientId, "Client");
     }
 
     private static IFormFile MakeFile(string name = "plan.pdf", string content = "file-bytes", string contentType = "application/pdf")

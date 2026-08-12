@@ -26,20 +26,20 @@ public interface IDocumentRequestService
 public class DocumentRequestService : IDocumentRequestService
 {
     private readonly ApplicationDbContext _context;
-    private readonly ICasbinService _casbinService;
+    private readonly IScopedAccessService _access;
     private readonly IDocumentService _documentService;
 
-    public DocumentRequestService(ApplicationDbContext context, ICasbinService casbinService, IDocumentService documentService)
+    public DocumentRequestService(ApplicationDbContext context, IScopedAccessService access, IDocumentService documentService)
     {
         _context = context;
-        _casbinService = casbinService;
+        _access = access;
         _documentService = documentService;
     }
 
     public async Task<List<DocumentRequest>> GetForJobAsync(Guid workspaceId, Guid callerUserId, Guid jobId)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
 
         return await _context.DocumentRequests
             .Include(r => r.TargetUser)
@@ -51,7 +51,7 @@ public class DocumentRequestService : IDocumentRequestService
     public async Task<DocumentRequest> CreateAsync(Guid workspaceId, Guid callerUserId, Guid jobId, string title, string? description, DocumentCategory category, string? targetRole = null, Guid? targetUserId = null)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
         if (string.IsNullOrWhiteSpace(title))
             throw new ValidationException("Title is required.");
@@ -82,7 +82,7 @@ public class DocumentRequestService : IDocumentRequestService
     public async Task<DocumentRequest> FulfillAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId, IFormFile file, DocumentVisibility visibility, string? displayFileName = null)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
 
         var request = await FindRequestAsync(jobId, requestId);
 
@@ -91,7 +91,7 @@ public class DocumentRequestService : IDocumentRequestService
 
         if (request.TargetRole != null)
         {
-            var callerRole = await GetCallerRoleAsync(callerUserId, workspaceId);
+            var callerRole = await _access.GetEffectiveJobRoleAsync(callerUserId, workspaceId, jobId);
             if (callerRole != request.TargetRole)
                 throw new ForbiddenException($"This request is for the {request.TargetRole} role.");
         }
@@ -130,7 +130,7 @@ public class DocumentRequestService : IDocumentRequestService
     public async Task<DocumentRequest> ReopenAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId, string? note = null)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
         var request = await FindRequestAsync(jobId, requestId);
         // FulfilledDocumentId/At/By stay as-is - the previous document and its "via
@@ -147,7 +147,7 @@ public class DocumentRequestService : IDocumentRequestService
     public async Task CancelAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
         var request = await FindRequestAsync(jobId, requestId);
         request.IsActive = false;
@@ -158,7 +158,7 @@ public class DocumentRequestService : IDocumentRequestService
     public async Task<DocumentRequest> UpdateTargetAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId, string? targetRole, Guid? targetUserId)
     {
         await FindJobAsync(workspaceId, jobId);
-        await EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
         var request = await FindRequestAsync(jobId, requestId);
         if (request.Status == "Fulfilled")
@@ -182,7 +182,7 @@ public class DocumentRequestService : IDocumentRequestService
         if (targetRole != null && targetRole != Constants.SystemRoles.Admin && targetRole != Constants.SystemRoles.Surveyor && targetRole != Constants.SystemRoles.Client)
             throw new ValidationException($"Unknown target role '{targetRole}'.");
 
-        if (targetUserId.HasValue && !await IsAssignedToJobAsync(targetUserId.Value, jobId))
+        if (targetUserId.HasValue && !await _access.AccessibleJobIds(targetUserId.Value).AnyAsync(id => id == jobId))
             throw new ValidationException("The targeted person is not assigned to this job.");
     }
 
@@ -199,34 +199,4 @@ public class DocumentRequestService : IDocumentRequestService
             ?? throw new NotFoundException("Document request not found");
     }
 
-    private async Task<string> GetCallerRoleAsync(Guid callerUserId, Guid workspaceId)
-    {
-        var role = await _context.UserAccesses
-            .Where(ua => ua.UserId == callerUserId && ua.IsActive &&
-                         ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId)
-            .Select(ua => ua.Role.Name)
-            .FirstOrDefaultAsync();
-
-        return role ?? throw new ForbiddenException("You are not a member of this workspace.");
-    }
-
-    private Task<bool> HasFullJobAccessAsync(Guid callerUserId, Guid workspaceId) =>
-        _casbinService.EnforceAsync(callerUserId.ToString(), "job", "view_all", workspaceId.ToString());
-
-    private Task<bool> IsAssignedToJobAsync(Guid callerUserId, Guid jobId) =>
-        _context.UserAccesses.AnyAsync(ua =>
-            ua.UserId == callerUserId && ua.IsActive &&
-            ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == jobId);
-
-    private async Task EnsureJobAccessAsync(Guid callerUserId, Guid workspaceId, Guid jobId, string action)
-    {
-        var allowed = await _casbinService.EnforceAsync(callerUserId.ToString(), "job", action, workspaceId.ToString());
-        if (!allowed)
-            throw new ForbiddenException($"You do not have permission to {action} document requests in this workspace.");
-
-        if (await HasFullJobAccessAsync(callerUserId, workspaceId))
-            return;
-        if (!await IsAssignedToJobAsync(callerUserId, jobId))
-            throw new ForbiddenException($"You do not have permission to {action} document requests on this job.");
-    }
 }

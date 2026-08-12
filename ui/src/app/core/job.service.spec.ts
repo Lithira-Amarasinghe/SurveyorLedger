@@ -45,11 +45,11 @@ describe('JobService', () => {
     req.flush({ success: true, data: {} });
   });
 
-  it('addParticipant() posts with no body - role is derived server-side from workspace membership', () => {
-    service.addParticipant(workspaceId, 'j1', 'u2').subscribe();
+  it('addParticipant() posts the chosen job-scoped role', () => {
+    service.addParticipant(workspaceId, 'j1', 'u2', 'Surveyor').subscribe();
     const req = httpMock.expectOne(`${base}/j1/participants/u2`);
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({});
+    expect(req.request.body).toEqual({ role: 'Surveyor' });
     req.flush({ success: true, data: {} });
   });
 

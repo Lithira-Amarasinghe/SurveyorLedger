@@ -124,7 +124,7 @@ public class LandOwnershipTests : WorkspaceIntegrationTestBase
         var invitation = await invitationService.CreateInvitationAsync(WorkspaceId, AdminId, new InvitationRequest
         {
             Email = "declined.owner@test.local",
-            Role = "Client",
+            Role = "Member",
             FirstName = "Declined",
             LastName = "Owner"
         });

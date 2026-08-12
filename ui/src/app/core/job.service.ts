@@ -63,9 +63,10 @@ export class JobService {
     return this.http.get<ApiResponse<JobParticipant[]>>(`${this.base(workspaceId)}/${jobId}/participants`).pipe(map(res => res.data));
   }
 
-  addParticipant(workspaceId: string, jobId: string, userId: string): Observable<JobParticipant> {
+  /** role is the job-scoped grant to create - "Surveyor" or "Client", independent of the person's workspace role. */
+  addParticipant(workspaceId: string, jobId: string, userId: string, role: string): Observable<JobParticipant> {
     return this.http
-      .post<ApiResponse<JobParticipant>>(`${this.base(workspaceId)}/${jobId}/participants/${userId}`, {})
+      .post<ApiResponse<JobParticipant>>(`${this.base(workspaceId)}/${jobId}/participants/${userId}`, { role })
       .pipe(map(res => res.data));
   }
 

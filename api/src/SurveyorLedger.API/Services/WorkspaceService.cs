@@ -30,6 +30,16 @@ public interface IWorkspaceService
     Task<string> UpdateMemberRoleAsync(Guid workspaceId, Guid targetUserId, Guid callerUserId, string newRoleName);
     Task RemoveMemberAsync(Guid workspaceId, Guid targetUserId, Guid callerUserId);
     Task<List<RoleWithPermissions>> GetWorkspaceRolesAsync(Guid workspaceId, Guid callerUserId);
+
+    /// <summary>
+    /// Role names valid to pick in a given context - single source of truth for the invite/
+    /// role-change dropdown (Workspace scope: Admin, Surveyor, Member) and the job-assignment
+    /// dropdown (Job scope: Surveyor, Client). Mirrors the RegularExpression validators on
+    /// InvitationRequest/UpdateMemberRoleRequest/AddParticipantRequest - those stay as the
+    /// actual server-side enforcement, this just lets the UI reflect the same rule instead
+    /// of carrying its own hardcoded copy that can drift out of sync.
+    /// </summary>
+    List<string> GetEligibleRoleNames(string scopeType);
 }
 
 public class WorkspaceService : IWorkspaceService
@@ -226,6 +236,13 @@ public class WorkspaceService : IWorkspaceService
 
     private static string Capitalize(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
 
+    public List<string> GetEligibleRoleNames(string scopeType) => scopeType switch
+    {
+        Constants.ScopeTypes.Workspace => new List<string> { Constants.SystemRoles.Admin, Constants.SystemRoles.Surveyor, Constants.SystemRoles.Member },
+        Constants.ScopeTypes.Job => new List<string> { Constants.SystemRoles.Surveyor, Constants.SystemRoles.Client },
+        _ => throw new AppException(Constants.ErrorCodes.ValidationFailed, $"Unknown scope '{scopeType}'.", 400)
+    };
+
     public async Task<List<RoleWithPermissions>> GetWorkspaceRolesAsync(Guid workspaceId, Guid callerUserId)
     {
         // Read-only, but mirrors the "manage members" gate so it lines up with the
@@ -275,24 +292,9 @@ public class WorkspaceService : IWorkspaceService
 
         var oldRoleName = access.Role.Name;
 
-        // A member's job-scope grants carry their own copy of the role (AddParticipantAsync
-        // copies it from the workspace row at assignment time), so changing the workspace
-        // role must re-role those too. Leaving them behind means a demoted member keeps
-        // their old, higher permissions on every job they're assigned to - Casbin enforces
-        // the job-scope grouping independently of the workspace one.
-        var workspaceJobIds = await _context.Jobs
-            .Where(j => j.WorkspaceId == workspaceId)
-            .Select(j => j.Id)
-            .ToListAsync();
-        var jobGrants = await _context.UserAccesses
-            .Include(ua => ua.Role)
-            .Where(ua => ua.UserId == targetUserId && ua.IsActive &&
-                ua.ScopeType == Constants.ScopeTypes.Job && workspaceJobIds.Contains(ua.ScopeId))
-            .ToListAsync();
-        var jobGrantsToRerole = jobGrants
-            .Where(ua => ua.RoleId != newRole.Id)
-            .Select(ua => (ua.ScopeId, OldRoleName: ua.Role.Name))
-            .ToList();
+        // Workspace role and job role are independent facts - a job-scope grant (Surveyor or
+        // Client, picked explicitly by Admin at assignment time) is no longer derived from
+        // the workspace role, so changing the workspace role must NOT touch it.
 
         // Serializable so a concurrent role-change/removal against the same workspace can't
         // also pass the "at least one other Admin exists" read before either commits its write.
@@ -310,24 +312,12 @@ public class WorkspaceService : IWorkspaceService
             access.RoleId = newRole.Id;
             AddAudit("MemberRoleChanged", "UserAccess", access.Id, workspaceId, callerUserId, oldRoleName, newRole.Name);
 
-            foreach (var jobGrant in jobGrants)
-            {
-                jobGrant.RoleId = newRole.Id;
-                jobGrant.UpdatedAt = DateTime.UtcNow;
-            }
-
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
         });
 
         await _casbinService.RemoveRoleForUserAsync(targetUserId.ToString(), oldRoleName, workspaceId.ToString());
         await _casbinService.AddRoleForUserAsync(targetUserId.ToString(), newRole.Name, workspaceId.ToString());
-
-        foreach (var (scopeId, previousRoleName) in jobGrantsToRerole)
-        {
-            await _casbinService.RemoveRoleForUserAsync(targetUserId.ToString(), previousRoleName, scopeId.ToString());
-            await _casbinService.AddRoleForUserAsync(targetUserId.ToString(), newRole.Name, scopeId.ToString());
-        }
 
         return newRole.Name;
     }

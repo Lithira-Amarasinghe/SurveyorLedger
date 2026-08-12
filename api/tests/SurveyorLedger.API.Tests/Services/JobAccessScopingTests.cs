@@ -32,7 +32,16 @@ public class JobAccessScopingTests : WorkspaceIntegrationTestBase
         _jobBId = jobB.Id;
 
         // Surveyor assigned to Job A only; Client gets nothing.
-        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobAId, SurveyorId);
+        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobAId, SurveyorId, "Surveyor");
+    }
+
+    [Fact]
+    public async Task Surveyor_CannotCreateJob()
+    {
+        _jobService = GetService<IJobService>();
+
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => _jobService.CreateAsync(WorkspaceId, SurveyorId, new JobRequest { Title = "Unauthorized job" }));
     }
 
     [Fact]
@@ -124,6 +133,6 @@ public class JobAccessScopingTests : WorkspaceIntegrationTestBase
         await Context.SaveChangesAsync();
 
         await Assert.ThrowsAsync<AppException>(
-            () => _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobBId, outsiderId));
+            () => _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobBId, outsiderId, "Surveyor"));
     }
 }

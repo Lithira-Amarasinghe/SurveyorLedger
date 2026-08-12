@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SurveyorLedger.Data;
 
@@ -11,9 +12,11 @@ using SurveyorLedger.Data;
 namespace SurveyorLedger.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260812084110_AddMemberRoleAndDecoupleJobRoles")]
+    partial class AddMemberRoleAndDecoupleJobRoles
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1168,6 +1171,13 @@ namespace SurveyorLedger.Data.Migrations
                             Id = new Guid("00000000-0000-0000-0000-000000000228"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             PermissionId = new Guid("00000000-0000-0000-0000-000000000109"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000229"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000110"),
                             RoleId = new Guid("00000000-0000-0000-0000-000000000003")
                         },
                         new

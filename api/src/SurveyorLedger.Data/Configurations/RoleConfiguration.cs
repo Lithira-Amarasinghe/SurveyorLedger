@@ -11,6 +11,7 @@ public class RoleConfiguration : IEntityTypeConfiguration<Role>
     public static readonly Guid AdminRoleId = new("00000000-0000-0000-0000-000000000001");
     public static readonly Guid SurveyorRoleId = new("00000000-0000-0000-0000-000000000003");
     public static readonly Guid ClientRoleId = new("00000000-0000-0000-0000-000000000004");
+    public static readonly Guid MemberRoleId = new("00000000-0000-0000-0000-000000000005");
 
     public void Configure(EntityTypeBuilder<Role> builder)
     {
@@ -28,7 +29,8 @@ public class RoleConfiguration : IEntityTypeConfiguration<Role>
         builder.HasData(
             new Role { Id = AdminRoleId, Name = Constants.SystemRoles.Admin, Description = "Full access to workspace settings, members, and data.", WorkspaceId = null, IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
             new Role { Id = SurveyorRoleId, Name = Constants.SystemRoles.Surveyor, Description = "Performs assigned survey jobs.", WorkspaceId = null, IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
-            new Role { Id = ClientRoleId, Name = Constants.SystemRoles.Client, Description = "Views job status and results for their organization.", WorkspaceId = null, IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt }
+            new Role { Id = ClientRoleId, Name = Constants.SystemRoles.Client, Description = "Views job status and results for their organization.", WorkspaceId = null, IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
+            new Role { Id = MemberRoleId, Name = Constants.SystemRoles.Member, Description = "Workspace membership only. No access to jobs or land until assigned.", WorkspaceId = null, IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt }
         );
     }
 }

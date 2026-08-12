@@ -15,11 +15,13 @@ namespace SurveyorLedger.API.Controllers
     public class UserController : ControllerBase
     {
         private readonly IAuthService _authService;
+        private readonly ICasbinService _casbinService;
         private readonly ILogger<UserController> _logger;
 
-        public UserController(IAuthService authService, ILogger<UserController> logger)
+        public UserController(IAuthService authService, ICasbinService casbinService, ILogger<UserController> logger)
         {
             _authService = authService;
+            _casbinService = casbinService;
             _logger = logger;
         }
 
@@ -49,6 +51,23 @@ namespace SurveyorLedger.API.Controllers
                 Email = u.Email
             }).ToList();
             return Ok(ApiResponse<List<UserSearchResponse>>.Ok(results));
+        }
+
+        /// <summary>
+        /// The caller's actual permission set in one workspace, straight from Casbin -
+        /// lets the UI hide/show actions by real capability instead of guessing from a
+        /// role-name string comparison.
+        /// </summary>
+        [HttpGet("me/permissions")]
+        public async Task<ActionResult<ApiResponse<List<string>>>> GetMyPermissions([FromQuery] Guid workspaceId)
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userId, out var id))
+                return Unauthorized(ApiResponse<object>.Fail("Invalid user ID"));
+
+            var permissions = await _casbinService.GetPermissionsAsync(id.ToString(), workspaceId.ToString());
+            var names = permissions.Select(p => $"{p.Resource}.{p.Action}").OrderBy(n => n).ToList();
+            return Ok(ApiResponse<List<string>>.Ok(names));
         }
 
         [HttpPut("profile")]

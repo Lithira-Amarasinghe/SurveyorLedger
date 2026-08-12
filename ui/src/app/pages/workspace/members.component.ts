@@ -84,12 +84,11 @@ interface MemberRow {
                     } @else if (isAdmin() && !row.isPending && !row.isOwner) {
                       <select
                         class="input-field py-xs"
-                        [value]="row.role"
                         (change)="onRoleSelect(row, $any($event.target).value)"
                       >
-                        <option value="Admin">Admin</option>
-                        <option value="Surveyor">Surveyor</option>
-                        <option value="Client">Client</option>
+                        @for (r of eligibleRoles(); track r) {
+                          <option [value]="r" [selected]="r === row.role">{{ r }}</option>
+                        }
                       </select>
                     } @else {
                       <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ row.role }}</span>
@@ -161,6 +160,7 @@ export class MembersComponent implements OnInit {
   error = signal('');
   modalOpen = signal(false);
   confirming = signal<Set<string>>(new Set());
+  eligibleRoles = signal<string[]>(['Admin', 'Surveyor', 'Member']);
 
   constructor(
     private workspaceService: WorkspaceService,
@@ -173,6 +173,7 @@ export class MembersComponent implements OnInit {
   ngOnInit(): void {
     this.workspaceId = this.currentWorkspace.current()?.workspaceId ?? '';
     this.fetch();
+    this.workspaceService.getEligibleRoles(this.workspaceId, 'Workspace').subscribe(roles => this.eligibleRoles.set(roles));
   }
 
   isAdmin(): boolean {

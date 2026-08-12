@@ -9,10 +9,10 @@ using Xunit;
 namespace SurveyorLedger.API.Tests.Services;
 
 /// <summary>
-/// Regression: changing a member's workspace role must re-role their job-scope grants too.
-/// Job grants carry their own copy of the role (AddParticipantAsync copies it at assignment
-/// time), and Casbin enforces the job-scope grouping independently - so leaving them behind
-/// means a demoted member keeps their old, higher permissions on assigned jobs.
+/// Workspace role and job role are independent facts now - a job-scope grant (Surveyor or
+/// Client, picked explicitly by Admin at assignment time) is no longer derived from the
+/// workspace role, so changing someone's workspace role must NOT touch their existing
+/// job-scope grants.
 /// </summary>
 public class MemberRoleChangeTests : WorkspaceIntegrationTestBase
 {
@@ -26,42 +26,44 @@ public class MemberRoleChangeTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
-    public async Task ChangingWorkspaceRole_AlsoRerolesJobScopeGrants()
+    public async Task ChangingWorkspaceRole_DoesNotTouchExistingJobScopeGrants()
     {
         _jobService = GetService<IJobService>();
         _workspaceService = GetService<IWorkspaceService>();
 
         var job = await _jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Job A" });
-        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, SurveyorId);
+        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, SurveyorId, "Surveyor");
 
         var grantBefore = await Context.UserAccesses.FirstAsync(ua =>
             ua.UserId == SurveyorId && ua.IsActive &&
             ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == job.Id);
         Assert.Equal(RoleConfiguration.SurveyorRoleId, grantBefore.RoleId);
 
-        await _workspaceService.UpdateMemberRoleAsync(WorkspaceId, SurveyorId, AdminId, Constants.SystemRoles.Client);
+        await _workspaceService.UpdateMemberRoleAsync(WorkspaceId, SurveyorId, AdminId, Constants.SystemRoles.Member);
 
         var grantAfter = await Context.UserAccesses.FirstAsync(ua =>
             ua.UserId == SurveyorId && ua.IsActive &&
             ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == job.Id);
-        Assert.Equal(RoleConfiguration.ClientRoleId, grantAfter.RoleId);
+        Assert.Equal(RoleConfiguration.SurveyorRoleId, grantAfter.RoleId);
     }
 
     [Fact]
-    public async Task DemotedMember_LosesElevatedPermissionOnTheirAssignedJob()
+    public async Task DemotedAtWorkspace_KeepsTheirJobScopePermissionOnAssignedJob()
     {
-        // The point of the fix: Casbin must stop granting the old role at job scope, not
-        // just at workspace scope. A Client cannot edit land records; a Surveyor can.
+        // The job grant is its own independent fact - demoting someone to Member at
+        // workspace level must not strip a Surveyor job-scope grant they were explicitly
+        // assigned. Casbin enforces the job-scope grouping on its own, unaffected by the
+        // workspace-scope change.
         _jobService = GetService<IJobService>();
         _workspaceService = GetService<IWorkspaceService>();
 
         var job = await _jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Job A" });
-        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, SurveyorId);
+        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, SurveyorId, "Surveyor");
 
         Assert.True(await CasbinService.EnforceAsync(SurveyorId.ToString(), "land", "edit", job.Id.ToString()));
 
-        await _workspaceService.UpdateMemberRoleAsync(WorkspaceId, SurveyorId, AdminId, Constants.SystemRoles.Client);
+        await _workspaceService.UpdateMemberRoleAsync(WorkspaceId, SurveyorId, AdminId, Constants.SystemRoles.Member);
 
-        Assert.False(await CasbinService.EnforceAsync(SurveyorId.ToString(), "land", "edit", job.Id.ToString()));
+        Assert.True(await CasbinService.EnforceAsync(SurveyorId.ToString(), "land", "edit", job.Id.ToString()));
     }
 }

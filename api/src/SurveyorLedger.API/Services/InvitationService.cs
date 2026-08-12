@@ -78,11 +78,12 @@ public class InvitationService : IInvitationService
 
     public async Task<Invitation> CreateInvitationAsync(Guid workspaceId, Guid invitedByUserId, InvitationRequest request)
     {
-        // Inviting as Client only needs the narrower client:create permission (Admin/
-        // Manager/Surveyor - front-desk staff capturing a client contact). Any other role
-        // is a real membership decision and needs manage_members, same gate as before -
-        // otherwise a Surveyor could hand themselves Admin by picking that role here.
-        var permitted = request.Role == Constants.SystemRoles.Client
+        // Inviting as Member only needs the narrower client:create permission (front-desk
+        // staff adding a harmless, view-only person - Client no longer exists at workspace
+        // scope, it's granted per job instead). Admin/Surveyor are real membership decisions
+        // and need manage_members, same gate as before - otherwise a Surveyor could hand
+        // themselves Admin by picking that role here.
+        var permitted = request.Role == Constants.SystemRoles.Member
             ? await _casbinService.EnforceAsync(invitedByUserId.ToString(), "client", "create", workspaceId.ToString())
             : await _casbinService.EnforceAsync(invitedByUserId.ToString(), "workspace", "manage_members", workspaceId.ToString());
         if (!permitted)

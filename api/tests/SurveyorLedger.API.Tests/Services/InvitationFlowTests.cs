@@ -30,7 +30,7 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
             .Build());
     }
 
-    private InvitationRequest NewPersonRequest(string email, string role = "Client") => new()
+    private InvitationRequest NewPersonRequest(string email, string role = "Member") => new()
     {
         Email = email,
         Role = role,
@@ -64,11 +64,11 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
-    public async Task Surveyor_CanInviteAsClient()
+    public async Task Surveyor_CanInviteAsMember()
     {
         _invitationService = GetService<IInvitationService>();
 
-        var invitation = await _invitationService.CreateInvitationAsync(WorkspaceId, SurveyorId, NewPersonRequest("client.candidate@test.local", "Client"));
+        var invitation = await _invitationService.CreateInvitationAsync(WorkspaceId, SurveyorId, NewPersonRequest("member.candidate@test.local", "Member"));
 
         Assert.Equal("Pending", invitation.Status);
     }
@@ -192,7 +192,7 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
             WorkspaceId, AdminId, NewPersonRequest("pending.person@test.local", "Surveyor"));
 
         var rejected = await Assert.ThrowsAsync<AppException>(
-            () => jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId));
+            () => jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId, "Surveyor"));
         Assert.Equal(Constants.ErrorCodes.UserNotFound, rejected.Code);
 
         // Setting a password isn't enough - assignment still fails until the invite is
@@ -206,13 +206,13 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
         });
 
         var stillRejected = await Assert.ThrowsAsync<AppException>(
-            () => jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId));
+            () => jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId, "Surveyor"));
         Assert.Equal(Constants.ErrorCodes.UserNotFound, stillRejected.Code);
 
         // Accepting makes them a real member, and only then does assignment succeed.
         await _invitationService.AcceptInvitationAsync(invitation.Id, invitation.UserId);
 
-        var grant = await jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId);
+        var grant = await jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId, "Surveyor");
         Assert.Equal(Constants.ScopeTypes.Job, grant.ScopeType);
         Assert.Equal(job.Id, grant.ScopeId);
     }
@@ -229,7 +229,7 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
         await _invitationService.DeclineInvitationAsync(invitation.Id, invitation.UserId);
 
         await Assert.ThrowsAsync<AppException>(
-            () => jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId));
+            () => jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId, "Surveyor"));
     }
 
     [Fact]

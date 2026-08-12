@@ -45,6 +45,7 @@ public abstract class WorkspaceIntegrationTestBase : IAsyncLifetime
         services.AddDbContext<ApplicationDbContext>(o => o.UseSqlServer(connectionString));
         services.AddSingleton<ICasbinService, CasbinService>();
         services.AddScoped<IUserAccessGrantService, UserAccessGrantService>();
+        services.AddScoped<IScopedAccessService, ScopedAccessService>();
         services.AddLogging(b => b.AddProvider(NullLoggerProvider.Instance));
         ConfigureServices(services);
 
@@ -101,6 +102,8 @@ public abstract class WorkspaceIntegrationTestBase : IAsyncLifetime
 
         await GrantService.GrantAsync(AdminId, RoleConfiguration.AdminRoleId, Constants.ScopeTypes.Workspace, WorkspaceId, AdminId);
         await GrantService.GrantAsync(SurveyorId, RoleConfiguration.SurveyorRoleId, Constants.ScopeTypes.Workspace, WorkspaceId, AdminId);
-        await GrantService.GrantAsync(ClientId, RoleConfiguration.ClientRoleId, Constants.ScopeTypes.Workspace, WorkspaceId, AdminId);
+        // Client is job-scope only now - ClientId is a plain workspace Member here; tests
+        // needing job-level Client access grant it explicitly via AddParticipantAsync.
+        await GrantService.GrantAsync(ClientId, RoleConfiguration.MemberRoleId, Constants.ScopeTypes.Workspace, WorkspaceId, AdminId);
     }
 }
