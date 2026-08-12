@@ -13,6 +13,7 @@ import { JobDetailComponent } from './pages/job/job-detail.component';
 import { LandListComponent } from './pages/land/land-list.component';
 import { LandDetailComponent } from './pages/land/land-detail.component';
 import { AcceptInviteComponent } from './pages/invite/accept-invite.component';
+import { PublicDocumentUploadComponent } from './pages/document-upload/public-document-upload.component';
 import { InvitationsComponent } from './pages/invitations/invitations.component';
 import { ProfileComponent } from './pages/profile/profile.component';
 import { AppShellComponent } from './shell/app-shell.component';
@@ -24,6 +25,7 @@ import { workspaceResolveGuard } from './core/workspace-resolve.guard';
 export const routes: Routes = [
   { path: '', component: LandingComponent },
   { path: 'invite/:token', component: AcceptInviteComponent },
+  { path: 'document-upload/:token', component: PublicDocumentUploadComponent },
   {
     path: 'auth',
     children: [

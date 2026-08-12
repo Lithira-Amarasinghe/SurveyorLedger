@@ -220,6 +220,10 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                         <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="fulfillInput.click()">Upload</button>
                         @if (!isClient()) {
                           <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="startEditTarget(row.request!)">Edit target</button>
+                          <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="copyShareLink(row.request!)">Copy link</button>
+                          @if (row.request!.hasActiveShareLink) {
+                            <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="revokeShareLink(row.request!)">Revoke link</button>
+                          }
                           <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="cancelRequest(row.request!)">Cancel</button>
                         }
                       </div>
@@ -414,6 +418,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   requestTargetUserIdDraft = '';
   requestError = signal('');
   editingRequestTarget = signal<string | null>(null);
+  shareLinkTokens = signal<Record<string, string>>({});
 
   documentRows = computed(() => {
     const requests = this.documentRequests();
@@ -784,6 +789,41 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     this.requestTargetRoleDraft = 'Client';
     this.requestTargetUserIdDraft = '';
     this.requestError.set('');
+  }
+
+  copyShareLink(request: DocumentRequest): void {
+    // Reuse the cached token if we already have one for this request - a second click on
+    // "Copy link" should just re-copy the same URL, not silently mint a new one and
+    // invalidate whatever was already shared. Only regenerate when we have no token in
+    // hand (first click, or the page was reloaded since the last generate).
+    const cached = this.shareLinkTokens()[request.requestId];
+    if (cached) {
+      navigator.clipboard.writeText(`${window.location.origin}/document-upload/${cached}`);
+      return;
+    }
+
+    this.documentRequestService.generateShareLink(this.workspaceId, this.jobId, request.requestId).subscribe({
+      next: ({ token }) => {
+        this.shareLinkTokens.update(map => ({ ...map, [request.requestId]: token }));
+        this.documentRequests.update(list => list.map(r => (r.requestId === request.requestId ? { ...r, hasActiveShareLink: true } : r)));
+        navigator.clipboard.writeText(`${window.location.origin}/document-upload/${token}`);
+        this.requestError.set('');
+      },
+      error: (err) => this.requestError.set(err.error?.message ?? 'Could not generate link.')
+    });
+  }
+
+  revokeShareLink(request: DocumentRequest): void {
+    this.documentRequestService.revokeShareLink(this.workspaceId, this.jobId, request.requestId).subscribe({
+      next: () => {
+        this.shareLinkTokens.update(map => {
+          const { [request.requestId]: _removed, ...rest } = map;
+          return rest;
+        });
+        this.documentRequests.update(list => list.map(r => (r.requestId === request.requestId ? { ...r, hasActiveShareLink: false } : r)));
+      },
+      error: (err) => this.requestError.set(err.error?.message ?? 'Could not revoke link.')
+    });
   }
 
   startEditTarget(request: DocumentRequest): void {

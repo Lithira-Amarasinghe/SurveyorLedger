@@ -15,6 +15,10 @@ public interface IDocumentRequestService
     Task<DocumentRequest> ReopenAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId, string? note = null);
     Task CancelAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId);
     Task<DocumentRequest> UpdateTargetAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId, string? targetRole, Guid? targetUserId);
+    Task<DocumentRequest> GenerateShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId);
+    Task RevokeShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId);
+    Task<DocumentRequest> GetByShareTokenAsync(string token);
+    Task<DocumentRequest> UploadViaShareTokenAsync(string token, IFormFile file, string? displayFileName = null);
 }
 
 /// <summary>
@@ -96,25 +100,36 @@ public class DocumentRequestService : IDocumentRequestService
                 throw new ForbiddenException($"This request is for the {request.TargetRole} role.");
         }
 
+        return await LinkFulfilledDocumentAsync(workspaceId, jobId, request, file, visibility, callerUserId, displayFileName);
+    }
+
+    /// <summary>
+    /// Shared by FulfillAsync (authenticated) and UploadViaShareTokenAsync (anonymous, via
+    /// link) - one implementation of "upload, replace-deletes-previous, link, mark Fulfilled"
+    /// regardless of which path got here. attributedUserId is the caller for FulfillAsync,
+    /// or the request's RequestedBy for an anonymous link upload (no real caller to attribute to).
+    /// </summary>
+    private async Task<DocumentRequest> LinkFulfilledDocumentAsync(Guid workspaceId, Guid jobId, DocumentRequest request, IFormFile file, DocumentVisibility visibility, Guid attributedUserId, string? displayFileName)
+    {
         // Reopening keeps the previous FulfilledDocumentId as a reference (not cleared) so
         // the old file and the "via request" link stay visible until a replacement lands.
         // No versioning support: once a replacement is uploaded, the old document is
         // superseded and soft-deleted here rather than kept alongside it.
         var previousDocumentId = request.FulfilledDocumentId;
 
-        var document = await _documentService.UploadAsync(workspaceId, callerUserId, jobId, file, request.Category, visibility, displayFileName);
+        var document = await _documentService.UploadAsync(workspaceId, attributedUserId, jobId, file, request.Category, visibility, displayFileName);
 
         request.FulfilledDocumentId = document.Id;
         request.FulfilledAt = DateTime.UtcNow;
-        request.FulfilledBy = callerUserId;
+        request.FulfilledBy = attributedUserId;
         request.Status = "Fulfilled";
         request.UpdatedAt = DateTime.UtcNow;
 
         if (previousDocumentId.HasValue)
         {
-            // Not IDocumentService.DeleteAsync: that requires job.edit, but a Client
-            // fulfilling their own reopened request must be able to trigger this - the
-            // job.view gate already checked above is what actually authorizes this action.
+            // Not IDocumentService.DeleteAsync: that requires job.edit, but a Client (or an
+            // anonymous link uploader) fulfilling their own request must be able to trigger
+            // this - the access check already done by the caller is what actually authorizes it.
             var previousDocument = await _context.Documents.FindAsync(previousDocumentId.Value);
             if (previousDocument != null)
             {
@@ -171,6 +186,58 @@ public class DocumentRequestService : IDocumentRequestService
         request.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
         return request;
+    }
+
+    public async Task<DocumentRequest> GenerateShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId)
+    {
+        await FindJobAsync(workspaceId, jobId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+
+        var request = await FindRequestAsync(jobId, requestId);
+        // Overwriting an existing token is deliberate - the old link stops resolving
+        // immediately, so "generate again" doubles as instant revoke-and-reissue.
+        request.ShareToken = Guid.NewGuid().ToString("N");
+        request.ShareTokenExpiresAt = DateTime.UtcNow.AddDays(7);
+        request.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+        return request;
+    }
+
+    public async Task RevokeShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId)
+    {
+        await FindJobAsync(workspaceId, jobId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+
+        var request = await FindRequestAsync(jobId, requestId);
+        request.ShareToken = null;
+        request.ShareTokenExpiresAt = null;
+        request.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<DocumentRequest> GetByShareTokenAsync(string token)
+    {
+        var request = await _context.DocumentRequests
+            .FirstOrDefaultAsync(r => r.ShareToken == token && r.IsActive)
+            ?? throw new NotFoundException("Link not found");
+
+        if (request.ShareTokenExpiresAt is null || request.ShareTokenExpiresAt <= DateTime.UtcNow)
+            throw new NotFoundException("Link not found");
+
+        return request;
+    }
+
+    public async Task<DocumentRequest> UploadViaShareTokenAsync(string token, IFormFile file, string? displayFileName = null)
+    {
+        var request = await GetByShareTokenAsync(token);
+        var job = await _context.Jobs.FirstAsync(j => j.Id == request.JobId);
+
+        if (request.Status == "Fulfilled")
+            throw new ValidationException("This document has already been provided.");
+
+        return await LinkFulfilledDocumentAsync(job.WorkspaceId, job.Id, request, file, DocumentVisibility.ClientVisible, request.RequestedBy, displayFileName);
     }
 
     /// <summary>Shared by CreateAsync and UpdateTargetAsync - one place for the three targeting rules.</summary>

@@ -23,7 +23,7 @@ describe('DocumentRequestService', () => {
 
   const sample = {
     requestId: 'r1', jobId, title: 'Legal Deed', description: null, category: 'LegalDocument',
-    targetRole: null, targetUserId: null, targetUserName: null,
+    targetRole: null, targetUserId: null, targetUserName: null, hasActiveShareLink: false,
     status: 'Pending', fulfilledDocumentId: null, fulfilledAt: null, fulfilledBy: null,
     requestedBy: 'u1', createdAt: '2026-01-01', updatedAt: '2026-01-01'
   };
@@ -75,5 +75,20 @@ describe('DocumentRequestService', () => {
     expect(req.request.method).toBe('PATCH');
     expect(req.request.body).toEqual({ targetRole: 'Client', targetUserId: null });
     req.flush({ success: true, data: updated });
+  });
+
+  it('generateShareLink() posts to /{id}/share-link', () => {
+    const link = { token: 'abc123', expiresAt: '2026-01-08' };
+    service.generateShareLink(workspaceId, jobId, 'r1').subscribe(result => expect(result).toEqual(link));
+    const req = httpMock.expectOne(`${base}/r1/share-link`);
+    expect(req.request.method).toBe('POST');
+    req.flush({ success: true, data: link });
+  });
+
+  it('revokeShareLink() deletes /{id}/share-link', () => {
+    service.revokeShareLink(workspaceId, jobId, 'r1').subscribe();
+    const req = httpMock.expectOne(`${base}/r1/share-link`);
+    expect(req.request.method).toBe('DELETE');
+    req.flush(null);
   });
 });

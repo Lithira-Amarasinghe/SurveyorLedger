@@ -12,6 +12,7 @@ public class DocumentRequestResponse
     public string? TargetRole { get; set; }
     public Guid? TargetUserId { get; set; }
     public string? TargetUserName { get; set; }
+    public bool HasActiveShareLink { get; set; }
     public required string Status { get; set; }
     public Guid? FulfilledDocumentId { get; set; }
     public DateTime? FulfilledAt { get; set; }

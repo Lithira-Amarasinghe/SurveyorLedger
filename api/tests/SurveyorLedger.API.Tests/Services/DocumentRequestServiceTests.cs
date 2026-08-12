@@ -1,11 +1,13 @@
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Models.Job;
 using SurveyorLedger.API.Services;
 using SurveyorLedger.Core;
 using SurveyorLedger.Core.Exceptions;
+using SurveyorLedger.Data;
 using Xunit;
 
 namespace SurveyorLedger.API.Tests.Services;
@@ -285,5 +287,115 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             _requestService.UpdateTargetAsync(WorkspaceId, ClientId, _jobAId, request.Id, Constants.SystemRoles.Client, null));
+    }
+
+    [Fact]
+    public async Task Admin_CanGenerateShareLink()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
+
+        var withLink = await _requestService.GenerateShareLinkAsync(WorkspaceId, AdminId, _jobAId, request.Id);
+
+        Assert.NotNull(withLink.ShareToken);
+        Assert.True(withLink.ShareTokenExpiresAt > DateTime.UtcNow);
+    }
+
+    [Fact]
+    public async Task Client_CannotGenerateShareLink()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            _requestService.GenerateShareLinkAsync(WorkspaceId, ClientId, _jobAId, request.Id));
+    }
+
+    [Fact]
+    public async Task RegeneratingShareLink_InvalidatesOldToken()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
+        var first = await _requestService.GenerateShareLinkAsync(WorkspaceId, AdminId, _jobAId, request.Id);
+        var oldToken = first.ShareToken!;
+
+        var second = await _requestService.GenerateShareLinkAsync(WorkspaceId, AdminId, _jobAId, request.Id);
+
+        Assert.NotEqual(oldToken, second.ShareToken);
+        await Assert.ThrowsAsync<NotFoundException>(() => _requestService.GetByShareTokenAsync(oldToken));
+    }
+
+    [Fact]
+    public async Task RevokeShareLink_ClearsToken()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
+        var withLink = await _requestService.GenerateShareLinkAsync(WorkspaceId, AdminId, _jobAId, request.Id);
+
+        await _requestService.RevokeShareLinkAsync(WorkspaceId, AdminId, _jobAId, request.Id);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => _requestService.GetByShareTokenAsync(withLink.ShareToken!));
+    }
+
+    [Fact]
+    public async Task GetByShareToken_UnknownToken_ThrowsNotFound()
+    {
+        await SeedJobsAsync();
+        await Assert.ThrowsAsync<NotFoundException>(() => _requestService.GetByShareTokenAsync("does-not-exist"));
+    }
+
+    [Fact]
+    public async Task GetByShareToken_ExpiredToken_ThrowsNotFound()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
+        var withLink = await _requestService.GenerateShareLinkAsync(WorkspaceId, AdminId, _jobAId, request.Id);
+
+        var context = GetService<ApplicationDbContext>();
+        var tracked = await context.DocumentRequests.FirstAsync(r => r.Id == request.Id);
+        tracked.ShareTokenExpiresAt = DateTime.UtcNow.AddDays(-1);
+        await context.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<NotFoundException>(() => _requestService.GetByShareTokenAsync(withLink.ShareToken!));
+    }
+
+    [Fact]
+    public async Task UploadViaShareToken_FulfillsRequest_AttributedToRequester()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
+        var withLink = await _requestService.GenerateShareLinkAsync(WorkspaceId, AdminId, _jobAId, request.Id);
+
+        var fulfilled = await _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, MakeFile());
+
+        Assert.Equal("Fulfilled", fulfilled.Status);
+        Assert.Equal(AdminId, fulfilled.FulfilledBy); // RequestedBy in this seed is Admin
+    }
+
+    [Fact]
+    public async Task UploadViaShareToken_OnAlreadyFulfilledRequest_ThrowsValidation()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
+        var withLink = await _requestService.GenerateShareLinkAsync(WorkspaceId, AdminId, _jobAId, request.Id);
+        await _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, MakeFile());
+
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, MakeFile()));
+    }
+
+    [Fact]
+    public async Task UploadViaShareToken_AlwaysUsesClientVisibleRegardlessOfCallerChoice()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
+        var withLink = await _requestService.GenerateShareLinkAsync(WorkspaceId, AdminId, _jobAId, request.Id);
+
+        var fulfilled = await _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, MakeFile());
+
+        var documentService = GetService<IDocumentService>();
+        var docs = await documentService.GetDocumentsAsync(WorkspaceId, ClientId, _jobAId);
+        var uploaded = Assert.Single(docs, d => d.Id == fulfilled.FulfilledDocumentId);
+        Assert.Equal(DocumentVisibility.ClientVisible, uploaded.Visibility);
     }
 }

@@ -56,5 +56,8 @@ public class DocumentRequestConfiguration : IEntityTypeConfiguration<DocumentReq
         builder.ToTable(t => t.HasCheckConstraint(
             "CK_DocumentRequests_TargetExclusive",
             "[TargetRole] IS NULL OR [TargetUserId] IS NULL"));
+
+        builder.Property(x => x.ShareToken).HasMaxLength(64);
+        builder.HasIndex(x => x.ShareToken).IsUnique().HasFilter("[ShareToken] IS NOT NULL");
     }
 }

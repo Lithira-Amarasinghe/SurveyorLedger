@@ -63,6 +63,24 @@ namespace SurveyorLedger.API.Controllers
             return Ok(ApiResponse<DocumentRequestResponse>.Ok(ToResponse(updated)));
         }
 
+        [HttpPost("{id}/share-link")]
+        public async Task<ActionResult<ApiResponse<DocumentRequestShareLinkResponse>>> GenerateShareLink(Guid workspaceId, Guid jobId, Guid id)
+        {
+            var updated = await _requestService.GenerateShareLinkAsync(workspaceId, CallerId(), jobId, id);
+            return Ok(ApiResponse<DocumentRequestShareLinkResponse>.Ok(new DocumentRequestShareLinkResponse
+            {
+                Token = updated.ShareToken!,
+                ExpiresAt = updated.ShareTokenExpiresAt!.Value
+            }));
+        }
+
+        [HttpDelete("{id}/share-link")]
+        public async Task<IActionResult> RevokeShareLink(Guid workspaceId, Guid jobId, Guid id)
+        {
+            await _requestService.RevokeShareLinkAsync(workspaceId, CallerId(), jobId, id);
+            return NoContent();
+        }
+
         private Guid CallerId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
 
         private static DocumentRequestResponse ToResponse(DocumentRequest r) => new()
@@ -75,6 +93,7 @@ namespace SurveyorLedger.API.Controllers
             TargetRole = r.TargetRole,
             TargetUserId = r.TargetUserId,
             TargetUserName = r.TargetUser != null ? $"{r.TargetUser.FirstName} {r.TargetUser.LastName}" : null,
+            HasActiveShareLink = r.ShareToken != null && r.ShareTokenExpiresAt > DateTime.UtcNow,
             Status = r.Status,
             FulfilledDocumentId = r.FulfilledDocumentId,
             FulfilledAt = r.FulfilledAt,

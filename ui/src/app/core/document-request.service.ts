@@ -13,6 +13,7 @@ export interface DocumentRequest {
   targetRole: 'Admin' | 'Surveyor' | 'Client' | null;
   targetUserId: string | null;
   targetUserName: string | null;
+  hasActiveShareLink: boolean;
   status: 'Pending' | 'Fulfilled' | 'Reopened';
   fulfilledDocumentId: string | null;
   fulfilledAt: string | null;
@@ -70,5 +71,15 @@ export class DocumentRequestService {
     return this.http
       .patch<ApiResponse<DocumentRequest>>(`${this.base(workspaceId, jobId)}/${requestId}/target`, { targetRole, targetUserId })
       .pipe(map(res => res.data));
+  }
+
+  generateShareLink(workspaceId: string, jobId: string, requestId: string): Observable<{ token: string; expiresAt: string }> {
+    return this.http
+      .post<ApiResponse<{ token: string; expiresAt: string }>>(`${this.base(workspaceId, jobId)}/${requestId}/share-link`, {})
+      .pipe(map(res => res.data));
+  }
+
+  revokeShareLink(workspaceId: string, jobId: string, requestId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base(workspaceId, jobId)}/${requestId}/share-link`);
   }
 }

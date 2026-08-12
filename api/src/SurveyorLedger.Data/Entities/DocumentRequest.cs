@@ -21,6 +21,8 @@ public class DocumentRequest
     public Guid RequestedBy { get; set; }
     public string? TargetRole { get; set; }
     public Guid? TargetUserId { get; set; }
+    public string? ShareToken { get; set; }
+    public DateTime? ShareTokenExpiresAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public bool IsActive { get; set; } = true;
