@@ -14,6 +14,13 @@ public interface ILandService
     Task<Land> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandRequest request);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid landId);
 
+    Task<Land> SetLocationAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandLocationRequest request);
+    Task<string> GenerateLocationShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId);
+    Task<string> RegenerateLocationShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId);
+    Task RevokeLocationShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId);
+    Task<Land> GetByLocationShareTokenAsync(string token);
+    Task<Land> SetLocationViaShareTokenAsync(string token, LandLocationRequest request);
+
     Task<LandSurvey> AddSurveyAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandSurveyRequest request);
     Task<List<LandSurvey>> GetSurveysAsync(Guid workspaceId, Guid callerUserId, Guid landId);
     Task<LandSurvey> UpdateSurveyAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid surveyId, LandSurveyRequest request);
@@ -143,6 +150,71 @@ public class LandService : ILandService
         land.IsActive = false;
         land.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+    }
+
+    public async Task<Land> SetLocationAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandLocationRequest request)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
+        var land = await FindLandAsync(workspaceId, landId);
+
+        land.Latitude = request.Latitude;
+        land.Longitude = request.Longitude;
+        land.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+        return land;
+    }
+
+    public async Task<string> GenerateLocationShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
+        var land = await FindLandAsync(workspaceId, landId);
+
+        // Idempotent: an existing active token is returned as-is, not overwritten -
+        // regenerating is a distinct, explicit action (see RegenerateLocationShareLinkAsync).
+        if (land.LocationShareToken != null)
+            return land.LocationShareToken;
+
+        land.LocationShareToken = Guid.NewGuid().ToString("N");
+        await _context.SaveChangesAsync();
+        return land.LocationShareToken;
+    }
+
+    public async Task<string> RegenerateLocationShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
+        var land = await FindLandAsync(workspaceId, landId);
+
+        land.LocationShareToken = Guid.NewGuid().ToString("N");
+        await _context.SaveChangesAsync();
+        return land.LocationShareToken;
+    }
+
+    public async Task RevokeLocationShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
+        var land = await FindLandAsync(workspaceId, landId);
+
+        land.LocationShareToken = null;
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<Land> GetByLocationShareTokenAsync(string token)
+    {
+        return await _context.Lands.FirstOrDefaultAsync(l => l.LocationShareToken == token && l.IsActive)
+            ?? throw new NotFoundException("Link not found");
+    }
+
+    public async Task<Land> SetLocationViaShareTokenAsync(string token, LandLocationRequest request)
+    {
+        var land = await GetByLocationShareTokenAsync(token);
+
+        land.Latitude = request.Latitude;
+        land.Longitude = request.Longitude;
+        land.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+        return land;
     }
 
     public async Task<LandSurvey> AddSurveyAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandSurveyRequest request)

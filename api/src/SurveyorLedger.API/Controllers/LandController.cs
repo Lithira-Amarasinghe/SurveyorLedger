@@ -62,6 +62,38 @@ namespace SurveyorLedger.API.Controllers
             return NoContent();
         }
 
+        [HttpPut("{id}/location")]
+        public async Task<ActionResult<ApiResponse<LandResponse>>> SetLocation(Guid workspaceId, Guid id, [FromBody] LandLocationRequest request)
+        {
+            var callerId = CallerId();
+            var land = await _landService.SetLocationAsync(workspaceId, callerId, id, request);
+            return Ok(ApiResponse<LandResponse>.Ok(ToResponse(land)));
+        }
+
+        [HttpPost("{id}/location-share-link")]
+        public async Task<ActionResult<ApiResponse<LandLocationShareLinkResponse>>> GenerateLocationShareLink(Guid workspaceId, Guid id)
+        {
+            var callerId = CallerId();
+            var token = await _landService.GenerateLocationShareLinkAsync(workspaceId, callerId, id);
+            return Ok(ApiResponse<LandLocationShareLinkResponse>.Ok(new LandLocationShareLinkResponse { Token = token }));
+        }
+
+        [HttpPost("{id}/location-share-link/regenerate")]
+        public async Task<ActionResult<ApiResponse<LandLocationShareLinkResponse>>> RegenerateLocationShareLink(Guid workspaceId, Guid id)
+        {
+            var callerId = CallerId();
+            var token = await _landService.RegenerateLocationShareLinkAsync(workspaceId, callerId, id);
+            return Ok(ApiResponse<LandLocationShareLinkResponse>.Ok(new LandLocationShareLinkResponse { Token = token }));
+        }
+
+        [HttpDelete("{id}/location-share-link")]
+        public async Task<IActionResult> RevokeLocationShareLink(Guid workspaceId, Guid id)
+        {
+            var callerId = CallerId();
+            await _landService.RevokeLocationShareLinkAsync(workspaceId, callerId, id);
+            return NoContent();
+        }
+
         [HttpGet("{id}/surveys")]
         public async Task<ActionResult<ApiResponse<List<LandSurveyResponse>>>> GetSurveys(Guid workspaceId, Guid id)
         {
@@ -180,7 +212,10 @@ namespace SurveyorLedger.API.Controllers
             OwnerId = l.OwnerId,
             OwnerName = l.Owner != null ? $"{l.Owner.FirstName} {l.Owner.LastName}" : l.OwnerName,
             OwnerPhone = l.Owner != null ? l.Owner.Phone : l.OwnerPhone,
-            OwnerEmail = l.Owner != null ? l.Owner.Email : l.OwnerEmail
+            OwnerEmail = l.Owner != null ? l.Owner.Email : l.OwnerEmail,
+            Latitude = l.Latitude,
+            Longitude = l.Longitude,
+            HasActiveLocationShareLink = l.LocationShareToken != null
         };
 
         private static LandSurveyResponse ToResponse(LandSurvey s) => new()
