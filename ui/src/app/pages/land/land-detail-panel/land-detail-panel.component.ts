@@ -4,11 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { Address, Land, LandBoundary, LandDeed, LandService, LandSurvey } from '../../../core/land.service';
 import { OwnerPickerComponent, OwnerValue } from '../owner-picker/owner-picker.component';
+import { LandLocationPickerComponent } from '../../../shared/land-location-picker/land-location-picker.component';
 
 @Component({
   selector: 'app-land-detail-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule, OwnerPickerComponent],
+  imports: [CommonModule, FormsModule, OwnerPickerComponent, LandLocationPickerComponent],
   template: `
     @if (loading()) {
       <p class="text-sm text-neutral-500">Loading…</p>
@@ -70,6 +71,57 @@ import { OwnerPickerComponent, OwnerValue } from '../owner-picker/owner-picker.c
               (valueChange)="onOwnerChange($event)"
             />
           </div>
+        </div>
+
+        <div>
+          <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-sm">Location</h3>
+          @if (land()?.latitude !== null && land()?.latitude !== undefined) {
+            <p class="text-sm text-neutral-900 mb-sm">{{ land()!.latitude }}, {{ land()!.longitude }}</p>
+            <app-land-location-picker
+              [initialLat]="land()!.latitude"
+              [initialLng]="land()!.longitude"
+              [readonly]="true"
+              heightClass="h-48"
+            />
+          } @else {
+            <p class="text-sm text-neutral-500">Not set</p>
+          }
+          <div class="flex flex-wrap gap-sm mt-sm">
+            <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="pickerOpen.set(true)">
+              {{ land()?.latitude != null ? 'Update location' : 'Set location' }}
+            </button>
+            @if (land()?.latitude !== null && land()?.latitude !== undefined) {
+              <a
+                class="text-xs text-primary-600 hover:text-primary-700"
+                [href]="'https://www.google.com/maps?q=' + land()!.latitude + ',' + land()!.longitude"
+                target="_blank"
+                rel="noopener"
+              >
+                Open in Google Maps
+              </a>
+              <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyMapsLink()">
+                {{ mapsLinkCopied() ? 'Copied!' : 'Copy Google Maps link' }}
+              </button>
+            }
+            @if (land()?.hasActiveLocationShareLink) {
+              <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyShareLink()">
+                {{ shareLinkCopied() ? 'Copied!' : 'Copy share link' }}
+              </button>
+              <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="regenerateShareLink()">
+                Regenerate link
+              </button>
+              <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="revokeShareLink()">
+                Revoke link
+              </button>
+            } @else {
+              <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyShareLink()">
+                Copy share link (for client)
+              </button>
+            }
+          </div>
+          @if (locationError()) {
+            <p class="text-xs text-primary-500 mt-xs">{{ locationError() }}</p>
+          }
         </div>
 
         <div>
@@ -218,6 +270,18 @@ import { OwnerPickerComponent, OwnerValue } from '../owner-picker/owner-picker.c
         </div>
       </div>
     }
+    @if (pickerOpen()) {
+      <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-lg" (click)="pickerOpen.set(false)">
+        <div class="bg-white rounded-md p-lg max-w-lg w-full" (click)="$event.stopPropagation()">
+          <h3 class="text-sm font-semibold text-neutral-900 mb-md">Set land location</h3>
+          <app-land-location-picker
+            [initialLat]="land()?.latitude ?? null"
+            [initialLng]="land()?.longitude ?? null"
+            (locationChosen)="onLocationChosen($event)"
+          />
+        </div>
+      </div>
+    }
   `
 })
 export class LandDetailPanelComponent implements OnInit {
@@ -235,6 +299,10 @@ export class LandDetailPanelComponent implements OnInit {
   surveys = signal<LandSurvey[]>([]);
   deeds = signal<LandDeed[]>([]);
   boundaries = signal<LandBoundary[]>([]);
+  pickerOpen = signal(false);
+  locationError = signal('');
+  mapsLinkCopied = signal(false);
+  shareLinkCopied = signal(false);
 
   owner: OwnerValue = {};
   /** Display name for an existing account owner, so the picker can render it without a re-fetch. */
@@ -398,6 +466,58 @@ export class LandDetailPanelComponent implements OnInit {
           this.detailsError.set(err.error?.message ?? 'Could not save changes.');
         }
       });
+  }
+
+  onLocationChosen(location: { lat: number; lng: number }): void {
+    this.locationError.set('');
+    this.landService.setLocation(this.workspaceId, this.landId, location).subscribe({
+      next: (land) => {
+        this.land.set(land);
+        this.pickerOpen.set(false);
+      },
+      error: (err) => this.locationError.set(err.error?.message ?? 'Could not save location.')
+    });
+  }
+
+  copyMapsLink(): void {
+    const land = this.land();
+    if (!land?.latitude || !land?.longitude) return;
+    navigator.clipboard.writeText(`https://www.google.com/maps?q=${land.latitude},${land.longitude}`);
+    this.mapsLinkCopied.set(true);
+    setTimeout(() => this.mapsLinkCopied.set(false), 2000);
+  }
+
+  copyShareLink(): void {
+    this.locationError.set('');
+    this.landService.generateLocationShareLink(this.workspaceId, this.landId).subscribe({
+      next: (token) => {
+        navigator.clipboard.writeText(`${location.origin}/set-location/${token}`);
+        this.shareLinkCopied.set(true);
+        setTimeout(() => this.shareLinkCopied.set(false), 2000);
+        this.land.update(l => (l ? { ...l, hasActiveLocationShareLink: true } : l));
+      },
+      error: (err) => this.locationError.set(err.error?.message ?? 'Could not create share link.')
+    });
+  }
+
+  regenerateShareLink(): void {
+    this.locationError.set('');
+    this.landService.regenerateLocationShareLink(this.workspaceId, this.landId).subscribe({
+      next: (token) => {
+        navigator.clipboard.writeText(`${location.origin}/set-location/${token}`);
+        this.shareLinkCopied.set(true);
+        setTimeout(() => this.shareLinkCopied.set(false), 2000);
+      },
+      error: (err) => this.locationError.set(err.error?.message ?? 'Could not regenerate share link.')
+    });
+  }
+
+  revokeShareLink(): void {
+    this.locationError.set('');
+    this.landService.revokeLocationShareLink(this.workspaceId, this.landId).subscribe({
+      next: () => this.land.update(l => (l ? { ...l, hasActiveLocationShareLink: false } : l)),
+      error: (err) => this.locationError.set(err.error?.message ?? 'Could not revoke share link.')
+    });
   }
 
   startEditSurvey(s: LandSurvey): void {

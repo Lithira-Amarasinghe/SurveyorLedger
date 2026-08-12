@@ -14,6 +14,7 @@ import { LandListComponent } from './pages/land/land-list.component';
 import { LandDetailComponent } from './pages/land/land-detail.component';
 import { AcceptInviteComponent } from './pages/invite/accept-invite.component';
 import { PublicDocumentUploadComponent } from './pages/document-upload/public-document-upload.component';
+import { PublicSetLocationComponent } from './pages/set-location/public-set-location.component';
 import { InvitationsComponent } from './pages/invitations/invitations.component';
 import { ProfileComponent } from './pages/profile/profile.component';
 import { AppShellComponent } from './shell/app-shell.component';
@@ -26,6 +27,7 @@ export const routes: Routes = [
   { path: '', component: LandingComponent },
   { path: 'invite/:token', component: AcceptInviteComponent },
   { path: 'document-upload/:token', component: PublicDocumentUploadComponent },
+  { path: 'set-location/:token', component: PublicSetLocationComponent },
   {
     path: 'auth',
     children: [

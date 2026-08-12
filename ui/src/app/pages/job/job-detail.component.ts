@@ -110,6 +110,21 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                   <div class="flex items-center justify-between px-md py-sm cursor-pointer" (click)="toggleLand(l.landId)">
                     <div>
                       <span class="text-sm text-neutral-900">{{ addressLine(l) }}</span>
+                      @if (l.latitude !== null) {
+                        <a
+                          class="text-xs text-primary-600 ml-xs"
+                          [href]="'https://www.google.com/maps?q=' + l.latitude + ',' + l.longitude"
+                          target="_blank"
+                          rel="noopener"
+                          title="Open in Google Maps"
+                          (click)="$event.stopPropagation()"
+                        >📍</a>
+                      } @else {
+                        <span class="text-xs text-neutral-300 ml-xs" title="Location not set">📍</span>
+                      }
+                      @if (l.ownerName) {
+                        <span class="text-xs text-neutral-500 block">{{ l.ownerName }}</span>
+                      }
                       @if (l.size) {
                         <span class="text-xs text-neutral-500 block">{{ l.size }} {{ l.sizeUnit }}</span>
                       }

@@ -18,6 +18,9 @@ export interface Land {
   size: number | null;
   sizeUnit: string | null;
   gpsCoordinates: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  hasActiveLocationShareLink: boolean;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -39,6 +42,11 @@ export interface LandRequest {
   ownerName?: string;
   ownerPhone?: string;
   ownerEmail?: string;
+}
+
+export interface LandLocation {
+  lat: number;
+  lng: number;
 }
 
 export interface LandSurvey {
@@ -122,6 +130,28 @@ export class LandService {
 
   update(workspaceId: string, landId: string, request: LandRequest): Observable<Land> {
     return this.http.put<ApiResponse<Land>>(`${this.base(workspaceId)}/${landId}`, request).pipe(map(res => res.data));
+  }
+
+  setLocation(workspaceId: string, landId: string, location: LandLocation): Observable<Land> {
+    return this.http
+      .put<ApiResponse<Land>>(`${this.base(workspaceId)}/${landId}/location`, { latitude: location.lat, longitude: location.lng })
+      .pipe(map(res => res.data));
+  }
+
+  generateLocationShareLink(workspaceId: string, landId: string): Observable<string> {
+    return this.http
+      .post<ApiResponse<{ token: string }>>(`${this.base(workspaceId)}/${landId}/location-share-link`, {})
+      .pipe(map(res => res.data.token));
+  }
+
+  regenerateLocationShareLink(workspaceId: string, landId: string): Observable<string> {
+    return this.http
+      .post<ApiResponse<{ token: string }>>(`${this.base(workspaceId)}/${landId}/location-share-link/regenerate`, {})
+      .pipe(map(res => res.data.token));
+  }
+
+  revokeLocationShareLink(workspaceId: string, landId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base(workspaceId)}/${landId}/location-share-link`);
   }
 
   getSurveys(workspaceId: string, landId: string): Observable<LandSurvey[]> {
