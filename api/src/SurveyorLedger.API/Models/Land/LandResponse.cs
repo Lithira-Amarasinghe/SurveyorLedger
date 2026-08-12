@@ -10,6 +10,11 @@ public class LandResponse
     public decimal? Size { get; set; }
     public string? SizeUnit { get; set; }
     public string? GpsCoordinates { get; set; }
+    public decimal? Latitude { get; set; }
+    public decimal? Longitude { get; set; }
+
+    /// <summary>Leaks existence of an active share link, never the token itself.</summary>
+    public bool HasActiveLocationShareLink { get; set; }
     public string? Notes { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
