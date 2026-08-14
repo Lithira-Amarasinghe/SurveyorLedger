@@ -1,6 +1,6 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { Invoice, Quotation, QuotationService } from '../../../core/billing.service';
 import { CurrentWorkspaceService } from '../../../core/current-workspace.service';
 import { BillingTabsComponent } from '../billing-tabs.component';
@@ -10,7 +10,7 @@ import { ConvertQuotationModalComponent } from './convert-modal/convert-quotatio
 @Component({
   selector: 'app-quotation-list',
   standalone: true,
-  imports: [CommonModule, BillingTabsComponent, QuotationFormModalComponent, ConvertQuotationModalComponent],
+  imports: [CommonModule, RouterLink, BillingTabsComponent, QuotationFormModalComponent, ConvertQuotationModalComponent],
   template: `
     <div class="p-lg max-w-5xl mx-auto">
       <app-billing-tabs [workspaceId]="workspaceId" active="quotations" />
@@ -51,6 +51,11 @@ import { ConvertQuotationModalComponent } from './convert-modal/convert-quotatio
                   </td>
                   <td class="px-lg py-sm text-neutral-600">{{ quotation.validUntil ? (quotation.validUntil | date: 'mediumDate') : '—' }}</td>
                   <td class="px-lg py-sm text-right">
+                    <a
+                      class="text-xs text-neutral-500 hover:text-neutral-700 mr-md"
+                      [routerLink]="['/app/workspace', workspaceId, 'billing', 'quotations', quotation.quotationId, 'print']"
+                      (click)="$event.stopPropagation()"
+                    >Print</a>
                     @if (quotation.status === 'Draft' || quotation.status === 'Sent') {
                       <button class="text-xs text-primary-500 hover:text-primary-600" (click)="openConvert(quotation)">Convert to invoice</button>
                     }

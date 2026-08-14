@@ -1,5 +1,6 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { Invoice, InvoiceService } from '../../../core/billing.service';
 import { CurrentWorkspaceService } from '../../../core/current-workspace.service';
 import { BillingTabsComponent } from '../billing-tabs.component';
@@ -9,7 +10,7 @@ import { RecordPaymentModalComponent } from './record-payment-modal/record-payme
 @Component({
   selector: 'app-invoice-list',
   standalone: true,
-  imports: [CommonModule, BillingTabsComponent, InvoiceFormModalComponent, RecordPaymentModalComponent],
+  imports: [CommonModule, RouterLink, BillingTabsComponent, InvoiceFormModalComponent, RecordPaymentModalComponent],
   template: `
     <div class="p-lg max-w-5xl mx-auto">
       <app-billing-tabs [workspaceId]="workspaceId" active="invoices" />
@@ -54,6 +55,11 @@ import { RecordPaymentModalComponent } from './record-payment-modal/record-payme
                   </td>
                   <td class="px-lg py-sm text-neutral-600">{{ invoice.dueDate ? (invoice.dueDate | date: 'mediumDate') : '—' }}</td>
                   <td class="px-lg py-sm text-right">
+                    <a
+                      class="text-xs text-neutral-500 hover:text-neutral-700 mr-md"
+                      [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', invoice.invoiceId, 'print']"
+                      (click)="$event.stopPropagation()"
+                    >Print</a>
                     @if (invoice.balance > 0 && invoice.status !== 'Cancelled') {
                       <button class="text-xs text-primary-500 hover:text-primary-600" (click)="openPayment(invoice)">Record payment</button>
                     }
