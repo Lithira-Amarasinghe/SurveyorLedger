@@ -12,6 +12,9 @@ import { JobListComponent } from './pages/job/job-list.component';
 import { JobDetailComponent } from './pages/job/job-detail.component';
 import { LandListComponent } from './pages/land/land-list.component';
 import { LandDetailComponent } from './pages/land/land-detail.component';
+import { ClientListComponent } from './pages/billing/clients/client-list.component';
+import { QuotationListComponent } from './pages/billing/quotations/quotation-list.component';
+import { InvoiceListComponent } from './pages/billing/invoices/invoice-list.component';
 import { AcceptInviteComponent } from './pages/invite/accept-invite.component';
 import { PublicDocumentUploadComponent } from './pages/document-upload/public-document-upload.component';
 import { PublicSetLocationComponent } from './pages/set-location/public-set-location.component';
@@ -58,6 +61,9 @@ export const routes: Routes = [
           { path: 'jobs/:jobId', component: JobDetailComponent, canDeactivate: [unsavedChangesGuard] },
           { path: 'lands', component: LandListComponent },
           { path: 'lands/:landId', component: LandDetailComponent, canDeactivate: [unsavedChangesGuard] },
+          { path: 'billing/clients', component: ClientListComponent },
+          { path: 'billing/quotations', component: QuotationListComponent },
+          { path: 'billing/invoices', component: InvoiceListComponent },
           { path: 'members', component: MembersComponent },
           { path: 'roles', component: RolesComponent },
         ]
