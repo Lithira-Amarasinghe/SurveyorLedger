@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SurveyorLedger.Data;
 
@@ -11,9 +12,11 @@ using SurveyorLedger.Data;
 namespace SurveyorLedger.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260814075749_AddBillingCore")]
+    partial class AddBillingCore
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1170,114 +1173,6 @@ namespace SurveyorLedger.Data.Migrations
                             Description = "View every land record in the workspace, not just those linked to assigned jobs.",
                             Name = "land.view_all",
                             Resource = "land"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000117"),
-                            Action = "view",
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "View billing clients.",
-                            Name = "billingclient.view",
-                            Resource = "billingclient"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000118"),
-                            Action = "create",
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Create billing clients.",
-                            Name = "billingclient.create",
-                            Resource = "billingclient"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000119"),
-                            Action = "edit",
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Edit billing clients.",
-                            Name = "billingclient.edit",
-                            Resource = "billingclient"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000120"),
-                            Action = "delete",
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Delete billing clients.",
-                            Name = "billingclient.delete",
-                            Resource = "billingclient"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000121"),
-                            Action = "view",
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "View quotations.",
-                            Name = "quotation.view",
-                            Resource = "quotation"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000122"),
-                            Action = "create",
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Create quotations.",
-                            Name = "quotation.create",
-                            Resource = "quotation"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000123"),
-                            Action = "edit",
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Edit quotations.",
-                            Name = "quotation.edit",
-                            Resource = "quotation"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000124"),
-                            Action = "delete",
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Delete quotations.",
-                            Name = "quotation.delete",
-                            Resource = "quotation"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000125"),
-                            Action = "view",
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "View invoices and payments.",
-                            Name = "invoice.view",
-                            Resource = "invoice"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000126"),
-                            Action = "create",
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Create invoices and record payments.",
-                            Name = "invoice.create",
-                            Resource = "invoice"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000127"),
-                            Action = "edit",
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Edit invoices.",
-                            Name = "invoice.edit",
-                            Resource = "invoice"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000128"),
-                            Action = "delete",
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Delete/cancel invoices.",
-                            Name = "invoice.delete",
-                            Resource = "invoice"
                         });
                 });
 
@@ -1648,195 +1543,6 @@ namespace SurveyorLedger.Data.Migrations
                             Id = new Guid("00000000-0000-0000-0000-000000000241"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             PermissionId = new Guid("00000000-0000-0000-0000-000000000101"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000005")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000242"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000117"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000243"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000118"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000244"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000119"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000245"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000120"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000246"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000121"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000247"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000122"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000248"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000123"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000249"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000124"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000250"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000125"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000251"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000126"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000252"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000127"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000253"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000128"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000254"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000117"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000255"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000118"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000256"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000119"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000257"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000121"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000258"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000122"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000259"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000123"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000260"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000125"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000261"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000126"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000262"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000127"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000263"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000117"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000004")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000264"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000121"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000004")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000265"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000125"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000004")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000266"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000117"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000005")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000267"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000121"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000005")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000268"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000125"),
                             RoleId = new Guid("00000000-0000-0000-0000-000000000005")
                         });
                 });

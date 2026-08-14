@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Models.Job;
 using SurveyorLedger.API.Models.Land;
@@ -26,6 +27,14 @@ public class LandAccessScopingTests : WorkspaceIntegrationTestBase
     {
         services.AddScoped<ILandService, LandService>();
         services.AddScoped<IJobService, JobService>();
+        services.AddScoped<IFileStorageService, LocalFileStorageService>();
+        services.AddSingleton<IConfiguration>(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Storage:UploadsRootPath"] = Path.Combine(Path.GetTempPath(), $"sl-landaccess-test-{Guid.NewGuid():N}")
+                })
+                .Build());
     }
 
     private async Task SeedAsync()

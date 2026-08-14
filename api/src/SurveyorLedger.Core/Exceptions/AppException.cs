@@ -36,3 +36,9 @@ public class ValidationException : AppException
     public ValidationException(string message)
         : base(Constants.ErrorCodes.ValidationFailed, message, 400) { }
 }
+
+public class ConflictException : AppException
+{
+    public ConflictException(string message)
+        : base(Constants.ErrorCodes.ValidationFailed, message, 409) { }
+}

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Models.Land;
 using SurveyorLedger.API.Services;
@@ -18,6 +19,14 @@ public class LandLocationServiceTests : WorkspaceIntegrationTestBase
     protected override void ConfigureServices(IServiceCollection services)
     {
         services.AddScoped<ILandService, LandService>();
+        services.AddScoped<IFileStorageService, LocalFileStorageService>();
+        services.AddSingleton<IConfiguration>(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Storage:UploadsRootPath"] = Path.Combine(Path.GetTempPath(), $"sl-landlocation-test-{Guid.NewGuid():N}")
+                })
+                .Build());
     }
 
     private async Task SeedLandAsync()

@@ -113,6 +113,13 @@ builder.Services.AddScoped<IDocumentService, DocumentService>();
 // Register document request service
 builder.Services.AddScoped<IDocumentRequestService, DocumentRequestService>();
 
+// Register billing services. InvoiceService intentionally does not depend on
+// IClientService (ClientService depends on IInvoiceService for balance aggregation) -
+// a mutual dependency would be a circular DI graph.
+builder.Services.AddScoped<IInvoiceService, InvoiceService>();
+builder.Services.AddScoped<IClientService, ClientService>();
+builder.Services.AddScoped<IQuotationService, QuotationService>();
+
 // Register the shared UserAccess grant/revoke service (workspace-scope and job-scope
 // membership both go through this - see UserAccessGrantService for why).
 builder.Services.AddScoped<IUserAccessGrantService, UserAccessGrantService>();

@@ -21,10 +21,15 @@ public class LandOwnershipTests : WorkspaceIntegrationTestBase
     {
         services.AddScoped<ILandService, LandService>();
         services.AddScoped<IInvitationService, InvitationService>();
+        services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddSingleton<IEmailService, NoOpEmailService>();
         services.AddSingleton<IPasswordService, PasswordService>();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["AppSettings:UiBaseUrl"] = "https://test.local" })
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AppSettings:UiBaseUrl"] = "https://test.local",
+                ["Storage:UploadsRootPath"] = Path.Combine(Path.GetTempPath(), $"sl-landownership-test-{Guid.NewGuid():N}")
+            })
             .Build());
     }
 

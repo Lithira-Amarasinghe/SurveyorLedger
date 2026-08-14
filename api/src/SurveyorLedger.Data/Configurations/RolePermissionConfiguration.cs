@@ -66,7 +66,38 @@ public class RolePermissionConfiguration : IEntityTypeConfiguration<RolePermissi
             Grant(new Guid("00000000-0000-0000-0000-000000000240"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.ViewAllLandId),
             // Member: workspace membership only. No job/land access at workspace scope -
             // capability comes purely from job-scope grants (Surveyor or Client on a job).
-            Grant(new Guid("00000000-0000-0000-0000-000000000241"), RoleConfiguration.MemberRoleId, PermissionConfiguration.ViewWorkspaceId)
+            Grant(new Guid("00000000-0000-0000-0000-000000000241"), RoleConfiguration.MemberRoleId, PermissionConfiguration.ViewWorkspaceId),
+            // Billing (client/quotation/invoice) - Admin: full CRUD.
+            Grant(new Guid("00000000-0000-0000-0000-000000000242"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewBillingClientId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000243"), RoleConfiguration.AdminRoleId, PermissionConfiguration.CreateBillingClientId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000244"), RoleConfiguration.AdminRoleId, PermissionConfiguration.EditBillingClientId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000245"), RoleConfiguration.AdminRoleId, PermissionConfiguration.DeleteBillingClientId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000246"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewQuotationId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000247"), RoleConfiguration.AdminRoleId, PermissionConfiguration.CreateQuotationId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000248"), RoleConfiguration.AdminRoleId, PermissionConfiguration.EditQuotationId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000249"), RoleConfiguration.AdminRoleId, PermissionConfiguration.DeleteQuotationId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000250"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewInvoiceId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000251"), RoleConfiguration.AdminRoleId, PermissionConfiguration.CreateInvoiceId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000252"), RoleConfiguration.AdminRoleId, PermissionConfiguration.EditInvoiceId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000253"), RoleConfiguration.AdminRoleId, PermissionConfiguration.DeleteInvoiceId),
+            // Billing - Surveyor: view/create/edit, no delete.
+            Grant(new Guid("00000000-0000-0000-0000-000000000254"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.ViewBillingClientId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000255"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.CreateBillingClientId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000256"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.EditBillingClientId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000257"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.ViewQuotationId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000258"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.CreateQuotationId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000259"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.EditQuotationId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000260"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.ViewInvoiceId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000261"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.CreateInvoiceId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000262"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.EditInvoiceId),
+            // Billing - Client and Member: view only. Billing data is financial; phase 1
+            // does not build a client-scoped billing portal.
+            Grant(new Guid("00000000-0000-0000-0000-000000000263"), RoleConfiguration.ClientRoleId, PermissionConfiguration.ViewBillingClientId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000264"), RoleConfiguration.ClientRoleId, PermissionConfiguration.ViewQuotationId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000265"), RoleConfiguration.ClientRoleId, PermissionConfiguration.ViewInvoiceId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000266"), RoleConfiguration.MemberRoleId, PermissionConfiguration.ViewBillingClientId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000267"), RoleConfiguration.MemberRoleId, PermissionConfiguration.ViewQuotationId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000268"), RoleConfiguration.MemberRoleId, PermissionConfiguration.ViewInvoiceId)
         );
     }
 }

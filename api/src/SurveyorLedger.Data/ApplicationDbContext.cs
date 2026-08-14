@@ -29,6 +29,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<Milestone> Milestones { get; set; }
     public DbSet<Document> Documents { get; set; }
     public DbSet<DocumentRequest> DocumentRequests { get; set; }
+    public DbSet<Client> Clients { get; set; }
+    public DbSet<Quotation> Quotations { get; set; }
+    public DbSet<Invoice> Invoices { get; set; }
+    public DbSet<Payment> Payments { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -41,5 +45,8 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Land>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<Job>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<Milestone>().HasQueryFilter(x => x.IsActive);
+        modelBuilder.Entity<Client>().HasQueryFilter(x => x.IsActive);
+        modelBuilder.Entity<Quotation>().HasQueryFilter(x => x.IsActive);
+        modelBuilder.Entity<Invoice>().HasQueryFilter(x => x.IsActive);
     }
 }
