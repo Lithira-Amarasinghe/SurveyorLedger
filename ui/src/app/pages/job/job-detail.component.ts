@@ -1,7 +1,7 @@
 import { Component, OnInit, ViewChild, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { Observable, Subject, forkJoin } from 'rxjs';
 import { Job, JobParticipant, JobService } from '../../core/job.service';
@@ -12,6 +12,7 @@ import { Milestone, MilestoneService } from '../../core/milestone.service';
 import { Document, DocumentService } from '../../core/document.service';
 import { DocumentRequest, DocumentRequestService } from '../../core/document-request.service';
 import { CurrentWorkspaceService } from '../../core/current-workspace.service';
+import { Invoice, InvoiceService, Quotation, QuotationService } from '../../core/billing.service';
 import { AddPersonWidgetComponent } from './add-person-widget/add-person-widget.component';
 import { AddLandWidgetComponent } from './add-land-widget/add-land-widget.component';
 import { LandDetailPanelComponent } from '../land/land-detail-panel/land-detail-panel.component';
@@ -28,6 +29,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
   imports: [
     CommonModule,
     FormsModule,
+    RouterLink,
     DragDropModule,
     AddPersonWidgetComponent,
     AddLandWidgetComponent,
@@ -206,6 +208,68 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
               </button>
             }
           }
+        </div>
+
+        <div class="card">
+          <h2 class="text-sm font-semibold text-neutral-900 mb-md">Billing</h2>
+
+          <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-xs">Invoices</h3>
+          @if (jobInvoices().length === 0) {
+            <p class="text-sm text-neutral-500 mb-md">No invoices linked to this job yet.</p>
+          } @else {
+            <div class="card p-0 overflow-x-auto mb-md">
+              <table class="w-full text-sm">
+                <thead class="bg-neutral-100 text-neutral-600 text-xs uppercase">
+                  <tr>
+                    <th class="text-left px-lg py-sm font-medium">Number</th>
+                    <th class="text-left px-lg py-sm font-medium">Total</th>
+                    <th class="text-left px-lg py-sm font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (invoice of jobInvoices(); track invoice.invoiceId) {
+                    <tr class="border-t border-neutral-200">
+                      <td class="px-lg py-sm text-neutral-900">{{ invoice.number }}</td>
+                      <td class="px-lg py-sm text-neutral-600">{{ invoice.total | number: '1.2-2' }}</td>
+                      <td class="px-lg py-sm text-neutral-600">{{ invoice.status }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+          <a class="text-xs text-primary-500 hover:text-primary-600" [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices']">
+            Manage invoices →
+          </a>
+
+          <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-xs mt-lg">Quotations</h3>
+          @if (jobQuotations().length === 0) {
+            <p class="text-sm text-neutral-500 mb-md">No quotations linked to this job yet.</p>
+          } @else {
+            <div class="card p-0 overflow-x-auto mb-md">
+              <table class="w-full text-sm">
+                <thead class="bg-neutral-100 text-neutral-600 text-xs uppercase">
+                  <tr>
+                    <th class="text-left px-lg py-sm font-medium">Number</th>
+                    <th class="text-left px-lg py-sm font-medium">Total</th>
+                    <th class="text-left px-lg py-sm font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (quotation of jobQuotations(); track quotation.quotationId) {
+                    <tr class="border-t border-neutral-200">
+                      <td class="px-lg py-sm text-neutral-900">{{ quotation.number }}</td>
+                      <td class="px-lg py-sm text-neutral-600">{{ quotation.total | number: '1.2-2' }}</td>
+                      <td class="px-lg py-sm text-neutral-600">{{ quotation.status }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+          <a class="text-xs text-primary-500 hover:text-primary-600" [routerLink]="['/app/workspace', workspaceId, 'billing', 'quotations']">
+            Manage quotations →
+          </a>
         </div>
 
         <div class="card">
@@ -424,6 +488,8 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   confirmingDeleteDocument = signal<Document | null>(null);
   documentError = signal('');
   documentRequests = signal<DocumentRequest[]>([]);
+  jobInvoices = signal<Invoice[]>([]);
+  jobQuotations = signal<Quotation[]>([]);
   requestingDocument = signal(false);
   requestTitleDraft = '';
   requestDescriptionDraft = '';
@@ -479,6 +545,8 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     private milestoneService: MilestoneService,
     private documentService: DocumentService,
     private documentRequestService: DocumentRequestService,
+    private invoiceService: InvoiceService,
+    private quotationService: QuotationService,
     private currentWorkspace: CurrentWorkspaceService,
     private authService: AuthService,
     private route: ActivatedRoute
@@ -514,9 +582,11 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
       lands: this.jobService.getLands(this.workspaceId, this.jobId),
       milestones: this.milestoneService.list(this.workspaceId, this.jobId),
       documents: this.documentService.list(this.workspaceId, this.jobId),
-      documentRequests: this.documentRequestService.list(this.workspaceId, this.jobId)
+      documentRequests: this.documentRequestService.list(this.workspaceId, this.jobId),
+      invoices: this.invoiceService.search(this.workspaceId),
+      quotations: this.quotationService.search(this.workspaceId)
     }).subscribe({
-      next: ({ job, participants, lands, milestones, documents, documentRequests }) => {
+      next: ({ job, participants, lands, milestones, documents, documentRequests, invoices, quotations }) => {
         this.job.set(job);
         this.titleDraft = job.title;
         this.descriptionDraft = job.description ?? '';
@@ -525,6 +595,8 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
         this.milestones.set(milestones);
         this.documents.set(documents);
         this.documentRequests.set(documentRequests);
+        this.jobInvoices.set(invoices.filter(i => i.jobId === this.jobId));
+        this.jobQuotations.set(quotations.filter(q => q.jobId === this.jobId));
         this.loading.set(false);
       },
       error: (err) => {
