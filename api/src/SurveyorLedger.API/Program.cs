@@ -120,6 +120,7 @@ builder.Services.AddScoped<IInvoiceService, InvoiceService>();
 builder.Services.AddScoped<IClientService, ClientService>();
 builder.Services.AddScoped<IQuotationService, QuotationService>();
 builder.Services.AddScoped<IExpenseService, ExpenseService>();
+builder.Services.AddScoped<IStaffPaymentService, StaffPaymentService>();
 
 // Register the shared UserAccess grant/revoke service (workspace-scope and job-scope
 // membership both go through this - see UserAccessGrantService for why).
