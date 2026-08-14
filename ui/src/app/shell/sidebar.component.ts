@@ -47,6 +47,14 @@ import { CurrentWorkspaceService } from '../core/current-workspace.service';
             Land
           </a>
           <a
+            [routerLink]="['/app/workspace', ws.workspaceId, 'billing', 'invoices']"
+            routerLinkActive="bg-primary-50 text-primary-600"
+            class="flex items-center gap-sm px-md py-sm rounded text-sm text-neutral-700 hover:bg-neutral-100"
+            (click)="navigate.emit()"
+          >
+            Billing
+          </a>
+          <a
             [routerLink]="['/app/workspace', ws.workspaceId, 'members']"
             routerLinkActive="bg-primary-50 text-primary-600"
             class="flex items-center gap-sm px-md py-sm rounded text-sm text-neutral-700 hover:bg-neutral-100"
