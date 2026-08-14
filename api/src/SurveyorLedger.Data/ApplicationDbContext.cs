@@ -33,6 +33,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<Quotation> Quotations { get; set; }
     public DbSet<Invoice> Invoices { get; set; }
     public DbSet<Payment> Payments { get; set; }
+    public DbSet<Expense> Expenses { get; set; }
+    public DbSet<StaffPayment> StaffPayments { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
