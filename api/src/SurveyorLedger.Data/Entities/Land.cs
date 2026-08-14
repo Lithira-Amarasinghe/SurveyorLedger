@@ -31,4 +31,5 @@ public class Land
     public ICollection<LandSurvey> Surveys { get; set; } = new List<LandSurvey>();
     public ICollection<LandDeed> Deeds { get; set; } = new List<LandDeed>();
     public ICollection<LandBoundary> Boundaries { get; set; } = new List<LandBoundary>();
+    public ICollection<LandPhoto> Photos { get; set; } = new List<LandPhoto>();
 }

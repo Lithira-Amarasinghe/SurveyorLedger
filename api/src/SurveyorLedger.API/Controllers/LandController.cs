@@ -190,6 +190,39 @@ namespace SurveyorLedger.API.Controllers
             return NoContent();
         }
 
+        [HttpGet("{id}/photos")]
+        public async Task<ActionResult<ApiResponse<List<LandPhotoResponse>>>> GetPhotos(Guid workspaceId, Guid id)
+        {
+            var callerId = CallerId();
+            var photos = await _landService.GetPhotosAsync(workspaceId, callerId, id);
+            return Ok(ApiResponse<List<LandPhotoResponse>>.Ok(photos.Select(ToResponse).ToList()));
+        }
+
+        [HttpPost("{id}/photos")]
+        [RequestSizeLimit(DocumentService.MaxFileSizeBytes)]
+        public async Task<ActionResult<ApiResponse<LandPhotoResponse>>> UploadPhoto(Guid workspaceId, Guid id, IFormFile file)
+        {
+            var callerId = CallerId();
+            var photo = await _landService.UploadPhotoAsync(workspaceId, callerId, id, file);
+            return Ok(ApiResponse<LandPhotoResponse>.Ok(ToResponse(photo)));
+        }
+
+        [HttpGet("{id}/photos/{photoId}")]
+        public async Task<IActionResult> GetPhotoFile(Guid workspaceId, Guid id, Guid photoId)
+        {
+            var callerId = CallerId();
+            var (photo, content) = await _landService.GetPhotoFileAsync(workspaceId, callerId, id, photoId);
+            return File(content, photo.ContentType, photo.FileName);
+        }
+
+        [HttpDelete("{id}/photos/{photoId}")]
+        public async Task<IActionResult> DeletePhoto(Guid workspaceId, Guid id, Guid photoId)
+        {
+            var callerId = CallerId();
+            await _landService.DeletePhotoAsync(workspaceId, callerId, id, photoId);
+            return NoContent();
+        }
+
         private Guid CallerId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
 
         private static LandResponse ToResponse(Land l) => new()
@@ -247,6 +280,16 @@ namespace SurveyorLedger.API.Controllers
             Label = b.Label,
             Description = b.Description,
             CreatedAt = b.CreatedAt
+        };
+
+        private static LandPhotoResponse ToResponse(LandPhoto p) => new()
+        {
+            PhotoId = p.Id,
+            FileName = p.FileName,
+            ContentType = p.ContentType,
+            FileSizeBytes = p.FileSizeBytes,
+            UploadedByName = $"{p.UploadedByUser.FirstName} {p.UploadedByUser.LastName}",
+            CreatedAt = p.CreatedAt
         };
     }
 }

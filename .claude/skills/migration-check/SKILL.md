@@ -25,3 +25,5 @@ Run against new/changed files in `api/src/SurveyorLedger.Data/Migrations/` and t
 - Confirm target DB is LocalDB dev instance, not shared/staging, before `dotnet ef database update`
 
 Report findings as `file — issue — fix`. Flag destructive-looking migrations explicitly, don't auto-apply.
+
+After applying: verify with `dotnet ef migrations list` + one scoped integration test touching the entity, not full suite.

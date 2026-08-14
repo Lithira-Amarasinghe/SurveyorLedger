@@ -5,7 +5,8 @@
       "Bash(git status)",
       "Bash(git diff*)",
       "Bash(git log*)",
-      "Bash(git branch*)",
+      "Bash(git branch)",
+      "Bash(git branch --list*)",
       "Bash(dotnet build*)",
       "Bash(dotnet test*)",
       "Bash(dotnet run*)",
@@ -26,6 +27,15 @@
           {
             "type": "command",
             "command": "pwsh -NoProfile -File \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-migrations.ps1\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-git-destructive.ps1\""
           }
         ]
       }

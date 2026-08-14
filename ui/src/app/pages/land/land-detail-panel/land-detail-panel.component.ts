@@ -2,14 +2,17 @@ import { Component, EventEmitter, Input, OnInit, Output, signal } from '@angular
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
-import { Address, Land, LandBoundary, LandDeed, LandService, LandSurvey } from '../../../core/land.service';
+import { Address, Land, LandBoundary, LandDeed, LandPhoto, LandService, LandSurvey, telHref, whatsAppHref } from '../../../core/land.service';
 import { OwnerPickerComponent, OwnerValue } from '../owner-picker/owner-picker.component';
 import { LandLocationPickerComponent } from '../../../shared/land-location-picker/land-location-picker.component';
+import { LandLocationQrComponent } from '../../../shared/land-location-qr/land-location-qr.component';
+import { PhotoGridComponent } from '../../../shared/photo-grid/photo-grid.component';
+import { RouterLink } from '@angular/router';
 
 @Component({
   selector: 'app-land-detail-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule, OwnerPickerComponent, LandLocationPickerComponent],
+  imports: [CommonModule, FormsModule, OwnerPickerComponent, LandLocationPickerComponent, LandLocationQrComponent, PhotoGridComponent, RouterLink],
   template: `
     @if (loading()) {
       <p class="text-sm text-neutral-500">Loading…</p>
@@ -49,9 +52,17 @@ import { LandLocationPickerComponent } from '../../../shared/land-location-picke
                 <button type="button" class="text-neutral-500 ml-xs" (click)="confirmingDelete.set(false)">No</button>
               </span>
             } @else {
-              <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="confirmingDelete.set(true)">
-                Delete
-              </button>
+              <span class="flex items-center gap-sm">
+                <a
+                  class="text-xs text-neutral-500 hover:text-neutral-700"
+                  [routerLink]="['/app/workspace', workspaceId, 'lands', landId, 'print']"
+                >
+                  Print summary
+                </a>
+                <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="confirmingDelete.set(true)">
+                  Delete
+                </button>
+              </span>
             }
           </div>
           <div class="grid grid-cols-2 gap-sm">
@@ -71,6 +82,12 @@ import { LandLocationPickerComponent } from '../../../shared/land-location-picke
               (valueChange)="onOwnerChange($event)"
             />
           </div>
+          @if (land()?.ownerPhone) {
+            <div class="flex gap-md mt-xs text-xs">
+              <a [href]="telHref(land()!.ownerPhone!)" class="text-primary-600 hover:text-primary-700">Call {{ land()!.ownerPhone }}</a>
+              <a [href]="whatsAppHref(land()!.ownerPhone!)" target="_blank" rel="noopener" class="text-primary-600 hover:text-primary-700">WhatsApp</a>
+            </div>
+          }
         </div>
 
         <div>
@@ -83,6 +100,9 @@ import { LandLocationPickerComponent } from '../../../shared/land-location-picke
               [readonly]="true"
               heightClass="h-48"
             />
+            <div class="mt-sm">
+              <app-land-location-qr [lat]="land()!.latitude!" [lng]="land()!.longitude!" />
+            </div>
           } @else {
             <p class="text-sm text-neutral-500">Not set</p>
           }
@@ -268,6 +288,19 @@ import { LandLocationPickerComponent } from '../../../shared/land-location-picke
             <button type="button" class="text-sm text-primary-600" (click)="addingBoundary.set(true)">+ Add boundary</button>
           }
         </div>
+
+        <div>
+          <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-sm">Photos</h3>
+          <app-photo-grid
+            [photos]="photos()"
+            [photoUrls]="photoUrls()"
+            (upload)="onPhotoUpload($event)"
+            (remove)="onPhotoDelete($event)"
+          />
+          @if (photoError()) {
+            <p class="text-xs text-primary-500 mt-xs">{{ photoError() }}</p>
+          }
+        </div>
       </div>
     }
     @if (pickerOpen()) {
@@ -303,6 +336,12 @@ export class LandDetailPanelComponent implements OnInit {
   locationError = signal('');
   mapsLinkCopied = signal(false);
   shareLinkCopied = signal(false);
+  photos = signal<LandPhoto[]>([]);
+  photoUrls = signal<Record<string, string>>({});
+  photoError = signal('');
+
+  telHref = telHref;
+  whatsAppHref = whatsAppHref;
 
   owner: OwnerValue = {};
   /** Display name for an existing account owner, so the picker can render it without a re-fetch. */
@@ -348,9 +387,10 @@ export class LandDetailPanelComponent implements OnInit {
       land: this.landService.getById(this.workspaceId, this.landId),
       surveys: this.landService.getSurveys(this.workspaceId, this.landId),
       deeds: this.landService.getDeeds(this.workspaceId, this.landId),
-      boundaries: this.landService.getBoundaries(this.workspaceId, this.landId)
+      boundaries: this.landService.getBoundaries(this.workspaceId, this.landId),
+      photos: this.landService.listPhotos(this.workspaceId, this.landId)
     }).subscribe({
-      next: ({ land, surveys, deeds, boundaries }) => {
+      next: ({ land, surveys, deeds, boundaries, photos }) => {
         this.land.set(land);
         this.street = land.address.street ?? '';
         this.city = land.address.city ?? '';
@@ -369,6 +409,8 @@ export class LandDetailPanelComponent implements OnInit {
         this.surveys.set(surveys);
         this.deeds.set(deeds);
         this.boundaries.set(boundaries);
+        this.photos.set(photos);
+        this.loadPhotoThumbnails(photos);
         this.loading.set(false);
       },
       error: (err) => {
@@ -653,6 +695,39 @@ export class LandDetailPanelComponent implements OnInit {
         this.confirmingDeleteBoundaryId.set(null);
       },
       error: (err) => this.error.set(err.error?.message ?? 'Could not delete boundary.')
+    });
+  }
+
+  private loadPhotoThumbnails(photos: LandPhoto[]): void {
+    photos.forEach(photo => {
+      this.landService.getPhotoBlob(this.workspaceId, this.landId, photo.photoId).subscribe(blob => {
+        this.photoUrls.update(urls => ({ ...urls, [photo.photoId]: URL.createObjectURL(blob) }));
+      });
+    });
+  }
+
+  onPhotoUpload(file: File): void {
+    this.photoError.set('');
+    this.landService.uploadPhoto(this.workspaceId, this.landId, file).subscribe({
+      next: (photo) => {
+        this.photos.update(list => [photo, ...list]);
+        this.loadPhotoThumbnails([photo]);
+      },
+      error: (err) => this.photoError.set(err.error?.message ?? 'Could not upload photo.')
+    });
+  }
+
+  onPhotoDelete(photoId: string): void {
+    this.photoError.set('');
+    this.landService.deletePhoto(this.workspaceId, this.landId, photoId).subscribe({
+      next: () => {
+        this.photos.update(list => list.filter(p => p.photoId !== photoId));
+        this.photoUrls.update(urls => {
+          const { [photoId]: _, ...rest } = urls;
+          return rest;
+        });
+      },
+      error: (err) => this.photoError.set(err.error?.message ?? 'Could not delete photo.')
     });
   }
 }

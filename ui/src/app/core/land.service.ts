@@ -96,6 +96,15 @@ export interface LandBoundaryRequest {
   description?: string;
 }
 
+export interface LandPhoto {
+  photoId: string;
+  fileName: string;
+  contentType: string;
+  fileSizeBytes: number;
+  uploadedByName: string;
+  createdAt: string;
+}
+
 interface ApiResponse<T> {
   success: boolean;
   data: T;
@@ -105,6 +114,15 @@ interface ApiResponse<T> {
 /** Single source of truth for formatting a Land's address into a display line. */
 export function addressLine(land: Land): string {
   return [land.address.street, land.address.city].filter(Boolean).join(', ') || 'Unnamed land record';
+}
+
+/** tel:/wa.me hrefs from free-text OwnerPhone - strips formatting for the link only, display text is untouched. Malformed numbers simply won't resolve on tap; no validation is added (matches OwnerPhone staying unvalidated free text). */
+export function telHref(phone: string): string {
+  return `tel:${phone.replace(/[^\d+]/g, '')}`;
+}
+
+export function whatsAppHref(phone: string): string {
+  return `https://wa.me/${phone.replace(/[^\d+]/g, '')}`;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -214,5 +232,24 @@ export class LandService {
 
   delete(workspaceId: string, landId: string): Observable<void> {
     return this.http.delete<void>(`${this.base(workspaceId)}/${landId}`);
+  }
+
+  listPhotos(workspaceId: string, landId: string): Observable<LandPhoto[]> {
+    return this.http.get<ApiResponse<LandPhoto[]>>(`${this.base(workspaceId)}/${landId}/photos`).pipe(map(res => res.data));
+  }
+
+  uploadPhoto(workspaceId: string, landId: string, file: File): Observable<LandPhoto> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post<ApiResponse<LandPhoto>>(`${this.base(workspaceId)}/${landId}/photos`, form).pipe(map(res => res.data));
+  }
+
+  /** Blob fetch, not a bare <img src> - the JWT rides an Authorization header the jwtInterceptor only attaches to HttpClient requests, same reasoning as DocumentService.getFileBlob. */
+  getPhotoBlob(workspaceId: string, landId: string, photoId: string): Observable<Blob> {
+    return this.http.get(`${this.base(workspaceId)}/${landId}/photos/${photoId}`, { responseType: 'blob' });
+  }
+
+  deletePhoto(workspaceId: string, landId: string, photoId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base(workspaceId)}/${landId}/photos/${photoId}`);
   }
 }

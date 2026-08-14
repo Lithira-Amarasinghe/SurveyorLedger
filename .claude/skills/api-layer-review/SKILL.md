@@ -30,3 +30,5 @@ Run this checklist against changed files under `api/src/`.
 - No hardcoded connection strings, secrets, or URLs — pulled from environment/config
 
 Report findings as `path:line — issue — fix`, most severe first. Skip files with no violations, don't praise.
+
+After fixes: run scoped tests only (see rules.md "Per-change verification"), not full suite.

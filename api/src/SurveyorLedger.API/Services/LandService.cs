@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using SurveyorLedger.API.Models.Land;
 using SurveyorLedger.Core.Exceptions;
@@ -35,18 +36,25 @@ public interface ILandService
     Task<List<LandBoundary>> GetBoundariesAsync(Guid workspaceId, Guid callerUserId, Guid landId);
     Task<LandBoundary> UpdateBoundaryAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid boundaryId, LandBoundaryRequest request);
     Task DeleteBoundaryAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid boundaryId);
+
+    Task<LandPhoto> UploadPhotoAsync(Guid workspaceId, Guid callerUserId, Guid landId, IFormFile file);
+    Task<List<LandPhoto>> GetPhotosAsync(Guid workspaceId, Guid callerUserId, Guid landId);
+    Task<(LandPhoto photo, Stream content)> GetPhotoFileAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid photoId);
+    Task DeletePhotoAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid photoId);
 }
 
 public class LandService : ILandService
 {
     private readonly ApplicationDbContext _context;
     private readonly IScopedAccessService _access;
+    private readonly IFileStorageService _fileStorage;
     private readonly ILogger<LandService> _logger;
 
-    public LandService(ApplicationDbContext context, IScopedAccessService access, ILogger<LandService> logger)
+    public LandService(ApplicationDbContext context, IScopedAccessService access, IFileStorageService fileStorage, ILogger<LandService> logger)
     {
         _context = context;
         _access = access;
+        _fileStorage = fileStorage;
         _logger = logger;
     }
 
@@ -406,6 +414,81 @@ public class LandService : ILandService
 
         _context.LandBoundaries.Remove(boundary);
         await _context.SaveChangesAsync();
+    }
+
+    private static readonly HashSet<string> AllowedPhotoExtensions = new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png" };
+
+    public async Task<LandPhoto> UploadPhotoAsync(Guid workspaceId, Guid callerUserId, Guid landId, IFormFile file)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
+        await FindLandAsync(workspaceId, landId);
+
+        var extension = Path.GetExtension(file.FileName);
+        if (!AllowedPhotoExtensions.Contains(extension))
+            throw new ValidationException($"File type '{extension}' is not allowed. Allowed types: {string.Join(", ", AllowedPhotoExtensions)}.");
+        if (file.Length > DocumentService.MaxFileSizeBytes)
+            throw new ValidationException($"File exceeds the {DocumentService.MaxFileSizeBytes / (1024 * 1024)}MB size limit.");
+
+        var storedFileName = $"{Guid.NewGuid():N}_{file.FileName}";
+        var relativePath = $"{workspaceId}/land/{landId}/{storedFileName}";
+
+        await using (var stream = file.OpenReadStream())
+        {
+            await _fileStorage.SaveAsync(stream, relativePath, CancellationToken.None);
+        }
+
+        var photo = new LandPhoto
+        {
+            Id = Guid.NewGuid(),
+            LandId = landId,
+            FileName = file.FileName,
+            StoredPath = relativePath,
+            ContentType = file.ContentType,
+            FileSizeBytes = file.Length,
+            UploadedBy = callerUserId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _context.LandPhotos.AddAsync(photo);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Photo {PhotoId} uploaded to land {LandId} by {UserId}", photo.Id, landId, callerUserId);
+        return await _context.LandPhotos.Include(p => p.UploadedByUser).FirstAsync(p => p.Id == photo.Id);
+    }
+
+    public async Task<List<LandPhoto>> GetPhotosAsync(Guid workspaceId, Guid callerUserId, Guid landId)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "view");
+        await FindLandAsync(workspaceId, landId);
+
+        return await _context.LandPhotos.Include(p => p.UploadedByUser)
+            .Where(p => p.LandId == landId)
+            .OrderByDescending(p => p.CreatedAt)
+            .ToListAsync();
+    }
+
+    public async Task<(LandPhoto photo, Stream content)> GetPhotoFileAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid photoId)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "view");
+        var photo = await FindPhotoAsync(landId, photoId);
+        var content = await _fileStorage.OpenAsync(photo.StoredPath, CancellationToken.None);
+        return (photo, content);
+    }
+
+    public async Task DeletePhotoAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid photoId)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
+        var photo = await FindPhotoAsync(landId, photoId);
+
+        await _fileStorage.DeleteAsync(photo.StoredPath, CancellationToken.None);
+        _context.LandPhotos.Remove(photo);
+        await _context.SaveChangesAsync();
+    }
+
+    private async Task<LandPhoto> FindPhotoAsync(Guid landId, Guid photoId)
+    {
+        return await _context.LandPhotos.FirstOrDefaultAsync(p => p.Id == photoId && p.LandId == landId)
+            ?? throw new NotFoundException("Photo not found");
     }
 
     private async Task<Land> FindLandAsync(Guid workspaceId, Guid landId)

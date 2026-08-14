@@ -6,6 +6,7 @@
 - Reuse existing patterns/utilities before writing new ones
 - Deletion > addition; boring > clever
 - No abstractions without concrete usage (no interface with one impl, no factory for one product)
+- Minimal ≠ fragile: input validation, error handling, tenant isolation stay non-negotiable; use a real design pattern when the problem actually fits it
 - Shortest working diff wins, but only after understanding the whole problem
 - Mark deliberate simplifications with `// rule:` comment naming the ceiling (e.g., `// rule: sync only, upgrade if throughput matters`)
 
@@ -80,10 +81,11 @@
 - Code follows project patterns
 - Single logical change per PR
 
+**Per-change verification:** run only tests covering touched files (`dotnet test --filter ClassName`, `ng test --include component-spec`) + golden path/edge case manually. Full suite reserved for pre-PR, not every edit.
+
 ## No Out-of-Scope Features
 
-Skip in Phase 1/2:
-- Job/Land UI (Angular) - API+DB done, see docs/superpowers/specs/2026-08-09-job-land-user-design.md
+Skip unless explicitly requested (check `ui/src/app/pages/` before assuming a page is missing):
 - RBAC UI (Phase 3)
 - Billing, payment gateway
 - Password reset, social auth

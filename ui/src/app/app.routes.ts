@@ -15,6 +15,7 @@ import { LandDetailComponent } from './pages/land/land-detail.component';
 import { AcceptInviteComponent } from './pages/invite/accept-invite.component';
 import { PublicDocumentUploadComponent } from './pages/document-upload/public-document-upload.component';
 import { PublicSetLocationComponent } from './pages/set-location/public-set-location.component';
+import { LandPrintComponent } from './pages/land/land-print.component';
 import { InvitationsComponent } from './pages/invitations/invitations.component';
 import { ProfileComponent } from './pages/profile/profile.component';
 import { AppShellComponent } from './shell/app-shell.component';
@@ -28,6 +29,9 @@ export const routes: Routes = [
   { path: 'invite/:token', component: AcceptInviteComponent },
   { path: 'document-upload/:token', component: PublicDocumentUploadComponent },
   { path: 'set-location/:token', component: PublicSetLocationComponent },
+  // No AppShellComponent wrapper - print layout is intentionally chrome-free, but still
+  // needs auth since it calls the authenticated LandService (not a public share token).
+  { path: 'app/workspace/:id/lands/:landId/print', component: LandPrintComponent, canActivate: [authGuard] },
   {
     path: 'auth',
     children: [

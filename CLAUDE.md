@@ -1,7 +1,8 @@
 # SurveyorLedger: Multi-Tenant SaaS Platform
 
-Survey job management. Register → verify email → create workspace → manage jobs.
-**Phase 1: API (✅ complete). Phase 2: Angular UI (🏗️ in progress).**
+Survey job management. Register → verify email → create workspace → manage jobs, land records, documents, milestones.
+Check `ui/src/app/pages/` for pages built so far, `api/src/SurveyorLedger.API/Controllers/` for endpoints — don't assume from this doc.
+Feature history & design rationale: `docs/superpowers/plans/` and `docs/superpowers/specs/`.
 
 ## Stack
 
@@ -21,6 +22,10 @@ cd api && dotnet run --project src/SurveyorLedger.API
 
 # Terminal 2: UI (localhost:4200)
 cd ui && ng serve
+
+# Tests (scoped, not full suite per-change — see .claude/rules.md)
+dotnet test --filter ClassName   # api
+ng test --include **/component.spec.ts  # ui
 ```
 
 ## Folders
@@ -31,9 +36,10 @@ api/src/
   SurveyorLedger.Data/        DbContext, Entities, Migrations
   SurveyorLedger.Core/        Constants, Enums, Exceptions
 ui/src/app/
-  pages/                      Auth, Workspace, Profile
+  pages/                      Feature pages (one folder per feature)
   shell/                      Sidebar, Topbar, CommandPalette
   core/                       Services, Guards, Interceptors
+  shared/                     Reusable components
 ```
 
 ## Auth
@@ -42,7 +48,7 @@ Register (OTP or password) → Email verification → Login → JWT + refresh co
 
 ## Detailed Docs
 
-- **API endpoints & config:** See git history or ask
+- **API endpoints:** See `api/src/SurveyorLedger.API/Controllers/`
 - **UI specs:** See [UI_IMPLEMENTATION_GUIDE.md](UI_IMPLEMENTATION_GUIDE.md)
 - **Coding rules:** See [.claude/rules.md](.claude/rules.md)
 - **Architecture:** Clean layers (controllers → services → data layer)

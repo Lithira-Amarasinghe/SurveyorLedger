@@ -23,6 +23,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<LandSurvey> LandSurveys { get; set; }
     public DbSet<LandDeed> LandDeeds { get; set; }
     public DbSet<LandBoundary> LandBoundaries { get; set; }
+    public DbSet<LandPhoto> LandPhotos { get; set; }
     public DbSet<Job> Jobs { get; set; }
     public DbSet<JobLand> JobLands { get; set; }
     public DbSet<Milestone> Milestones { get; set; }
