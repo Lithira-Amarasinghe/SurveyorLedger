@@ -97,7 +97,25 @@ public class RolePermissionConfiguration : IEntityTypeConfiguration<RolePermissi
             Grant(new Guid("00000000-0000-0000-0000-000000000265"), RoleConfiguration.ClientRoleId, PermissionConfiguration.ViewInvoiceId),
             Grant(new Guid("00000000-0000-0000-0000-000000000266"), RoleConfiguration.MemberRoleId, PermissionConfiguration.ViewBillingClientId),
             Grant(new Guid("00000000-0000-0000-0000-000000000267"), RoleConfiguration.MemberRoleId, PermissionConfiguration.ViewQuotationId),
-            Grant(new Guid("00000000-0000-0000-0000-000000000268"), RoleConfiguration.MemberRoleId, PermissionConfiguration.ViewInvoiceId)
+            Grant(new Guid("00000000-0000-0000-0000-000000000268"), RoleConfiguration.MemberRoleId, PermissionConfiguration.ViewInvoiceId),
+            // Expense - Admin: full CRUD. Surveyor: view/create/edit (field staff record
+            // their own costs), no delete. Client: nothing (financial data).
+            Grant(new Guid("00000000-0000-0000-0000-000000000269"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewExpenseId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000270"), RoleConfiguration.AdminRoleId, PermissionConfiguration.CreateExpenseId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000271"), RoleConfiguration.AdminRoleId, PermissionConfiguration.EditExpenseId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000272"), RoleConfiguration.AdminRoleId, PermissionConfiguration.DeleteExpenseId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000273"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.ViewExpenseId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000274"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.CreateExpenseId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000275"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.EditExpenseId),
+            // StaffPayment - Admin: full CRUD + view_all (payroll is a stricter surface than
+            // expenses). Surveyor: view only, and only their own (view_all withheld - the
+            // service layer filters to UserId == callerUserId without it). Client: nothing.
+            Grant(new Guid("00000000-0000-0000-0000-000000000276"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewStaffPaymentId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000277"), RoleConfiguration.AdminRoleId, PermissionConfiguration.CreateStaffPaymentId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000278"), RoleConfiguration.AdminRoleId, PermissionConfiguration.EditStaffPaymentId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000279"), RoleConfiguration.AdminRoleId, PermissionConfiguration.DeleteStaffPaymentId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000280"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewAllStaffPaymentId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000281"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.ViewStaffPaymentId)
         );
     }
 }

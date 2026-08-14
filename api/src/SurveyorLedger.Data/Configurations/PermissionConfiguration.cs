@@ -36,6 +36,15 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
     public static readonly Guid CreateInvoiceId = new("00000000-0000-0000-0000-000000000126");
     public static readonly Guid EditInvoiceId = new("00000000-0000-0000-0000-000000000127");
     public static readonly Guid DeleteInvoiceId = new("00000000-0000-0000-0000-000000000128");
+    public static readonly Guid ViewExpenseId = new("00000000-0000-0000-0000-000000000129");
+    public static readonly Guid CreateExpenseId = new("00000000-0000-0000-0000-000000000130");
+    public static readonly Guid EditExpenseId = new("00000000-0000-0000-0000-000000000131");
+    public static readonly Guid DeleteExpenseId = new("00000000-0000-0000-0000-000000000132");
+    public static readonly Guid ViewStaffPaymentId = new("00000000-0000-0000-0000-000000000133");
+    public static readonly Guid CreateStaffPaymentId = new("00000000-0000-0000-0000-000000000134");
+    public static readonly Guid EditStaffPaymentId = new("00000000-0000-0000-0000-000000000135");
+    public static readonly Guid DeleteStaffPaymentId = new("00000000-0000-0000-0000-000000000136");
+    public static readonly Guid ViewAllStaffPaymentId = new("00000000-0000-0000-0000-000000000137");
 
     public void Configure(EntityTypeBuilder<Permission> builder)
     {
@@ -79,7 +88,16 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
             new Permission { Id = ViewInvoiceId, Name = "invoice.view", Description = "View invoices and payments.", Resource = "invoice", Action = "view", Scope = null, CreatedAt = seededAt },
             new Permission { Id = CreateInvoiceId, Name = "invoice.create", Description = "Create invoices and record payments.", Resource = "invoice", Action = "create", Scope = null, CreatedAt = seededAt },
             new Permission { Id = EditInvoiceId, Name = "invoice.edit", Description = "Edit invoices.", Resource = "invoice", Action = "edit", Scope = null, CreatedAt = seededAt },
-            new Permission { Id = DeleteInvoiceId, Name = "invoice.delete", Description = "Delete/cancel invoices.", Resource = "invoice", Action = "delete", Scope = null, CreatedAt = seededAt }
+            new Permission { Id = DeleteInvoiceId, Name = "invoice.delete", Description = "Delete/cancel invoices.", Resource = "invoice", Action = "delete", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = ViewExpenseId, Name = "expense.view", Description = "View job expenses.", Resource = "expense", Action = "view", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = CreateExpenseId, Name = "expense.create", Description = "Record job expenses.", Resource = "expense", Action = "create", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = EditExpenseId, Name = "expense.edit", Description = "Edit job expenses.", Resource = "expense", Action = "edit", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = DeleteExpenseId, Name = "expense.delete", Description = "Delete job expenses.", Resource = "expense", Action = "delete", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = ViewStaffPaymentId, Name = "staffpayment.view", Description = "View staff payments.", Resource = "staffpayment", Action = "view", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = CreateStaffPaymentId, Name = "staffpayment.create", Description = "Record staff payments.", Resource = "staffpayment", Action = "create", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = EditStaffPaymentId, Name = "staffpayment.edit", Description = "Edit staff payments.", Resource = "staffpayment", Action = "edit", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = DeleteStaffPaymentId, Name = "staffpayment.delete", Description = "Delete staff payments.", Resource = "staffpayment", Action = "delete", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = ViewAllStaffPaymentId, Name = "staffpayment.view_all", Description = "View every staff payment on a job, not just the caller's own.", Resource = "staffpayment", Action = "view_all", Scope = null, CreatedAt = seededAt }
         );
     }
 }
