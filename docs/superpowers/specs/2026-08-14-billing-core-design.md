@@ -49,6 +49,8 @@ nullable, so tenant filtering can't rely on a parent chain always being present.
 - `TaxRatePercent`
 - `Status`: `Draft`, `Sent`, `Accepted`, `Rejected`, `Expired`
 - `ValidUntil` (informational only, no auto-expiry job in phase 1)
+- `RevisionNumber` (int, starts at 0; bumped when line items are edited after
+  `Status` has reached `Sent`. Covers "revision charges" cheaply — no new entity)
 - `CreatedAt`, `UpdatedAt`, `IsActive`
 
 ### Invoice
@@ -79,6 +81,9 @@ nullable, so tenant filtering can't rely on a parent chain always being present.
 - Recording a `Payment` recalculates `Invoice.AmountPaid`. Server sets
   `Status = PartiallyPaid` if `0 < AmountPaid < Total`, `Paid` if `AmountPaid >= Total`.
   Client cannot set these two statuses directly.
+- `DaysOverdue` (computed, read-only): `today - DueDate` in days, only meaningful
+  when `Status` is effectively `Overdue`; otherwise 0. No stored field, no
+  scheduled job — feeds future reminder automation without building it now.
 - `Quotation` → `Invoice`: explicit `POST /{id}/convert-to-invoice` copies
   Client/LineItems/TaxRate onto a new Invoice, sets `Quotation.Status = Accepted`.
   Converting an already-converted (or non-Sent/Draft) quotation is a 400.
@@ -88,7 +93,10 @@ nullable, so tenant filtering can't rely on a parent chain always being present.
 New controllers, following existing Controller → Service → Data layering and tenant
 middleware:
 
-- `ClientsController`: CRUD + list (paged, like existing Land/Job list endpoints)
+- `ClientsController`: CRUD + list (paged, like existing Land/Job list endpoints),
+  `GET /{id}/balance` (Σ `Invoice.Balance` across client's active invoices — reuses
+  the Balance calc already defined, no new storage), `GET /{id}/payments` (all
+  payments across the client's invoices, newest first — pure query)
 - `QuotationsController`: CRUD + `POST /{id}/convert-to-invoice`
 - `InvoicesController`: CRUD, `POST /{id}/payments`, `GET /{id}/payments`,
   payment proof file upload (reuse file-storage approach from `Document`)
@@ -110,9 +118,12 @@ Service-level tests per new service, mirroring `LandPhotoServiceTests.cs`:
 - Convert-quotation-to-invoice flow, including the already-converted rejection
 - Overpayment rejection
 - Numbering sequence correctness (per-workspace, no collisions)
+- Client balance/payments aggregation across multiple invoices
+- RevisionNumber bump on post-Sent line item edit
+- DaysOverdue calculation at/around DueDate boundary
 
 ## Out of scope (future phases)
 
 Expenses, staff payments/payroll, profitability calculations, financial dashboard,
-client finance views, fee templates, payment reminders/automation, online payment
+fee templates, payment reminders/automation (actually sending them), online payment
 gateway, WhatsApp/email notifications, receipt/invoice PDF templates (UI phase).
