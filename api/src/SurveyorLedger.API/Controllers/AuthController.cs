@@ -32,17 +32,17 @@ namespace SurveyorLedger.API.Controllers
         [HttpPost("login")]
         public async Task<ActionResult<ApiResponse<AuthResponse>>> Login([FromBody] LoginRequest request)
         {
-            var (user, accessToken, refreshToken, expiresIn) = await _authService.LoginAsync(request);
+            var (person, account, accessToken, refreshToken, expiresIn) = await _authService.LoginAsync(request);
             SetRefreshTokenCookie(refreshToken);
 
             return Ok(ApiResponse<AuthResponse>.Ok(new AuthResponse
             {
-                UserId = user.Id,
+                UserId = account.Id,
                 // LoginAsync matches on request.Email (non-null), so a user reaching this
                 // point always has an Email - the ! here reflects that, not a real risk.
-                Email = user.Email!,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
+                Email = person.Email!,
+                FirstName = person.FirstName,
+                LastName = person.LastName,
                 AccessToken = accessToken,
                 RefreshToken = refreshToken,
                 ExpiresIn = expiresIn
@@ -84,15 +84,15 @@ namespace SurveyorLedger.API.Controllers
             if (string.IsNullOrEmpty(refreshToken))
                 return Unauthorized(ApiResponse<object>.Fail("Refresh token required"));
 
-            var (user, accessToken, newRefreshToken, expiresIn) = await _authService.RefreshTokenAsync(refreshToken);
+            var (person, account, accessToken, newRefreshToken, expiresIn) = await _authService.RefreshTokenAsync(refreshToken);
             SetRefreshTokenCookie(newRefreshToken);
 
             return Ok(ApiResponse<AuthResponse>.Ok(new AuthResponse
             {
-                UserId = user.Id,
-                Email = user.Email!,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
+                UserId = account.Id,
+                Email = person.Email!,
+                FirstName = person.FirstName,
+                LastName = person.LastName,
                 AccessToken = accessToken,
                 RefreshToken = newRefreshToken,
                 ExpiresIn = expiresIn

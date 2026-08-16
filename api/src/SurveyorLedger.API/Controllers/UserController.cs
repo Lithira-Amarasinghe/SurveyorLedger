@@ -32,23 +32,23 @@ namespace SurveyorLedger.API.Controllers
             if (!Guid.TryParse(userId, out var id))
                 return Unauthorized(ApiResponse<object>.Fail("Invalid user ID"));
 
-            var user = await _authService.GetUserByIdAsync(id);
-            if (user == null)
+            var result = await _authService.GetAccountByIdAsync(id);
+            if (result == null)
                 return NotFound(ApiResponse<object>.Fail("User not found"));
 
-            return Ok(ApiResponse<UserProfileResponse>.Ok(ToResponse(user)));
+            return Ok(ApiResponse<UserProfileResponse>.Ok(ToResponse(result.Value.person, result.Value.account)));
         }
 
         [HttpGet("search")]
         public async Task<ActionResult<ApiResponse<List<UserSearchResponse>>>> Search([FromQuery] string q)
         {
-            var users = await _authService.SearchUsersAsync(q ?? "");
-            var results = users.Select(u => new UserSearchResponse
+            var people = await _authService.SearchPeopleAsync(q ?? "");
+            var results = people.Select(p => new UserSearchResponse
             {
-                UserId = u.Id,
-                FirstName = u.FirstName,
-                LastName = u.LastName,
-                Email = u.Email
+                UserId = p.Id,
+                FirstName = p.FirstName,
+                LastName = p.LastName,
+                Email = p.Email
             }).ToList();
             return Ok(ApiResponse<List<UserSearchResponse>>.Ok(results));
         }
@@ -77,27 +77,28 @@ namespace SurveyorLedger.API.Controllers
             if (!Guid.TryParse(userId, out var id))
                 return Unauthorized(ApiResponse<object>.Fail("Invalid user ID"));
 
-            var user = await _authService.UpdateProfileAsync(id, request);
-            return Ok(ApiResponse<UserProfileResponse>.Ok(ToResponse(user)));
+            var person = await _authService.UpdateProfileAsync(id, request);
+            var result = await _authService.GetAccountByIdAsync(id);
+            return Ok(ApiResponse<UserProfileResponse>.Ok(ToResponse(person, result!.Value.account)));
         }
 
-        private static UserProfileResponse ToResponse(User user) => new()
+        public static UserProfileResponse ToResponse(Person person, UserAccount account) => new()
         {
-            UserId = user.Id,
-            Email = user.Email,
-            FirstName = user.FirstName,
-            LastName = user.LastName,
-            Phone = user.Phone,
-            EmailVerified = user.EmailVerified,
+            UserId = account.Id,
+            Email = person.Email,
+            FirstName = person.FirstName,
+            LastName = person.LastName,
+            Phone = person.Phone,
+            EmailVerified = account.EmailVerified,
             Address = new AddressDto
             {
-                Street = user.Address.Street,
-                City = user.Address.City,
-                District = user.Address.District,
-                PostalCode = user.Address.PostalCode,
-                Country = user.Address.Country
+                Street = person.Address.Street,
+                City = person.Address.City,
+                District = person.Address.District,
+                PostalCode = person.Address.PostalCode,
+                Country = person.Address.Country
             },
-            CreatedAt = user.CreatedAt
+            CreatedAt = person.CreatedAt
         };
     }
 }

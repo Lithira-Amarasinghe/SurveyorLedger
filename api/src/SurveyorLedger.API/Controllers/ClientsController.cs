@@ -72,10 +72,10 @@ namespace SurveyorLedger.API.Controllers
 
         private Guid CallerId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
 
-        internal static ClientResponse ToResponse(Client c) => new()
+        internal static ClientResponse ToResponse(Person c) => new()
         {
             ClientId = c.Id,
-            Name = c.Name,
+            Name = $"{c.FirstName} {c.LastName}",
             Phone = c.Phone,
             Email = c.Email,
             Address = new AddressDto

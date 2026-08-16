@@ -49,7 +49,7 @@ namespace SurveyorLedger.API.Controllers
                 Role = i.Role.Name,
                 Status = i.Status,
                 ExpiresAt = i.ExpiresAt,
-                InvitedByName = $"{i.InvitedByUser.FirstName} {i.InvitedByUser.LastName}",
+                InvitedByName = $"{i.InvitedByUser.Person.FirstName} {i.InvitedByUser.Person.LastName}",
                 CreatedAt = i.CreatedAt,
                 EmailFailed = i.EmailFailed
             }).ToList();
@@ -81,7 +81,7 @@ namespace SurveyorLedger.API.Controllers
                 .ToDictionaryAsync(w => w.Id, w => w.Name);
 
             var userIds = invitations.Select(i => i.UserId).Distinct().ToList();
-            var hasLoginByUser = await _context.Users
+            var hasLoginByUser = await _context.UserAccounts
                 .Where(u => userIds.Contains(u.Id))
                 .ToDictionaryAsync(u => u.Id, u => u.HasCompletedSignup);
 
@@ -141,7 +141,7 @@ namespace SurveyorLedger.API.Controllers
         {
             var invitation = await _invitationService.GetByTokenAsync(token);
             var (_, workspaceName, jobLabel) = await ResolveScopeAsync(invitation);
-            var hasLogin = await _context.Users.Where(u => u.Id == invitation.UserId).Select(u => u.HasCompletedSignup).FirstOrDefaultAsync();
+            var hasLogin = await _context.UserAccounts.Where(u => u.Id == invitation.UserId).Select(u => u.HasCompletedSignup).FirstOrDefaultAsync();
 
             var expired = invitation.Status != "Pending" || invitation.ExpiresAt <= DateTime.UtcNow;
             var response = new InvitationPreviewResponse

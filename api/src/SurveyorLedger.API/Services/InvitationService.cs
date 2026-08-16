@@ -212,7 +212,7 @@ public class InvitationService : IInvitationService
         // everything else (Pending, Declined, Expired, Revoked) stays visible here so Admin
         // can see a decline and resend it, e.g. after an accidental click.
         var invitations = await _context.Invitations
-            .Include(i => i.InvitedByUser)
+            .Include(i => i.InvitedByUser).ThenInclude(a => a.Person)
             .Include(i => i.Role)
             .Where(i => i.ScopeType == Constants.ScopeTypes.Workspace && i.ScopeId == workspaceId && i.Status != "Accepted")
             .OrderByDescending(i => i.CreatedAt)
