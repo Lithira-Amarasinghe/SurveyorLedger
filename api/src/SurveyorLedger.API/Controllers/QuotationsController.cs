@@ -15,11 +15,13 @@ namespace SurveyorLedger.API.Controllers
     {
         private readonly IQuotationService _quotationService;
         private readonly IInvoiceService _invoiceService;
+        private readonly IConfiguration _config;
 
-        public QuotationsController(IQuotationService quotationService, IInvoiceService invoiceService)
+        public QuotationsController(IQuotationService quotationService, IInvoiceService invoiceService, IConfiguration config)
         {
             _quotationService = quotationService;
             _invoiceService = invoiceService;
+            _config = config;
         }
 
         [HttpGet]
@@ -62,6 +64,14 @@ namespace SurveyorLedger.API.Controllers
         {
             var invoice = await _quotationService.ConvertToInvoiceAsync(workspaceId, CallerId(), id, request);
             return Ok(ApiResponse<InvoiceResponse>.Ok(InvoicesController.ToResponse(invoice, _invoiceService)));
+        }
+
+        [HttpPost("{id}/send")]
+        public async Task<IActionResult> Send(Guid workspaceId, Guid id, [FromBody] SendQuotationRequest request)
+        {
+            var appBaseUrl = _config["AppSettings:UiBaseUrl"] ?? throw new InvalidOperationException("AppSettings:UiBaseUrl not configured");
+            await _quotationService.SendAsync(workspaceId, CallerId(), id, request.RecipientPersonIds, appBaseUrl);
+            return NoContent();
         }
 
         private Guid CallerId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);

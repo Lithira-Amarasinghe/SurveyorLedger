@@ -14,10 +14,12 @@ namespace SurveyorLedger.API.Controllers
     public class InvoicesController : ControllerBase
     {
         private readonly IInvoiceService _invoiceService;
+        private readonly IConfiguration _config;
 
-        public InvoicesController(IInvoiceService invoiceService)
+        public InvoicesController(IInvoiceService invoiceService, IConfiguration config)
         {
             _invoiceService = invoiceService;
+            _config = config;
         }
 
         [HttpGet]
@@ -67,6 +69,14 @@ namespace SurveyorLedger.API.Controllers
         {
             var payments = await _invoiceService.GetPaymentsAsync(workspaceId, CallerId(), id);
             return Ok(ApiResponse<List<PaymentResponse>>.Ok(payments.Select(ToResponse).ToList()));
+        }
+
+        [HttpPost("{id}/send")]
+        public async Task<IActionResult> Send(Guid workspaceId, Guid id, [FromBody] SendInvoiceRequest request)
+        {
+            var appBaseUrl = _config["AppSettings:UiBaseUrl"] ?? throw new InvalidOperationException("AppSettings:UiBaseUrl not configured");
+            await _invoiceService.SendAsync(workspaceId, CallerId(), id, request.RecipientPersonIds, appBaseUrl);
+            return NoContent();
         }
 
         private Guid CallerId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);

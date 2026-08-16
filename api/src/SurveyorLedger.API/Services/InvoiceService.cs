@@ -2,6 +2,7 @@ using System.Data;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using SurveyorLedger.API.Models.Billing;
+using SurveyorLedger.Core;
 using SurveyorLedger.Core.Exceptions;
 using SurveyorLedger.Data;
 using SurveyorLedger.Data.Entities;
@@ -17,13 +18,13 @@ public interface IInvoiceService
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId);
     Task<Payment> RecordPaymentAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, PaymentRequest request, IFormFile? proofFile);
     Task<List<Payment>> GetPaymentsAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId);
+    Task SendAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, List<Guid> recipientPersonIds, string appBaseUrl);
     (decimal Total, decimal AmountPaid, decimal Balance, bool IsOverdue, int DaysOverdue) ComputeInvoiceTotals(Invoice invoice);
 }
 
 /// <summary>
-/// Deliberately does not depend on IClientService - ClientService depends on this
-/// service (for GetBalanceAsync) and a mutual constructor dependency would be a
-/// circular DI graph. ClientId is validated directly against _context.People instead.
+/// ClientId is validated against Client/Finance UserAccess on the invoice's job, not
+/// a standalone billing-client entity - see EnsureClientHoldsBillingRoleOnJobAsync.
 /// </summary>
 public class InvoiceService : IInvoiceService
 {
@@ -32,26 +33,29 @@ public class InvoiceService : IInvoiceService
     private readonly ApplicationDbContext _context;
     private readonly IScopedAccessService _access;
     private readonly IFileStorageService _fileStorage;
+    private readonly IPdfService _pdfService;
+    private readonly IEmailService _emailService;
     private readonly ILogger<InvoiceService> _logger;
 
-    public InvoiceService(ApplicationDbContext context, IScopedAccessService access, IFileStorageService fileStorage, ILogger<InvoiceService> logger)
+    public InvoiceService(ApplicationDbContext context, IScopedAccessService access, IFileStorageService fileStorage, IPdfService pdfService, IEmailService emailService, ILogger<InvoiceService> logger)
     {
         _context = context;
         _access = access;
         _fileStorage = fileStorage;
+        _pdfService = pdfService;
+        _emailService = emailService;
         _logger = logger;
     }
 
     public async Task<Invoice> CreateAsync(Guid workspaceId, Guid callerUserId, InvoiceRequest request)
     {
-        await _access.EnsureAllowedAsync(callerUserId, "invoice", "create", workspaceId);
-        await EnsureClientExistsAsync(request.ClientId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, request.JobId, "create");
+        await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
         ValidateLineItems(request.LineItems);
 
         var invoice = new Invoice
         {
             Id = Guid.NewGuid(),
-            WorkspaceId = workspaceId,
             ClientId = request.ClientId,
             JobId = request.JobId,
             LineItems = request.LineItems.Select(i => new InvoiceLineItem { Id = Guid.NewGuid(), Description = i.Description.Trim(), Quantity = i.Quantity, UnitPrice = i.UnitPrice }).ToList(),
@@ -74,7 +78,7 @@ public class InvoiceService : IInvoiceService
             await transaction.CommitAsync();
         });
 
-        _logger.LogInformation("Invoice {InvoiceId} ({Number}) created in workspace {WorkspaceId} by {UserId}", invoice.Id, invoice.Number, workspaceId, callerUserId);
+        _logger.LogInformation("Invoice {InvoiceId} ({Number}) created on job {JobId} by {UserId}", invoice.Id, invoice.Number, invoice.JobId, callerUserId);
         return invoice;
     }
 
@@ -82,7 +86,13 @@ public class InvoiceService : IInvoiceService
     {
         await _access.EnsureListAllowedAsync(callerUserId, workspaceId);
 
-        var invoices = _context.Invoices.Include(i => i.Payments).Where(i => i.WorkspaceId == workspaceId);
+        var invoices = _context.Invoices.Include(i => i.Payments).Where(i => i.Job.WorkspaceId == workspaceId);
+        if (!await _access.HasViewAllAsync(callerUserId, "job", workspaceId))
+        {
+            var accessibleJobIds = (await _access.GetAccessibleJobsAsync(callerUserId))
+                .Where(j => j.WorkspaceId == workspaceId).Select(j => j.JobId).ToHashSet();
+            invoices = invoices.Where(i => accessibleJobIds.Contains(i.JobId));
+        }
         if (clientId.HasValue)
             invoices = invoices.Where(i => i.ClientId == clientId.Value);
 
@@ -91,16 +101,17 @@ public class InvoiceService : IInvoiceService
 
     public async Task<Invoice> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId)
     {
-        await _access.EnsureAllowedAsync(callerUserId, "invoice", "view", workspaceId);
-        return await FindInvoiceAsync(workspaceId, invoiceId);
+        var invoice = await FindInvoiceAsync(workspaceId, invoiceId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, invoice.JobId, "view");
+        return invoice;
     }
 
     public async Task<Invoice> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, InvoiceRequest request)
     {
-        await _access.EnsureAllowedAsync(callerUserId, "invoice", "edit", workspaceId);
-        await EnsureClientExistsAsync(request.ClientId);
-        ValidateLineItems(request.LineItems);
         var invoice = await FindInvoiceAsync(workspaceId, invoiceId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, invoice.JobId, "edit");
+        await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
+        ValidateLineItems(request.LineItems);
 
         invoice.ClientId = request.ClientId;
         invoice.JobId = request.JobId;
@@ -130,8 +141,8 @@ public class InvoiceService : IInvoiceService
 
     public async Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId)
     {
-        await _access.EnsureAllowedAsync(callerUserId, "invoice", "delete", workspaceId);
         var invoice = await FindInvoiceAsync(workspaceId, invoiceId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, invoice.JobId, "delete");
 
         if (invoice.Payments.Count > 0)
             throw new ConflictException("Cannot delete an invoice with recorded payments. Cancel it instead.");
@@ -143,13 +154,13 @@ public class InvoiceService : IInvoiceService
 
     public async Task<Payment> RecordPaymentAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, PaymentRequest request, IFormFile? proofFile)
     {
-        await _access.EnsureAllowedAsync(callerUserId, "invoice", "create", workspaceId);
+        var invoice = await FindInvoiceAsync(workspaceId, invoiceId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, invoice.JobId, "create");
         if (!AllowedMethods.Contains(request.Method))
             throw new ValidationException($"Method must be one of: {string.Join(", ", AllowedMethods)}.");
         if (request.Amount <= 0)
             throw new ValidationException("Amount must be positive.");
 
-        var invoice = await FindInvoiceAsync(workspaceId, invoiceId);
         var (total, amountPaid, balance, _, _) = ComputeInvoiceTotals(invoice);
         if (request.Amount > balance)
             throw new ValidationException($"Amount {request.Amount} exceeds the outstanding balance of {balance}.");
@@ -198,13 +209,59 @@ public class InvoiceService : IInvoiceService
 
     public async Task<List<Payment>> GetPaymentsAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId)
     {
-        await _access.EnsureAllowedAsync(callerUserId, "invoice", "view", workspaceId);
-        await FindInvoiceAsync(workspaceId, invoiceId);
+        var invoice = await FindInvoiceAsync(workspaceId, invoiceId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, invoice.JobId, "view");
 
         return await _context.Payments
             .Where(p => p.InvoiceId == invoiceId && p.WorkspaceId == workspaceId)
             .OrderByDescending(p => p.ReceivedAt)
             .ToListAsync();
+    }
+
+    public async Task SendAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, List<Guid> recipientPersonIds, string appBaseUrl)
+    {
+        var invoice = await FindInvoiceAsync(workspaceId, invoiceId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, invoice.JobId, "edit");
+
+        if (recipientPersonIds.Count == 0)
+            throw new ValidationException("At least one recipient is required.");
+
+        var recipients = await _context.People
+            .Where(p => recipientPersonIds.Contains(p.Id) && p.IsActive)
+            .ToListAsync();
+        if (recipients.Count != recipientPersonIds.Count)
+            throw new NotFoundException("One or more recipients not found.");
+
+        var eligiblePersonIds = await _context.UserAccesses
+            .Include(ua => ua.User)
+            .Where(ua => ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == invoice.JobId)
+            .Where(ua => ua.Role.Name == Constants.SystemRoles.Client || ua.Role.Name == Constants.SystemRoles.Finance)
+            .Select(ua => ua.User.PersonId)
+            .ToListAsync();
+
+        var ineligible = recipientPersonIds.Except(eligiblePersonIds).ToList();
+        if (ineligible.Count > 0)
+            throw new ValidationException("Every recipient must hold Client or Finance access on this invoice's job.");
+
+        var totals = ComputeInvoiceTotals(invoice);
+        var pdfBytes = _pdfService.GenerateInvoicePdf(invoice, totals);
+        var linkUrl = $"{appBaseUrl.TrimEnd('/')}/app/jobs/{invoice.JobId}";
+
+        foreach (var recipient in recipients)
+        {
+            if (string.IsNullOrWhiteSpace(recipient.Email))
+                continue;
+            await _emailService.SendBillingDocumentAsync(recipient.Email, "Invoice", invoice.Number, linkUrl, pdfBytes, $"{invoice.Number}.pdf");
+        }
+
+        if (invoice.Status == "Draft")
+        {
+            invoice.Status = "Sent";
+            invoice.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+        }
+
+        _logger.LogInformation("Invoice {InvoiceId} sent to {Count} recipient(s)", invoiceId, recipients.Count);
     }
 
     public (decimal Total, decimal AmountPaid, decimal Balance, bool IsOverdue, int DaysOverdue) ComputeInvoiceTotals(Invoice invoice)
@@ -223,7 +280,7 @@ public class InvoiceService : IInvoiceService
 
     private async Task<string> NextInvoiceNumberAsync(Guid workspaceId)
     {
-        var count = await _context.Invoices.IgnoreQueryFilters().CountAsync(i => i.WorkspaceId == workspaceId);
+        var count = await _context.Invoices.IgnoreQueryFilters().CountAsync(i => i.Job.WorkspaceId == workspaceId);
         return $"INV-{count + 1:D4}";
     }
 
@@ -233,11 +290,22 @@ public class InvoiceService : IInvoiceService
         return $"RCP-{count + 1:D4}";
     }
 
-    private async Task EnsureClientExistsAsync(Guid clientId)
+    /// <summary>Replaces EnsureClientExistsAsync - ClientId must resolve to a Person who holds
+    /// Client or Finance UserAccess on this specific JobId, not just any active Person.</summary>
+    private async Task EnsureClientHoldsBillingRoleOnJobAsync(Guid clientId, Guid jobId)
     {
-        var exists = await _context.People.AnyAsync(p => p.Id == clientId && p.IsActive);
-        if (!exists)
+        var personExists = await _context.People.AnyAsync(p => p.Id == clientId && p.IsActive);
+        if (!personExists)
             throw new NotFoundException("Client not found");
+
+        var holdsRole = await _context.UserAccesses
+            .Include(ua => ua.User)
+            .Where(ua => ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == jobId)
+            .Where(ua => ua.Role.Name == Constants.SystemRoles.Client || ua.Role.Name == Constants.SystemRoles.Finance)
+            .AnyAsync(ua => ua.User.PersonId == clientId);
+
+        if (!holdsRole)
+            throw new ValidationException("ClientId must be a Person who holds Client or Finance access on this job.");
     }
 
     private static void ValidateLineItems(List<LineItemDto> items)
@@ -250,8 +318,8 @@ public class InvoiceService : IInvoiceService
 
     private async Task<Invoice> FindInvoiceAsync(Guid workspaceId, Guid invoiceId)
     {
-        return await _context.Invoices.Include(i => i.Payments).Include(i => i.LineItems)
-            .FirstOrDefaultAsync(i => i.Id == invoiceId && i.WorkspaceId == workspaceId)
+        return await _context.Invoices.Include(i => i.Payments).Include(i => i.LineItems).Include(i => i.Client)
+            .FirstOrDefaultAsync(i => i.Id == invoiceId && i.Job.WorkspaceId == workspaceId)
             ?? throw new NotFoundException("Invoice not found");
     }
 }

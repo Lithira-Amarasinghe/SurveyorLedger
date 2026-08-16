@@ -7,9 +7,8 @@ namespace SurveyorLedger.Data.Entities;
 public class Quotation
 {
     public Guid Id { get; set; }
-    public Guid WorkspaceId { get; set; }
     public Guid ClientId { get; set; }
-    public Guid? JobId { get; set; }
+    public Guid JobId { get; set; }
     public string Number { get; set; }
     public List<QuotationLineItem> LineItems { get; set; } = new();
     public decimal TaxRatePercent { get; set; }
@@ -20,7 +19,6 @@ public class Quotation
     public DateTime UpdatedAt { get; set; }
     public bool IsActive { get; set; } = true;
 
-    public Workspace Workspace { get; set; }
     public Person Client { get; set; }
-    public Job? Job { get; set; }
+    public Job Job { get; set; }
 }

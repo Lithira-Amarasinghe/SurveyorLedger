@@ -22,12 +22,6 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
     public static readonly Guid CreateClientId = new("00000000-0000-0000-0000-000000000114");
     public static readonly Guid ViewAllJobId = new("00000000-0000-0000-0000-000000000115");
     public static readonly Guid ViewAllLandId = new("00000000-0000-0000-0000-000000000116");
-    // Billing client (a customer/contact to bill) - distinct resource name from the
-    // pre-existing "client" resource above, which is the workspace-member Client role.
-    public static readonly Guid ViewBillingClientId = new("00000000-0000-0000-0000-000000000117");
-    public static readonly Guid CreateBillingClientId = new("00000000-0000-0000-0000-000000000118");
-    public static readonly Guid EditBillingClientId = new("00000000-0000-0000-0000-000000000119");
-    public static readonly Guid DeleteBillingClientId = new("00000000-0000-0000-0000-000000000120");
     public static readonly Guid ViewQuotationId = new("00000000-0000-0000-0000-000000000121");
     public static readonly Guid CreateQuotationId = new("00000000-0000-0000-0000-000000000122");
     public static readonly Guid EditQuotationId = new("00000000-0000-0000-0000-000000000123");
@@ -77,10 +71,6 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
             new Permission { Id = CreateClientId, Name = "client.create", Description = "Create a bare client contact record.", Resource = "client", Action = "create", Scope = null, CreatedAt = seededAt },
             new Permission { Id = ViewAllJobId, Name = "job.view_all", Description = "View every job in the workspace, not just assigned ones.", Resource = "job", Action = "view_all", Scope = null, CreatedAt = seededAt },
             new Permission { Id = ViewAllLandId, Name = "land.view_all", Description = "View every land record in the workspace, not just those linked to assigned jobs.", Resource = "land", Action = "view_all", Scope = null, CreatedAt = seededAt },
-            new Permission { Id = ViewBillingClientId, Name = "billingclient.view", Description = "View billing clients.", Resource = "billingclient", Action = "view", Scope = null, CreatedAt = seededAt },
-            new Permission { Id = CreateBillingClientId, Name = "billingclient.create", Description = "Create billing clients.", Resource = "billingclient", Action = "create", Scope = null, CreatedAt = seededAt },
-            new Permission { Id = EditBillingClientId, Name = "billingclient.edit", Description = "Edit billing clients.", Resource = "billingclient", Action = "edit", Scope = null, CreatedAt = seededAt },
-            new Permission { Id = DeleteBillingClientId, Name = "billingclient.delete", Description = "Delete billing clients.", Resource = "billingclient", Action = "delete", Scope = null, CreatedAt = seededAt },
             new Permission { Id = ViewQuotationId, Name = "quotation.view", Description = "View quotations.", Resource = "quotation", Action = "view", Scope = null, CreatedAt = seededAt },
             new Permission { Id = CreateQuotationId, Name = "quotation.create", Description = "Create quotations.", Resource = "quotation", Action = "create", Scope = null, CreatedAt = seededAt },
             new Permission { Id = EditQuotationId, Name = "quotation.edit", Description = "Edit quotations.", Resource = "quotation", Action = "edit", Scope = null, CreatedAt = seededAt },

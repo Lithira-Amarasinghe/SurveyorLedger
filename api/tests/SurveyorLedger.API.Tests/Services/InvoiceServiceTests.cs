@@ -1,42 +1,124 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Models.Billing;
+using SurveyorLedger.API.Models.Job;
 using SurveyorLedger.API.Services;
+using SurveyorLedger.Core;
 using SurveyorLedger.Core.Exceptions;
+using SurveyorLedger.Data.Configurations;
+using SurveyorLedger.Data.Entities;
 using Xunit;
 
 namespace SurveyorLedger.API.Tests.Services;
 
 public class InvoiceServiceTests : WorkspaceIntegrationTestBase
 {
-    private IClientService _clientService = null!;
     private IInvoiceService _invoiceService = null!;
-    private Guid _clientId;
+    private IEmailService _emailService = null!;
 
     protected override void ConfigureServices(IServiceCollection services)
     {
         services.AddScoped<IInvoiceService, InvoiceService>();
-        services.AddScoped<IClientService, ClientService>();
+        services.AddScoped<IJobService, JobService>();
+        services.AddScoped<IInvitationService, InvitationService>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
+        services.AddScoped<IPdfService, PdfService>();
+        services.AddSingleton<IEmailService, StubEmailService>();
+        services.AddSingleton<IPasswordService, PasswordService>();
         services.AddSingleton<IConfiguration>(
             new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["Storage:UploadsRootPath"] = Path.Combine(Path.GetTempPath(), $"sl-invoice-test-{Guid.NewGuid():N}")
+                    ["Storage:UploadsRootPath"] = Path.Combine(Path.GetTempPath(), $"sl-invoice-test-{Guid.NewGuid():N}"),
+                    ["AppSettings:UiBaseUrl"] = "https://test.local"
                 })
                 .Build());
     }
 
-    private async Task<Guid> SeedInvoiceAsync(DateTime? dueDate = null)
+    private class StubEmailService : IEmailService
     {
-        _clientService = GetService<IClientService>();
-        _invoiceService = GetService<IInvoiceService>();
-        var client = await _clientService.CreateAsync(WorkspaceId, AdminId, new ClientRequest { Name = "Acme Ltd" });
-        _clientId = client.Id;
+        public List<(string Email, string DocumentType, string DocumentNumber)> Sent { get; } = new();
+        public Task SendVerificationOtpAsync(string email, string otpCode, int expirationMinutes) => Task.CompletedTask;
+        public Task SendPasswordResetOtpAsync(string email, string otpCode, int expirationMinutes) => Task.CompletedTask;
+        public Task SendWelcomeEmailAsync(string email, string firstName) => Task.CompletedTask;
+        public Task SendInviteEmailAsync(string email, string workspaceName, string inviteUrl) => Task.CompletedTask;
+        public Task SendBillingDocumentAsync(string email, string documentType, string documentNumber, string linkUrl, byte[] pdfBytes, string pdfFileName)
+        {
+            Sent.Add((email, documentType, documentNumber));
+            return Task.CompletedTask;
+        }
+    }
 
+    private async Task<(Job Job, Guid ClientPersonId, Guid ClientUserAccountId)> SeedJobWithClientParticipantAsync()
+    {
+        var jobService = GetService<IJobService>();
+        var job = await jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Test Job" });
+
+        var clientPerson = new Person
+        {
+            Id = Guid.NewGuid(), FirstName = "Acme", LastName = "Ltd", Email = $"client-{Guid.NewGuid():N}@test.local",
+            IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        };
+        Context.People.Add(clientPerson);
+        var clientAccount = new UserAccount
+        {
+            Id = Guid.NewGuid(), PersonId = clientPerson.Id, IsActive = true,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        };
+        Context.UserAccounts.Add(clientAccount);
+        await Context.SaveChangesAsync();
+
+        // AddParticipantAsync only grants instantly when the target already has consent
+        // coverage (workspace-level access) - a bare Person with no workspace membership
+        // always falls to the invitation branch. Grant UserAccess directly instead,
+        // mirroring what AddParticipantAsync would eventually produce, to keep this a
+        // fast unit-style seed.
+        Context.UserAccesses.Add(new UserAccess
+        {
+            Id = Guid.NewGuid(), UserId = clientAccount.Id, RoleId = RoleConfiguration.ClientRoleId,
+            ScopeType = Constants.ScopeTypes.Job, ScopeId = job.Id, IsActive = true,
+            AssignedAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await Context.SaveChangesAsync();
+
+        // Casbin runs an in-memory enforcer loaded from the DB at startup - a UserAccess row
+        // written directly via EF (bypassing UserAccessGrantService) never reaches it, so the
+        // grouping policy needs the same explicit sync GrantAsync would normally do.
+        await CasbinService.AddRoleForUserAsync(clientAccount.Id.ToString(), Constants.SystemRoles.Client, job.Id.ToString());
+
+        return (job, clientPerson.Id, clientAccount.Id);
+    }
+
+    private async Task<Guid> CreateWorkspaceMemberAsync()
+    {
+        var person = new Person
+        {
+            Id = Guid.NewGuid(), FirstName = "Outsider", LastName = "Member", Email = $"outsider-{Guid.NewGuid():N}@test.local",
+            IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        };
+        Context.People.Add(person);
+        var account = new UserAccount
+        {
+            Id = Guid.NewGuid(), PersonId = person.Id, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        };
+        Context.UserAccounts.Add(account);
+        Context.UserAccesses.Add(new UserAccess
+        {
+            Id = Guid.NewGuid(), UserId = account.Id, RoleId = RoleConfiguration.MemberRoleId,
+            ScopeType = Constants.ScopeTypes.Workspace, ScopeId = WorkspaceId, IsActive = true,
+            AssignedAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await Context.SaveChangesAsync();
+        return account.Id;
+    }
+
+    private async Task<Guid> SeedInvoiceOnJobAsync(Guid jobId, Guid clientPersonId, DateTime? dueDate = null)
+    {
+        _invoiceService = GetService<IInvoiceService>();
         var invoice = await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = _clientId,
+            ClientId = clientPersonId,
+            JobId = jobId,
             LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 100000m } },
             TaxRatePercent = 0,
             DiscountAmount = 0,
@@ -49,7 +131,8 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
     [Fact]
     public async Task RecordPaymentAsync_PartialPayment_SetsPartiallyPaid()
     {
-        var invoiceId = await SeedInvoiceAsync();
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
         await _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 40000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null);
 
         var invoice = await _invoiceService.GetByIdAsync(WorkspaceId, AdminId, invoiceId);
@@ -59,7 +142,8 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
     [Fact]
     public async Task RecordPaymentAsync_FullPayment_SetsPaid()
     {
-        var invoiceId = await SeedInvoiceAsync();
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
         await _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 100000m, Method = "BankTransfer", ReceivedAt = DateTime.UtcNow }, null);
 
         var invoice = await _invoiceService.GetByIdAsync(WorkspaceId, AdminId, invoiceId);
@@ -69,7 +153,8 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
     [Fact]
     public async Task RecordPaymentAsync_Overpayment_Throws()
     {
-        var invoiceId = await SeedInvoiceAsync();
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
         await Assert.ThrowsAsync<ValidationException>(
             () => _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 150000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null));
     }
@@ -77,7 +162,8 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
     [Fact]
     public async Task RecordPaymentAsync_AssignsSequentialReceiptNumbers()
     {
-        var invoiceId = await SeedInvoiceAsync();
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
         var p1 = await _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 30000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null);
         var p2 = await _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 20000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null);
 
@@ -88,7 +174,8 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
     [Fact]
     public async Task DeleteAsync_WithPayments_Throws409()
     {
-        var invoiceId = await SeedInvoiceAsync();
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
         await _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 10000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null);
 
         var ex = await Assert.ThrowsAsync<ConflictException>(() => _invoiceService.DeleteAsync(WorkspaceId, AdminId, invoiceId));
@@ -98,7 +185,8 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
     [Fact]
     public async Task ComputeInvoiceTotals_OverdueSentInvoice_ReportsDaysOverdue()
     {
-        var invoiceId = await SeedInvoiceAsync(DateTime.UtcNow.Date.AddDays(-5));
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId, DateTime.UtcNow.Date.AddDays(-5));
         var invoice = await _invoiceService.GetByIdAsync(WorkspaceId, AdminId, invoiceId);
         var (_, _, _, isOverdue, daysOverdue) = _invoiceService.ComputeInvoiceTotals(invoice);
 
@@ -107,34 +195,81 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
-    public async Task CreateAsync_ValidatesClientIdAgainstPerson_NotClientEntity()
+    public async Task CreateAsync_ClientIdNotOnJob_Throws()
     {
-        var person = new SurveyorLedger.Data.Entities.Person
+        _invoiceService = GetService<IInvoiceService>();
+        var (job, _, _) = await SeedJobWithClientParticipantAsync();
+        var strangerPerson = new Person
         {
-            Id = Guid.NewGuid(), FirstName = "Client", LastName = "Person", Email = "client-person@test.local",
+            Id = Guid.NewGuid(), FirstName = "Stranger", LastName = "Person", Email = "stranger@test.local",
             IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
         };
-        Context.People.Add(person);
+        Context.People.Add(strangerPerson);
         await Context.SaveChangesAsync();
 
-        var svc = GetService<IInvoiceService>();
-        var invoice = await svc.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
+        await Assert.ThrowsAsync<ValidationException>(() => _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = person.Id,
-            LineItems = new() { new LineItemDto { Description = "Survey fee", Quantity = 1, UnitPrice = 5000 } }
-        });
-
-        Assert.Equal(person.Id, invoice.ClientId);
+            ClientId = strangerPerson.Id,
+            JobId = job.Id,
+            LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 1000m } },
+            TaxRatePercent = 0,
+            DiscountAmount = 0,
+            Status = "Draft"
+        }));
     }
 
     [Fact]
-    public async Task ClientService_SearchAsync_IsGlobal_NotWorkspaceFiltered()
+    public async Task GetByIdAsync_ClientRoleOnJob_CanView()
     {
-        var clientService = GetService<IClientService>();
-        var created = await clientService.CreateAsync(WorkspaceId, AdminId, new ClientRequest { Name = "Global Client", Email = "global@test.local" });
+        _invoiceService = GetService<IInvoiceService>();
+        var (job, clientPersonId, clientUserAccountId) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
 
-        var results = await clientService.SearchAsync(WorkspaceId, AdminId, "Global");
+        var invoice = await _invoiceService.GetByIdAsync(WorkspaceId, clientUserAccountId, invoiceId);
+        Assert.Equal(invoiceId, invoice.Id);
+    }
 
-        Assert.Contains(results, p => p.Id == created.Id);
+    [Fact]
+    public async Task GetByIdAsync_NoJobRole_ThrowsForbidden()
+    {
+        _invoiceService = GetService<IInvoiceService>();
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
+
+        var outsiderAccountId = await CreateWorkspaceMemberAsync();
+        await Assert.ThrowsAsync<ForbiddenException>(() => _invoiceService.GetByIdAsync(WorkspaceId, outsiderAccountId, invoiceId));
+    }
+
+    [Fact]
+    public async Task SendAsync_RecipientNotClientOrFinanceOnJob_Throws()
+    {
+        _invoiceService = GetService<IInvoiceService>();
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
+
+        var strangerPerson = new Person
+        {
+            Id = Guid.NewGuid(), FirstName = "Not", LastName = "OnJob", Email = "notonjob@test.local",
+            IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        };
+        Context.People.Add(strangerPerson);
+        await Context.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            _invoiceService.SendAsync(WorkspaceId, AdminId, invoiceId, new List<Guid> { strangerPerson.Id }, "https://app.test.local"));
+    }
+
+    [Fact]
+    public async Task SendAsync_ClientOnJob_Succeeds()
+    {
+        _invoiceService = GetService<IInvoiceService>();
+        _emailService = GetService<IEmailService>();
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
+
+        await _invoiceService.SendAsync(WorkspaceId, AdminId, invoiceId, new List<Guid> { clientPersonId }, "https://app.test.local");
+
+        var stub = (StubEmailService)_emailService;
+        Assert.Contains(stub.Sent, s => s.DocumentType == "Invoice");
     }
 }

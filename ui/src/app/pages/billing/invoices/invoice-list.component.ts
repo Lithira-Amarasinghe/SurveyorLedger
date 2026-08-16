@@ -6,11 +6,12 @@ import { CurrentWorkspaceService } from '../../../core/current-workspace.service
 import { BillingTabsComponent } from '../billing-tabs.component';
 import { InvoiceFormModalComponent } from './invoice-form-modal/invoice-form-modal.component';
 import { RecordPaymentModalComponent } from './record-payment-modal/record-payment-modal.component';
+import { SendDocumentModalComponent } from '../../../shared/send-document-modal/send-document-modal.component';
 
 @Component({
   selector: 'app-invoice-list',
   standalone: true,
-  imports: [CommonModule, RouterLink, BillingTabsComponent, InvoiceFormModalComponent, RecordPaymentModalComponent],
+  imports: [CommonModule, RouterLink, BillingTabsComponent, InvoiceFormModalComponent, RecordPaymentModalComponent, SendDocumentModalComponent],
   template: `
     <div class="p-lg max-w-5xl mx-auto">
       <app-billing-tabs [workspaceId]="workspaceId" active="invoices" />
@@ -60,6 +61,7 @@ import { RecordPaymentModalComponent } from './record-payment-modal/record-payme
                       [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', invoice.invoiceId, 'print']"
                       (click)="$event.stopPropagation()"
                     >Print</a>
+                    <button class="text-xs text-primary-500 hover:text-primary-600 mr-md" (click)="openSend(invoice)">Send</button>
                     @if (invoice.balance > 0 && invoice.status !== 'Cancelled') {
                       <button class="text-xs text-primary-500 hover:text-primary-600" (click)="openPayment(invoice)">Record payment</button>
                     }
@@ -78,6 +80,16 @@ import { RecordPaymentModalComponent } from './record-payment-modal/record-payme
     @if (payingInvoice(); as invoice) {
       <app-record-payment-modal [workspaceId]="workspaceId" [invoice]="invoice" (cancel)="payingInvoice.set(null)" (recorded)="onPaymentRecorded()" />
     }
+    @if (sendingInvoice(); as invoice) {
+      <app-send-document-modal
+        [workspaceId]="workspaceId"
+        [jobId]="invoice.jobId"
+        documentLabel="invoice"
+        [documentNumber]="invoice.number"
+        (cancel)="sendingInvoice.set(null)"
+        (send)="onSend(invoice, $event)"
+      />
+    }
   `
 })
 export class InvoiceListComponent implements OnInit {
@@ -88,6 +100,7 @@ export class InvoiceListComponent implements OnInit {
   modalOpen = signal(false);
   editingInvoice = signal<Invoice | null>(null);
   payingInvoice = signal<Invoice | null>(null);
+  sendingInvoice = signal<Invoice | null>(null);
 
   constructor(private invoiceService: InvoiceService, private currentWorkspace: CurrentWorkspaceService) {}
 
@@ -144,5 +157,19 @@ export class InvoiceListComponent implements OnInit {
   onPaymentRecorded(): void {
     this.payingInvoice.set(null);
     this.fetch();
+  }
+
+  openSend(invoice: Invoice): void {
+    this.sendingInvoice.set(invoice);
+  }
+
+  onSend(invoice: Invoice, recipientPersonIds: string[]): void {
+    this.invoiceService.send(this.workspaceId, invoice.invoiceId, recipientPersonIds).subscribe({
+      next: () => {
+        this.sendingInvoice.set(null);
+        this.fetch();
+      },
+      error: () => this.sendingInvoice.set(null)
+    });
   }
 }

@@ -54,6 +54,7 @@ public static class Constants
         public const string Surveyor = "Surveyor";
         public const string Client = "Client";
         public const string Member = "Member";
+        public const string Finance = "Finance";
     }
 
     public static class ScopeTypes

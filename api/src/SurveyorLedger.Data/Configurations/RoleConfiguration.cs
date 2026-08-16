@@ -12,6 +12,7 @@ public class RoleConfiguration : IEntityTypeConfiguration<Role>
     public static readonly Guid SurveyorRoleId = new("00000000-0000-0000-0000-000000000003");
     public static readonly Guid ClientRoleId = new("00000000-0000-0000-0000-000000000004");
     public static readonly Guid MemberRoleId = new("00000000-0000-0000-0000-000000000005");
+    public static readonly Guid FinanceRoleId = new("00000000-0000-0000-0000-000000000006");
 
     public void Configure(EntityTypeBuilder<Role> builder)
     {
@@ -30,7 +31,8 @@ public class RoleConfiguration : IEntityTypeConfiguration<Role>
             new Role { Id = AdminRoleId, Name = Constants.SystemRoles.Admin, Description = "Full access to workspace settings, members, and data.", IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
             new Role { Id = SurveyorRoleId, Name = Constants.SystemRoles.Surveyor, Description = "Performs assigned survey jobs.", IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
             new Role { Id = ClientRoleId, Name = Constants.SystemRoles.Client, Description = "Views job status and results for their organization.", IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
-            new Role { Id = MemberRoleId, Name = Constants.SystemRoles.Member, Description = "Workspace membership only. No access to jobs or land until assigned.", IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt }
+            new Role { Id = MemberRoleId, Name = Constants.SystemRoles.Member, Description = "Workspace membership only. No access to jobs or land until assigned.", IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
+            new Role { Id = FinanceRoleId, Name = Constants.SystemRoles.Finance, Description = "Job-scoped view of invoices and quotations for that job only.", IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt }
         );
     }
 }

@@ -19,7 +19,8 @@ public class RoleScopeConfiguration : IEntityTypeConfiguration<RoleScope>
             new RoleScope { RoleId = RoleConfiguration.SurveyorRoleId, ScopeType = Constants.ScopeTypes.Workspace },
             new RoleScope { RoleId = RoleConfiguration.SurveyorRoleId, ScopeType = Constants.ScopeTypes.Job },
             new RoleScope { RoleId = RoleConfiguration.ClientRoleId, ScopeType = Constants.ScopeTypes.Job },
-            new RoleScope { RoleId = RoleConfiguration.MemberRoleId, ScopeType = Constants.ScopeTypes.Workspace }
+            new RoleScope { RoleId = RoleConfiguration.MemberRoleId, ScopeType = Constants.ScopeTypes.Workspace },
+            new RoleScope { RoleId = RoleConfiguration.FinanceRoleId, ScopeType = Constants.ScopeTypes.Job }
         );
     }
 }

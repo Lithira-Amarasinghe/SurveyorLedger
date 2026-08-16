@@ -147,6 +147,7 @@ namespace SurveyorLedger.API.Controllers
         private static JobParticipantResponse ToResponse(UserAccess p) => new()
         {
             UserId = p.UserId,
+            PersonId = p.User.PersonId,
             FirstName = p.User.Person.FirstName,
             LastName = p.User.Person.LastName,
             Email = p.User.Person.Email,

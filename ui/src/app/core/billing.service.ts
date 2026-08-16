@@ -4,40 +4,10 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 
-export interface Address {
-  street: string | null;
-  city: string | null;
-  district: string | null;
-  postalCode: string | null;
-  country: string | null;
-}
-
 export interface LineItem {
   description: string;
   quantity: number;
   unitPrice: number;
-}
-
-export interface Client {
-  clientId: string;
-  name: string;
-  phone: string | null;
-  email: string | null;
-  address: Address;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ClientRequest {
-  name: string;
-  phone?: string;
-  email?: string;
-  address?: Address;
-}
-
-export interface ClientBalance {
-  clientId: string;
-  outstandingBalance: number;
 }
 
 export type QuotationStatus = 'Draft' | 'Sent' | 'Accepted' | 'Rejected' | 'Expired';
@@ -45,7 +15,7 @@ export type QuotationStatus = 'Draft' | 'Sent' | 'Accepted' | 'Rejected' | 'Expi
 export interface Quotation {
   quotationId: string;
   clientId: string;
-  jobId: string | null;
+  jobId: string;
   number: string;
   lineItems: LineItem[];
   taxRatePercent: number;
@@ -60,7 +30,7 @@ export interface Quotation {
 
 export interface QuotationRequest {
   clientId: string;
-  jobId?: string;
+  jobId: string;
   lineItems: LineItem[];
   taxRatePercent: number;
   validUntil?: string;
@@ -78,7 +48,7 @@ export type PaymentMethod = 'Cash' | 'BankTransfer' | 'Cheque';
 export interface Invoice {
   invoiceId: string;
   clientId: string;
-  jobId: string | null;
+  jobId: string;
   quotationId: string | null;
   number: string;
   lineItems: LineItem[];
@@ -98,7 +68,7 @@ export interface Invoice {
 
 export interface InvoiceRequest {
   clientId: string;
-  jobId?: string;
+  jobId: string;
   lineItems: LineItem[];
   taxRatePercent: number;
   discountAmount: number;
@@ -129,44 +99,6 @@ interface ApiResponse<T> {
   success: boolean;
   data: T;
   message?: string;
-}
-
-@Injectable({ providedIn: 'root' })
-export class ClientService {
-  constructor(private http: HttpClient) {}
-
-  private base(workspaceId: string): string {
-    return `${environment.apiBaseUrl}/workspace/${workspaceId}/clients`;
-  }
-
-  search(workspaceId: string, query?: string): Observable<Client[]> {
-    const params = query ? new HttpParams().set('query', query) : undefined;
-    return this.http.get<ApiResponse<Client[]>>(this.base(workspaceId), { params }).pipe(map(res => res.data));
-  }
-
-  create(workspaceId: string, request: ClientRequest): Observable<Client> {
-    return this.http.post<ApiResponse<Client>>(this.base(workspaceId), request).pipe(map(res => res.data));
-  }
-
-  getById(workspaceId: string, clientId: string): Observable<Client> {
-    return this.http.get<ApiResponse<Client>>(`${this.base(workspaceId)}/${clientId}`).pipe(map(res => res.data));
-  }
-
-  update(workspaceId: string, clientId: string, request: ClientRequest): Observable<Client> {
-    return this.http.put<ApiResponse<Client>>(`${this.base(workspaceId)}/${clientId}`, request).pipe(map(res => res.data));
-  }
-
-  delete(workspaceId: string, clientId: string): Observable<void> {
-    return this.http.delete<void>(`${this.base(workspaceId)}/${clientId}`);
-  }
-
-  getBalance(workspaceId: string, clientId: string): Observable<ClientBalance> {
-    return this.http.get<ApiResponse<ClientBalance>>(`${this.base(workspaceId)}/${clientId}/balance`).pipe(map(res => res.data));
-  }
-
-  getPayments(workspaceId: string, clientId: string): Observable<Payment[]> {
-    return this.http.get<ApiResponse<Payment[]>>(`${this.base(workspaceId)}/${clientId}/payments`).pipe(map(res => res.data));
-  }
 }
 
 @Injectable({ providedIn: 'root' })
@@ -202,6 +134,10 @@ export class QuotationService {
     return this.http
       .post<ApiResponse<Invoice>>(`${this.base(workspaceId)}/${quotationId}/convert-to-invoice`, request)
       .pipe(map(res => res.data));
+  }
+
+  send(workspaceId: string, quotationId: string, recipientPersonIds: string[]): Observable<void> {
+    return this.http.post<void>(`${this.base(workspaceId)}/${quotationId}/send`, { recipientPersonIds });
   }
 }
 
@@ -246,5 +182,9 @@ export class InvoiceService {
 
   getPayments(workspaceId: string, invoiceId: string): Observable<Payment[]> {
     return this.http.get<ApiResponse<Payment[]>>(`${this.base(workspaceId)}/${invoiceId}/payments`).pipe(map(res => res.data));
+  }
+
+  send(workspaceId: string, invoiceId: string, recipientPersonIds: string[]): Observable<void> {
+    return this.http.post<void>(`${this.base(workspaceId)}/${invoiceId}/send`, { recipientPersonIds });
   }
 }

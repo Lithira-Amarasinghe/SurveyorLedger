@@ -10,11 +10,16 @@ public class LineItemDto
 public class QuotationRequest
 {
     public Guid ClientId { get; set; }
-    public Guid? JobId { get; set; }
+    public Guid JobId { get; set; }
     public List<LineItemDto> LineItems { get; set; } = new();
     public decimal TaxRatePercent { get; set; }
     public DateTime? ValidUntil { get; set; }
     public string? Status { get; set; }
+}
+
+public class SendQuotationRequest
+{
+    public List<Guid> RecipientPersonIds { get; set; } = new();
 }
 
 public class ConvertQuotationRequest
@@ -27,7 +32,7 @@ public class QuotationResponse
 {
     public Guid QuotationId { get; set; }
     public Guid ClientId { get; set; }
-    public Guid? JobId { get; set; }
+    public Guid JobId { get; set; }
     public string Number { get; set; }
     public List<LineItemDto> LineItems { get; set; } = new();
     public decimal TaxRatePercent { get; set; }

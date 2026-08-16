@@ -26,11 +26,10 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
             li.Property(x => x.UnitPrice).HasColumnType("decimal(18,2)");
         });
 
-        builder.HasIndex(x => x.WorkspaceId);
-        builder.HasIndex(x => new { x.WorkspaceId, x.Number }).IsUnique();
+        builder.HasIndex(x => x.JobId);
+        builder.HasIndex(x => new { x.JobId, x.Number }).IsUnique();
         builder.HasIndex(x => x.IsActive);
 
-        builder.HasOne(x => x.Workspace).WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Client).WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Job).WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Quotation).WithMany().HasForeignKey(x => x.QuotationId).OnDelete(DeleteBehavior.Restrict);

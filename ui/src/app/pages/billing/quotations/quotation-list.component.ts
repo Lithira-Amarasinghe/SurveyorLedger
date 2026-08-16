@@ -6,11 +6,12 @@ import { CurrentWorkspaceService } from '../../../core/current-workspace.service
 import { BillingTabsComponent } from '../billing-tabs.component';
 import { QuotationFormModalComponent } from './quotation-form-modal/quotation-form-modal.component';
 import { ConvertQuotationModalComponent } from './convert-modal/convert-quotation-modal.component';
+import { SendDocumentModalComponent } from '../../../shared/send-document-modal/send-document-modal.component';
 
 @Component({
   selector: 'app-quotation-list',
   standalone: true,
-  imports: [CommonModule, RouterLink, BillingTabsComponent, QuotationFormModalComponent, ConvertQuotationModalComponent],
+  imports: [CommonModule, RouterLink, BillingTabsComponent, QuotationFormModalComponent, ConvertQuotationModalComponent, SendDocumentModalComponent],
   template: `
     <div class="p-lg max-w-5xl mx-auto">
       <app-billing-tabs [workspaceId]="workspaceId" active="quotations" />
@@ -56,6 +57,7 @@ import { ConvertQuotationModalComponent } from './convert-modal/convert-quotatio
                       [routerLink]="['/app/workspace', workspaceId, 'billing', 'quotations', quotation.quotationId, 'print']"
                       (click)="$event.stopPropagation()"
                     >Print</a>
+                    <button class="text-xs text-primary-500 hover:text-primary-600 mr-md" (click)="openSend(quotation)">Send</button>
                     @if (quotation.status === 'Draft' || quotation.status === 'Sent') {
                       <button class="text-xs text-primary-500 hover:text-primary-600" (click)="openConvert(quotation)">Convert to invoice</button>
                     }
@@ -74,6 +76,16 @@ import { ConvertQuotationModalComponent } from './convert-modal/convert-quotatio
     @if (convertingQuotation(); as quotation) {
       <app-convert-quotation-modal [workspaceId]="workspaceId" [quotation]="quotation" (cancel)="convertingQuotation.set(null)" (converted)="onConverted($event)" />
     }
+    @if (sendingQuotation(); as quotation) {
+      <app-send-document-modal
+        [workspaceId]="workspaceId"
+        [jobId]="quotation.jobId"
+        documentLabel="quotation"
+        [documentNumber]="quotation.number"
+        (cancel)="sendingQuotation.set(null)"
+        (send)="onSend(quotation, $event)"
+      />
+    }
   `
 })
 export class QuotationListComponent implements OnInit {
@@ -84,6 +96,7 @@ export class QuotationListComponent implements OnInit {
   modalOpen = signal(false);
   editingQuotation = signal<Quotation | null>(null);
   convertingQuotation = signal<Quotation | null>(null);
+  sendingQuotation = signal<Quotation | null>(null);
 
   constructor(private quotationService: QuotationService, private currentWorkspace: CurrentWorkspaceService, private router: Router) {}
 
@@ -133,5 +146,19 @@ export class QuotationListComponent implements OnInit {
   onConverted(invoice: Invoice): void {
     this.convertingQuotation.set(null);
     this.router.navigate(['/app/workspace', this.workspaceId, 'billing', 'invoices']);
+  }
+
+  openSend(quotation: Quotation): void {
+    this.sendingQuotation.set(quotation);
+  }
+
+  onSend(quotation: Quotation, recipientPersonIds: string[]): void {
+    this.quotationService.send(this.workspaceId, quotation.quotationId, recipientPersonIds).subscribe({
+      next: () => {
+        this.sendingQuotation.set(null);
+        this.fetch();
+      },
+      error: () => this.sendingQuotation.set(null)
+    });
   }
 }

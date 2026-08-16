@@ -19,6 +19,7 @@ export interface Job {
 
 export interface JobParticipant {
   userId: string;
+  personId: string;
   firstName: string;
   lastName: string;
   email: string | null;

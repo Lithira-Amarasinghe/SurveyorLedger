@@ -67,11 +67,7 @@ public class RolePermissionConfiguration : IEntityTypeConfiguration<RolePermissi
             // Member: workspace membership only. No job/land access at workspace scope -
             // capability comes purely from job-scope grants (Surveyor or Client on a job).
             Grant(new Guid("00000000-0000-0000-0000-000000000241"), RoleConfiguration.MemberRoleId, PermissionConfiguration.ViewWorkspaceId),
-            // Billing (client/quotation/invoice) - Admin: full CRUD.
-            Grant(new Guid("00000000-0000-0000-0000-000000000242"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewBillingClientId),
-            Grant(new Guid("00000000-0000-0000-0000-000000000243"), RoleConfiguration.AdminRoleId, PermissionConfiguration.CreateBillingClientId),
-            Grant(new Guid("00000000-0000-0000-0000-000000000244"), RoleConfiguration.AdminRoleId, PermissionConfiguration.EditBillingClientId),
-            Grant(new Guid("00000000-0000-0000-0000-000000000245"), RoleConfiguration.AdminRoleId, PermissionConfiguration.DeleteBillingClientId),
+            // Billing (quotation/invoice) - Admin: full CRUD.
             Grant(new Guid("00000000-0000-0000-0000-000000000246"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewQuotationId),
             Grant(new Guid("00000000-0000-0000-0000-000000000247"), RoleConfiguration.AdminRoleId, PermissionConfiguration.CreateQuotationId),
             Grant(new Guid("00000000-0000-0000-0000-000000000248"), RoleConfiguration.AdminRoleId, PermissionConfiguration.EditQuotationId),
@@ -81,9 +77,6 @@ public class RolePermissionConfiguration : IEntityTypeConfiguration<RolePermissi
             Grant(new Guid("00000000-0000-0000-0000-000000000252"), RoleConfiguration.AdminRoleId, PermissionConfiguration.EditInvoiceId),
             Grant(new Guid("00000000-0000-0000-0000-000000000253"), RoleConfiguration.AdminRoleId, PermissionConfiguration.DeleteInvoiceId),
             // Billing - Surveyor: view/create/edit, no delete.
-            Grant(new Guid("00000000-0000-0000-0000-000000000254"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.ViewBillingClientId),
-            Grant(new Guid("00000000-0000-0000-0000-000000000255"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.CreateBillingClientId),
-            Grant(new Guid("00000000-0000-0000-0000-000000000256"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.EditBillingClientId),
             Grant(new Guid("00000000-0000-0000-0000-000000000257"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.ViewQuotationId),
             Grant(new Guid("00000000-0000-0000-0000-000000000258"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.CreateQuotationId),
             Grant(new Guid("00000000-0000-0000-0000-000000000259"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.EditQuotationId),
@@ -92,12 +85,18 @@ public class RolePermissionConfiguration : IEntityTypeConfiguration<RolePermissi
             Grant(new Guid("00000000-0000-0000-0000-000000000262"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.EditInvoiceId),
             // Billing - Client and Member: view only. Billing data is financial; phase 1
             // does not build a client-scoped billing portal.
-            Grant(new Guid("00000000-0000-0000-0000-000000000263"), RoleConfiguration.ClientRoleId, PermissionConfiguration.ViewBillingClientId),
             Grant(new Guid("00000000-0000-0000-0000-000000000264"), RoleConfiguration.ClientRoleId, PermissionConfiguration.ViewQuotationId),
             Grant(new Guid("00000000-0000-0000-0000-000000000265"), RoleConfiguration.ClientRoleId, PermissionConfiguration.ViewInvoiceId),
-            Grant(new Guid("00000000-0000-0000-0000-000000000266"), RoleConfiguration.MemberRoleId, PermissionConfiguration.ViewBillingClientId),
             Grant(new Guid("00000000-0000-0000-0000-000000000267"), RoleConfiguration.MemberRoleId, PermissionConfiguration.ViewQuotationId),
             Grant(new Guid("00000000-0000-0000-0000-000000000268"), RoleConfiguration.MemberRoleId, PermissionConfiguration.ViewInvoiceId),
+            // Finance: job-scoped view of invoices/quotations only. Needs job.view too -
+            // EnsureJobAccessAsync enforces against the "job" resource as the access gate for
+            // anything hanging off a job (same mechanism Milestone/Document already use), not
+            // against "invoice"/"quotation" directly - without job.view here, a Finance-role
+            // caller would be rejected before InvoiceService's own permission check even runs.
+            Grant(new Guid("00000000-0000-0000-0000-000000000284"), RoleConfiguration.FinanceRoleId, PermissionConfiguration.ViewJobId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000282"), RoleConfiguration.FinanceRoleId, PermissionConfiguration.ViewQuotationId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000283"), RoleConfiguration.FinanceRoleId, PermissionConfiguration.ViewInvoiceId),
             // Expense - Admin: full CRUD. Surveyor: view/create/edit (field staff record
             // their own costs), no delete. Client: nothing (financial data).
             Grant(new Guid("00000000-0000-0000-0000-000000000269"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewExpenseId),

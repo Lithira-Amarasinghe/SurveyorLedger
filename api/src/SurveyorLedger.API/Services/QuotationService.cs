@@ -1,6 +1,7 @@
 using System.Data;
 using Microsoft.EntityFrameworkCore;
 using SurveyorLedger.API.Models.Billing;
+using SurveyorLedger.Core;
 using SurveyorLedger.Core.Exceptions;
 using SurveyorLedger.Data;
 using SurveyorLedger.Data.Entities;
@@ -15,31 +16,35 @@ public interface IQuotationService
     Task<Quotation> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, QuotationRequest request);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid quotationId);
     Task<Invoice> ConvertToInvoiceAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, ConvertQuotationRequest request);
+    Task SendAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, List<Guid> recipientPersonIds, string appBaseUrl);
 }
 
 public class QuotationService : IQuotationService
 {
     private readonly ApplicationDbContext _context;
     private readonly IScopedAccessService _access;
+    private readonly IPdfService _pdfService;
+    private readonly IEmailService _emailService;
     private readonly ILogger<QuotationService> _logger;
 
-    public QuotationService(ApplicationDbContext context, IScopedAccessService access, ILogger<QuotationService> logger)
+    public QuotationService(ApplicationDbContext context, IScopedAccessService access, IPdfService pdfService, IEmailService emailService, ILogger<QuotationService> logger)
     {
         _context = context;
         _access = access;
+        _pdfService = pdfService;
+        _emailService = emailService;
         _logger = logger;
     }
 
     public async Task<Quotation> CreateAsync(Guid workspaceId, Guid callerUserId, QuotationRequest request)
     {
-        await _access.EnsureAllowedAsync(callerUserId, "quotation", "create", workspaceId);
-        await EnsureClientExistsAsync(request.ClientId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, request.JobId, "create");
+        await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
         ValidateLineItems(request.LineItems);
 
         var quotation = new Quotation
         {
             Id = Guid.NewGuid(),
-            WorkspaceId = workspaceId,
             ClientId = request.ClientId,
             JobId = request.JobId,
             LineItems = ToEntities(request.LineItems),
@@ -62,7 +67,7 @@ public class QuotationService : IQuotationService
             await transaction.CommitAsync();
         });
 
-        _logger.LogInformation("Quotation {QuotationId} ({Number}) created in workspace {WorkspaceId} by {UserId}", quotation.Id, quotation.Number, workspaceId, callerUserId);
+        _logger.LogInformation("Quotation {QuotationId} ({Number}) created on job {JobId} by {UserId}", quotation.Id, quotation.Number, quotation.JobId, callerUserId);
         return quotation;
     }
 
@@ -70,7 +75,13 @@ public class QuotationService : IQuotationService
     {
         await _access.EnsureListAllowedAsync(callerUserId, workspaceId);
 
-        var quotations = _context.Quotations.Where(q => q.WorkspaceId == workspaceId);
+        var quotations = _context.Quotations.Where(q => q.Job.WorkspaceId == workspaceId);
+        if (!await _access.HasViewAllAsync(callerUserId, "job", workspaceId))
+        {
+            var accessibleJobIds = (await _access.GetAccessibleJobsAsync(callerUserId))
+                .Where(j => j.WorkspaceId == workspaceId).Select(j => j.JobId).ToHashSet();
+            quotations = quotations.Where(q => accessibleJobIds.Contains(q.JobId));
+        }
         if (clientId.HasValue)
             quotations = quotations.Where(q => q.ClientId == clientId.Value);
 
@@ -79,16 +90,17 @@ public class QuotationService : IQuotationService
 
     public async Task<Quotation> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid quotationId)
     {
-        await _access.EnsureAllowedAsync(callerUserId, "quotation", "view", workspaceId);
-        return await FindQuotationAsync(workspaceId, quotationId);
+        var quotation = await FindQuotationAsync(workspaceId, quotationId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId, "view");
+        return quotation;
     }
 
     public async Task<Quotation> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, QuotationRequest request)
     {
-        await _access.EnsureAllowedAsync(callerUserId, "quotation", "edit", workspaceId);
-        await EnsureClientExistsAsync(request.ClientId);
-        ValidateLineItems(request.LineItems);
         var quotation = await FindQuotationAsync(workspaceId, quotationId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId, "edit");
+        await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
+        ValidateLineItems(request.LineItems);
 
         // Line items changed after the quote was Sent - bump RevisionNumber so
         // "revision charges" have something to point at, without a new entity.
@@ -121,8 +133,8 @@ public class QuotationService : IQuotationService
 
     public async Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid quotationId)
     {
-        await _access.EnsureAllowedAsync(callerUserId, "quotation", "delete", workspaceId);
         var quotation = await FindQuotationAsync(workspaceId, quotationId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId, "delete");
 
         quotation.IsActive = false;
         quotation.UpdatedAt = DateTime.UtcNow;
@@ -131,9 +143,9 @@ public class QuotationService : IQuotationService
 
     public async Task<Invoice> ConvertToInvoiceAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, ConvertQuotationRequest request)
     {
-        await _access.EnsureAllowedAsync(callerUserId, "quotation", "edit", workspaceId);
-        await _access.EnsureAllowedAsync(callerUserId, "invoice", "create", workspaceId);
         var quotation = await FindQuotationAsync(workspaceId, quotationId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId, "edit");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId, "create");
 
         if (quotation.Status is not ("Draft" or "Sent"))
             throw new ValidationException($"Cannot convert a quotation with status '{quotation.Status}'.");
@@ -141,7 +153,6 @@ public class QuotationService : IQuotationService
         var invoice = new Invoice
         {
             Id = Guid.NewGuid(),
-            WorkspaceId = workspaceId,
             ClientId = quotation.ClientId,
             JobId = quotation.JobId,
             QuotationId = quotation.Id,
@@ -171,22 +182,78 @@ public class QuotationService : IQuotationService
         return invoice;
     }
 
+    public async Task SendAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, List<Guid> recipientPersonIds, string appBaseUrl)
+    {
+        var quotation = await FindQuotationAsync(workspaceId, quotationId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId, "edit");
+
+        if (recipientPersonIds.Count == 0)
+            throw new ValidationException("At least one recipient is required.");
+
+        var recipients = await _context.People
+            .Where(p => recipientPersonIds.Contains(p.Id) && p.IsActive)
+            .ToListAsync();
+        if (recipients.Count != recipientPersonIds.Count)
+            throw new NotFoundException("One or more recipients not found.");
+
+        var eligiblePersonIds = await _context.UserAccesses
+            .Include(ua => ua.User)
+            .Where(ua => ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == quotation.JobId)
+            .Where(ua => ua.Role.Name == Constants.SystemRoles.Client || ua.Role.Name == Constants.SystemRoles.Finance)
+            .Select(ua => ua.User.PersonId)
+            .ToListAsync();
+
+        var ineligible = recipientPersonIds.Except(eligiblePersonIds).ToList();
+        if (ineligible.Count > 0)
+            throw new ValidationException("Every recipient must hold Client or Finance access on this quotation's job.");
+
+        var pdfBytes = _pdfService.GenerateQuotationPdf(quotation);
+        var linkUrl = $"{appBaseUrl.TrimEnd('/')}/app/jobs/{quotation.JobId}";
+
+        foreach (var recipient in recipients)
+        {
+            if (string.IsNullOrWhiteSpace(recipient.Email))
+                continue;
+            await _emailService.SendBillingDocumentAsync(recipient.Email, "Quotation", quotation.Number, linkUrl, pdfBytes, $"{quotation.Number}.pdf");
+        }
+
+        if (quotation.Status == "Draft")
+        {
+            quotation.Status = "Sent";
+            quotation.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+        }
+
+        _logger.LogInformation("Quotation {QuotationId} sent to {Count} recipient(s)", quotationId, recipients.Count);
+    }
+
     private async Task<string> NextNumberAsync(Guid workspaceId, string prefix)
     {
         var count = prefix switch
         {
-            "Q" => await _context.Quotations.IgnoreQueryFilters().CountAsync(q => q.WorkspaceId == workspaceId),
-            "INV" => await _context.Invoices.IgnoreQueryFilters().CountAsync(i => i.WorkspaceId == workspaceId),
+            "Q" => await _context.Quotations.IgnoreQueryFilters().CountAsync(q => q.Job.WorkspaceId == workspaceId),
+            "INV" => await _context.Invoices.IgnoreQueryFilters().CountAsync(i => i.Job.WorkspaceId == workspaceId),
             _ => throw new InvalidOperationException($"Unknown prefix '{prefix}'.")
         };
         return $"{prefix}-{count + 1:D4}";
     }
 
-    private async Task EnsureClientExistsAsync(Guid clientId)
+    /// <summary>Replaces EnsureClientExistsAsync - ClientId must resolve to a Person who holds
+    /// Client or Finance UserAccess on this specific JobId, not just any active Person.</summary>
+    private async Task EnsureClientHoldsBillingRoleOnJobAsync(Guid clientId, Guid jobId)
     {
-        var exists = await _context.People.AnyAsync(p => p.Id == clientId && p.IsActive);
-        if (!exists)
+        var personExists = await _context.People.AnyAsync(p => p.Id == clientId && p.IsActive);
+        if (!personExists)
             throw new NotFoundException("Client not found");
+
+        var holdsRole = await _context.UserAccesses
+            .Include(ua => ua.User)
+            .Where(ua => ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == jobId)
+            .Where(ua => ua.Role.Name == Constants.SystemRoles.Client || ua.Role.Name == Constants.SystemRoles.Finance)
+            .AnyAsync(ua => ua.User.PersonId == clientId);
+
+        if (!holdsRole)
+            throw new ValidationException("ClientId must be a Person who holds Client or Finance access on this job.");
     }
 
     private static void ValidateLineItems(List<LineItemDto> items)
@@ -202,7 +269,8 @@ public class QuotationService : IQuotationService
 
     private async Task<Quotation> FindQuotationAsync(Guid workspaceId, Guid quotationId)
     {
-        return await _context.Quotations.Include(q => q.LineItems).FirstOrDefaultAsync(q => q.Id == quotationId && q.WorkspaceId == workspaceId)
+        return await _context.Quotations.Include(q => q.LineItems).Include(q => q.Client)
+            .FirstOrDefaultAsync(q => q.Id == quotationId && q.Job.WorkspaceId == workspaceId)
             ?? throw new NotFoundException("Quotation not found");
     }
 }

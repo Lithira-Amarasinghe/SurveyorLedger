@@ -113,12 +113,10 @@ builder.Services.AddScoped<IDocumentService, DocumentService>();
 // Register document request service
 builder.Services.AddScoped<IDocumentRequestService, DocumentRequestService>();
 
-// Register billing services. InvoiceService intentionally does not depend on
-// IClientService (ClientService depends on IInvoiceService for balance aggregation) -
-// a mutual dependency would be a circular DI graph.
+// Register billing services.
 builder.Services.AddScoped<IInvoiceService, InvoiceService>();
-builder.Services.AddScoped<IClientService, ClientService>();
 builder.Services.AddScoped<IQuotationService, QuotationService>();
+builder.Services.AddScoped<IPdfService, PdfService>();
 builder.Services.AddScoped<IExpenseService, ExpenseService>();
 builder.Services.AddScoped<IStaffPaymentService, StaffPaymentService>();
 

@@ -11,6 +11,7 @@ public interface IEmailService
     Task SendPasswordResetOtpAsync(string email, string otpCode, int expirationMinutes);
     Task SendWelcomeEmailAsync(string email, string firstName);
     Task SendInviteEmailAsync(string email, string workspaceName, string inviteUrl);
+    Task SendBillingDocumentAsync(string email, string documentType, string documentNumber, string linkUrl, byte[] pdfBytes, string pdfFileName);
 }
 
 public class EmailService : IEmailService
@@ -75,6 +76,32 @@ public class EmailService : IEmailService
         var subject = $"You've been invited to {workspaceName} on SurveyorLedger";
         var body = $"You've been invited to join {workspaceName} on SurveyorLedger. Accept your invite: {inviteUrl}";
         await SendEmailAsync(email, subject, body);
+    }
+
+    public async Task SendBillingDocumentAsync(string email, string documentType, string documentNumber, string linkUrl, byte[] pdfBytes, string pdfFileName)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+            throw new ValidationException("Email is required");
+
+        var subject = $"{documentType} {documentNumber}";
+        var body = $"A {documentType.ToLowerInvariant()} ({documentNumber}) is available for you. View it here: {linkUrl}";
+
+        try
+        {
+            var message = new EmailMessage(
+                senderAddress: _senderEmail,
+                recipients: new EmailRecipients(new[] { new EmailAddress(email) }),
+                content: new EmailContent(subject) { PlainText = body });
+            message.Attachments.Add(new EmailAttachment(pdfFileName, "application/pdf", BinaryData.FromBytes(pdfBytes)));
+
+            await _emailClient.SendAsync(WaitUntil.Completed, message);
+            _logger.LogInformation("Billing document {DocumentType} {DocumentNumber} emailed to {Email}", documentType, documentNumber, email);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send billing document email to {Email}", email);
+            throw new AppException(Constants.ErrorCodes.EmailSendFailed, "Failed to send email");
+        }
     }
 
     private async Task SendEmailAsync(string toEmail, string subject, string body)
