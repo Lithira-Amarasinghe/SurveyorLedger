@@ -58,7 +58,7 @@ public interface IScopedAccessService
     Task<List<string>> GetEffectiveJobRolesAsync(Guid userId, Guid workspaceId, Guid jobId);
 
     /// <summary>
-    /// Whether granting this user access at (scopeType, scopeId) needs no fresh consent -
+    /// Whether granting this UserAccount (userId = UserAccount.Id) access at (scopeType, scopeId) needs no fresh consent -
     /// true if they already hold active access at that exact scope, or at any ancestor scope
     /// above it (e.g. a workspace member being added to a job under that workspace). False
     /// means an invitation is required instead of an instant grant. Hierarchy-agnostic: the
@@ -67,7 +67,7 @@ public interface IScopedAccessService
     /// </summary>
     Task<bool> HasConsentCoverageAsync(Guid userId, string scopeType, Guid scopeId);
 
-    /// <summary>Every job this user can open, across every workspace, tagged with the
+    /// <summary>Every job this UserAccount (userId = UserAccount.Id) can open, across every workspace, tagged with the
     /// real Constants.ScopeTypes value the access was found at (broadest wins, deduped).
     /// Deliberately not workspace-filtered - see Global Constraints.</summary>
     Task<List<AccessibleJob>> GetAccessibleJobsAsync(Guid userId);
