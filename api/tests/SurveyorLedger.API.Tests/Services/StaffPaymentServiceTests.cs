@@ -15,6 +15,8 @@ public class StaffPaymentServiceTests : WorkspaceIntegrationTestBase
     private IJobService _jobService = null!;
     private IStaffPaymentService _staffPaymentService = null!;
     private Guid _jobId;
+    private Guid _surveyorPersonId;
+    private Guid _adminPersonId;
 
     protected override void ConfigureServices(IServiceCollection services)
     {
@@ -35,6 +37,11 @@ public class StaffPaymentServiceTests : WorkspaceIntegrationTestBase
         _staffPaymentService = GetService<IStaffPaymentService>();
         var job = await _jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Survey Job" });
         _jobId = job.Id;
+
+        // StaffPayment.UserId (the payee) is a Person.Id post-split, not a UserAccount.Id -
+        // resolve the seeded accounts' Person ids once here for every test to use.
+        _surveyorPersonId = await Context.UserAccounts.Where(a => a.Id == SurveyorId).Select(a => a.PersonId).FirstAsync();
+        _adminPersonId = await Context.UserAccounts.Where(a => a.Id == AdminId).Select(a => a.PersonId).FirstAsync();
     }
 
     [Fact]
@@ -43,7 +50,7 @@ public class StaffPaymentServiceTests : WorkspaceIntegrationTestBase
         await SeedJobAsync();
         var payment = await _staffPaymentService.CreateAsync(WorkspaceId, AdminId, _jobId, new StaffPaymentRequest
         {
-            UserId = SurveyorId,
+            UserId = _surveyorPersonId,
             Type = "Salary",
             Amount = 30000m,
             PaidDate = DateTime.UtcNow
@@ -71,7 +78,7 @@ public class StaffPaymentServiceTests : WorkspaceIntegrationTestBase
         await SeedJobAsync();
         await Assert.ThrowsAsync<ForbiddenException>(() => _staffPaymentService.CreateAsync(WorkspaceId, SurveyorId, _jobId, new StaffPaymentRequest
         {
-            UserId = SurveyorId,
+            UserId = _surveyorPersonId,
             Type = "Salary",
             Amount = 1000m,
             PaidDate = DateTime.UtcNow
@@ -82,12 +89,12 @@ public class StaffPaymentServiceTests : WorkspaceIntegrationTestBase
     public async Task Surveyor_SeesOnlyOwnPayments()
     {
         await SeedJobAsync();
-        await _staffPaymentService.CreateAsync(WorkspaceId, AdminId, _jobId, new StaffPaymentRequest { UserId = SurveyorId, Type = "Salary", Amount = 30000m, PaidDate = DateTime.UtcNow });
-        await _staffPaymentService.CreateAsync(WorkspaceId, AdminId, _jobId, new StaffPaymentRequest { UserId = AdminId, Type = "Bonus", Amount = 5000m, PaidDate = DateTime.UtcNow });
+        await _staffPaymentService.CreateAsync(WorkspaceId, AdminId, _jobId, new StaffPaymentRequest { UserId = _surveyorPersonId, Type = "Salary", Amount = 30000m, PaidDate = DateTime.UtcNow });
+        await _staffPaymentService.CreateAsync(WorkspaceId, AdminId, _jobId, new StaffPaymentRequest { UserId = _adminPersonId, Type = "Bonus", Amount = 5000m, PaidDate = DateTime.UtcNow });
 
         var surveyorView = await _staffPaymentService.GetAllAsync(WorkspaceId, SurveyorId, _jobId);
         Assert.Single(surveyorView);
-        Assert.All(surveyorView, p => Assert.Equal(SurveyorId, p.UserId));
+        Assert.All(surveyorView, p => Assert.Equal(_surveyorPersonId, p.UserId));
 
         var adminView = await _staffPaymentService.GetAllAsync(WorkspaceId, AdminId, _jobId);
         Assert.Equal(2, adminView.Count);
@@ -97,7 +104,7 @@ public class StaffPaymentServiceTests : WorkspaceIntegrationTestBase
     public async Task Surveyor_CannotGetByIdForAnotherUsersPayment()
     {
         await SeedJobAsync();
-        var payment = await _staffPaymentService.CreateAsync(WorkspaceId, AdminId, _jobId, new StaffPaymentRequest { UserId = AdminId, Type = "Bonus", Amount = 5000m, PaidDate = DateTime.UtcNow });
+        var payment = await _staffPaymentService.CreateAsync(WorkspaceId, AdminId, _jobId, new StaffPaymentRequest { UserId = _adminPersonId, Type = "Bonus", Amount = 5000m, PaidDate = DateTime.UtcNow });
 
         await Assert.ThrowsAsync<NotFoundException>(() => _staffPaymentService.GetByIdAsync(WorkspaceId, SurveyorId, _jobId, payment.Id));
     }
@@ -106,7 +113,7 @@ public class StaffPaymentServiceTests : WorkspaceIntegrationTestBase
     public async Task DeleteAsync_RemovesStaffPayment()
     {
         await SeedJobAsync();
-        var payment = await _staffPaymentService.CreateAsync(WorkspaceId, AdminId, _jobId, new StaffPaymentRequest { UserId = SurveyorId, Type = "Commission", Amount = 1000m, PaidDate = DateTime.UtcNow });
+        var payment = await _staffPaymentService.CreateAsync(WorkspaceId, AdminId, _jobId, new StaffPaymentRequest { UserId = _surveyorPersonId, Type = "Commission", Amount = 1000m, PaidDate = DateTime.UtcNow });
         await _staffPaymentService.DeleteAsync(WorkspaceId, AdminId, _jobId, payment.Id);
 
         var all = await _staffPaymentService.GetAllAsync(WorkspaceId, AdminId, _jobId);
@@ -119,7 +126,7 @@ public class StaffPaymentServiceTests : WorkspaceIntegrationTestBase
         await SeedJobAsync();
         await Assert.ThrowsAsync<ValidationException>(() => _staffPaymentService.CreateAsync(WorkspaceId, AdminId, _jobId, new StaffPaymentRequest
         {
-            UserId = SurveyorId,
+            UserId = _surveyorPersonId,
             Type = "NotAType",
             Amount = 1000m,
             PaidDate = DateTime.UtcNow
@@ -130,14 +137,9 @@ public class StaffPaymentServiceTests : WorkspaceIntegrationTestBase
     public async Task CreateAsync_SetsRecordedByUser_AsPersonNotUserAccount()
     {
         await SeedJobAsync();
-        // StaffPayment.UserId (the payee) is a Person.Id post-split, picked from a person
-        // search - reverse-resolve SurveyorId's UserAccount to its Person to use here.
-        var surveyorPersonId = await Context.UserAccounts
-            .Where(a => a.Id == SurveyorId).Select(a => a.PersonId).FirstAsync();
-
         var payment = await _staffPaymentService.CreateAsync(WorkspaceId, AdminId, _jobId, new StaffPaymentRequest
         {
-            UserId = surveyorPersonId,
+            UserId = _surveyorPersonId,
             Type = "Salary",
             Amount = 30000m,
             PaidDate = DateTime.UtcNow
