@@ -84,7 +84,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
 
         Assert.Equal("Fulfilled", fulfilled.Status);
         Assert.NotNull(fulfilled.FulfilledDocumentId);
-        Assert.Equal(ClientId, fulfilled.FulfilledBy);
+        Assert.Equal(ClientPersonId, fulfilled.FulfilledBy);
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
     {
         await SeedJobsAsync();
         await Assert.ThrowsAsync<ValidationException>(() =>
-            _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, Constants.SystemRoles.Client, ClientId));
+            _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, Constants.SystemRoles.Client, ClientPersonId));
     }
 
     [Fact]
@@ -193,7 +193,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
         // targeting AdminId (who has full access but no job-scoped UserAccess row for Job A) works
         // as the non-participant case here since Admin never gets an explicit job assignment.
         await Assert.ThrowsAsync<ValidationException>(() =>
-            _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, AdminId));
+            _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, AdminPersonId));
     }
 
     [Fact]
@@ -221,7 +221,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
     public async Task Fulfill_PersonTargeted_WrongPerson_ThrowsForbidden_EvenForSurveyor()
     {
         await SeedJobsAsync();
-        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, ClientId);
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, ClientPersonId);
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             _requestService.FulfillAsync(WorkspaceId, SurveyorId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible));
@@ -231,7 +231,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
     public async Task Fulfill_PersonTargeted_CorrectPerson_Succeeds()
     {
         await SeedJobsAsync();
-        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, ClientId);
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, ClientPersonId);
 
         var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible);
 
@@ -280,7 +280,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, null);
 
         await Assert.ThrowsAsync<ValidationException>(() =>
-            _requestService.UpdateTargetAsync(WorkspaceId, AdminId, _jobAId, request.Id, Constants.SystemRoles.Client, ClientId));
+            _requestService.UpdateTargetAsync(WorkspaceId, AdminId, _jobAId, request.Id, Constants.SystemRoles.Client, ClientPersonId));
     }
 
     [Fact]
@@ -373,7 +373,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
         var fulfilled = await _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, MakeFile());
 
         Assert.Equal("Fulfilled", fulfilled.Status);
-        Assert.Equal(AdminId, fulfilled.FulfilledBy); // RequestedBy in this seed is Admin
+        Assert.Equal(AdminPersonId, fulfilled.FulfilledBy); // RequestedBy in this seed is Admin
     }
 
     [Fact]

@@ -38,20 +38,22 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
         LastName = "Person"
     };
 
+    /// <summary>invitation.UserId is a Person.Id; resolves the UserAccount.Id behind it, if any exists yet.</summary>
+    private async Task<Guid?> GetAccountIdAsync(Guid personId) =>
+        await Context.UserAccounts.Where(a => a.PersonId == personId).Select(a => (Guid?)a.Id).FirstOrDefaultAsync();
+
     [Fact]
-    public async Task CreateInvitation_ForBrandNewEmail_CreatesUserButNoAccess()
+    public async Task CreateInvitation_ForBrandNewEmail_CreatesPersonButNoAccount()
     {
         _invitationService = GetService<IInvitationService>();
 
         var invitation = await _invitationService.CreateInvitationAsync(WorkspaceId, AdminId, NewPersonRequest("new.person@test.local"));
 
         Assert.Equal("Pending", invitation.Status);
-        var user = await Context.Users.FirstOrDefaultAsync(u => u.Id == invitation.UserId);
-        Assert.NotNull(user);
-        Assert.Null(user!.PasswordHash);
+        var person = await Context.People.FirstOrDefaultAsync(p => p.Id == invitation.UserId);
+        Assert.NotNull(person);
 
-        var access = await Context.UserAccesses.AnyAsync(ua => ua.UserId == invitation.UserId);
-        Assert.False(access);
+        Assert.Null(await GetAccountIdAsync(invitation.UserId));
     }
 
     [Fact]
@@ -96,23 +98,24 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
             LastName = "Person"
         });
 
-        var user = await Context.Users.FirstAsync(u => u.Id == invitation.UserId);
-        Assert.NotNull(user.PasswordHash);
-        Assert.True(user.EmailVerified);
+        var accountId = await GetAccountIdAsync(invitation.UserId) ?? throw new Exception("Account should exist after completing invitation.");
+        var account = await Context.UserAccounts.FirstAsync(a => a.Id == accountId);
+        Assert.NotNull(account.PasswordHash);
+        Assert.True(account.EmailVerified);
 
         // Setting a password is not the same as accepting - no access yet, invite still Pending.
         var access = await Context.UserAccesses.FirstOrDefaultAsync(ua =>
-            ua.UserId == invitation.UserId && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == WorkspaceId);
+            ua.UserId == accountId && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == WorkspaceId);
         Assert.Null(access);
 
         var reloaded = await Context.Invitations.FirstAsync(i => i.Id == invitation.Id);
         Assert.Equal("Pending", reloaded.Status);
 
         // The explicit Accept step, now separate, is what actually grants access.
-        await _invitationService.AcceptInvitationAsync(invitation.Id, invitation.UserId);
+        await _invitationService.AcceptInvitationAsync(invitation.Id, accountId);
 
         access = await Context.UserAccesses.FirstOrDefaultAsync(ua =>
-            ua.UserId == invitation.UserId && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == WorkspaceId);
+            ua.UserId == accountId && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == WorkspaceId);
         Assert.NotNull(access);
 
         reloaded = await Context.Invitations.FirstAsync(i => i.Id == invitation.Id);
@@ -126,15 +129,20 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
         _invitationService = GetService<IInvitationService>();
         var invitation = await _invitationService.CreateInvitationAsync(WorkspaceId, AdminId, NewPersonRequest("existing@test.local", "Surveyor"));
 
-        var user = await Context.Users.FirstAsync(u => u.Id == invitation.UserId);
-        user.PasswordHash = "already-has-a-password";
+        var accountId = Guid.NewGuid();
+        await Context.UserAccounts.AddAsync(new SurveyorLedger.Data.Entities.UserAccount
+        {
+            Id = accountId, PersonId = invitation.UserId, PasswordHash = "already-has-a-password",
+            EmailVerified = true, HasCompletedSignup = true, IsActive = true,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
         await Context.SaveChangesAsync();
 
-        var accepted = await _invitationService.AcceptInvitationAsync(invitation.Id, invitation.UserId);
+        var accepted = await _invitationService.AcceptInvitationAsync(invitation.Id, accountId);
 
         Assert.Equal("Accepted", accepted.Status);
         var access = await Context.UserAccesses.AnyAsync(ua =>
-            ua.UserId == invitation.UserId && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == WorkspaceId);
+            ua.UserId == accountId && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == WorkspaceId);
         Assert.True(access);
     }
 
@@ -156,15 +164,25 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
     [Fact]
     public async Task DeclineInvitation_NeverGrantedAccess_JustMarksDeclined()
     {
+        // The authenticated decline path requires a real account (see DeclineByToken test
+        // for the brand-new-invitee, no-account case) - simulate one that already exists.
         _invitationService = GetService<IInvitationService>();
         var invitation = await _invitationService.CreateInvitationAsync(WorkspaceId, AdminId, NewPersonRequest("decline.me@test.local"));
+        var accountId = Guid.NewGuid();
+        await Context.UserAccounts.AddAsync(new SurveyorLedger.Data.Entities.UserAccount
+        {
+            Id = accountId, PersonId = invitation.UserId, PasswordHash = "already-has-a-password",
+            EmailVerified = true, HasCompletedSignup = true, IsActive = true,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await Context.SaveChangesAsync();
 
-        await _invitationService.DeclineInvitationAsync(invitation.Id, invitation.UserId);
+        await _invitationService.DeclineInvitationAsync(invitation.Id, accountId);
 
         var reloaded = await Context.Invitations.FirstAsync(i => i.Id == invitation.Id);
         Assert.Equal("Declined", reloaded.Status);
 
-        var access = await Context.UserAccesses.AnyAsync(ua => ua.UserId == invitation.UserId);
+        var access = await Context.UserAccesses.AnyAsync(ua => ua.UserId == accountId);
         Assert.False(access);
     }
 
@@ -214,7 +232,8 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
         Assert.NotNull(secondAttempt.Invitation);
 
         // Accepting the workspace invite gives consent coverage - now assignment is instant.
-        await _invitationService.AcceptInvitationAsync(invitation.Id, invitation.UserId);
+        var acceptAccountId = await GetAccountIdAsync(invitation.UserId) ?? throw new Exception("Account should exist after completing invitation.");
+        await _invitationService.AcceptInvitationAsync(invitation.Id, acceptAccountId);
 
         var grant = await jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId, "Surveyor");
         Assert.Equal(Constants.ScopeTypes.Job, grant.Access?.ScopeType);
@@ -233,7 +252,15 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
         var job = await jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Survey job" });
         var invitation = await _invitationService.CreateInvitationAsync(
             WorkspaceId, AdminId, NewPersonRequest("declined.person@test.local", "Surveyor"));
-        await _invitationService.DeclineInvitationAsync(invitation.Id, invitation.UserId);
+        var accountId = Guid.NewGuid();
+        await Context.UserAccounts.AddAsync(new SurveyorLedger.Data.Entities.UserAccount
+        {
+            Id = accountId, PersonId = invitation.UserId, PasswordHash = "already-has-a-password",
+            EmailVerified = true, HasCompletedSignup = true, IsActive = true,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await Context.SaveChangesAsync();
+        await _invitationService.DeclineInvitationAsync(invitation.Id, accountId);
 
         var result = await jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId, "Surveyor");
         Assert.Null(result.Access);
@@ -248,7 +275,16 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
         var mine = await _invitationService.CreateInvitationAsync(WorkspaceId, AdminId, NewPersonRequest("mine@test.local"));
         await _invitationService.CreateInvitationAsync(WorkspaceId, AdminId, NewPersonRequest("someone.elses@test.local"));
 
-        var result = await _invitationService.GetMyInvitationsAsync(mine.UserId);
+        var accountId = Guid.NewGuid();
+        await Context.UserAccounts.AddAsync(new SurveyorLedger.Data.Entities.UserAccount
+        {
+            Id = accountId, PersonId = mine.UserId, PasswordHash = "already-has-a-password",
+            EmailVerified = true, HasCompletedSignup = true, IsActive = true,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await Context.SaveChangesAsync();
+
+        var result = await _invitationService.GetMyInvitationsAsync(accountId);
 
         var item = Assert.Single(result);
         Assert.Equal(mine.Id, item.Id);

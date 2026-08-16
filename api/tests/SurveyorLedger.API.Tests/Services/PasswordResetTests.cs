@@ -37,9 +37,9 @@ public class PasswordResetTests : WorkspaceIntegrationTestBase
 
     private async Task<string> SetPasswordAndRequestResetAsync(string email)
     {
-        var user = await Context.Users.FirstAsync(u => u.Email == email);
+        var account = await Context.UserAccounts.Include(a => a.Person).FirstAsync(a => a.Person.Email == email);
         var passwordService = GetService<IPasswordService>();
-        user.PasswordHash = passwordService.HashPassword("OldPassword123!");
+        account.PasswordHash = passwordService.HashPassword("OldPassword123!");
         await Context.SaveChangesAsync();
 
         await _authService.RequestPasswordResetAsync(email);
@@ -104,9 +104,9 @@ public class PasswordResetTests : WorkspaceIntegrationTestBase
 
         await _authService.ResetPasswordAsync("surveyor@test.local", otp, "NewPassword456!");
 
-        var user = await Context.Users.FirstAsync(u => u.Email == "surveyor@test.local");
-        Assert.True(passwordService.VerifyPassword("NewPassword456!", user.PasswordHash!));
-        Assert.False(passwordService.VerifyPassword("OldPassword123!", user.PasswordHash!));
+        var account = await Context.UserAccounts.Include(a => a.Person).FirstAsync(a => a.Person.Email == "surveyor@test.local");
+        Assert.True(passwordService.VerifyPassword("NewPassword456!", account.PasswordHash!));
+        Assert.False(passwordService.VerifyPassword("OldPassword123!", account.PasswordHash!));
 
         var verification = await Context.EmailVerifications
             .FirstAsync(e => e.Email == "surveyor@test.local" && e.TokenType == "PasswordReset");

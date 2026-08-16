@@ -173,7 +173,7 @@ public class InvoiceService : IInvoiceService
             ReceivedAt = request.ReceivedAt,
             ReferenceNumber = request.ReferenceNumber?.Trim(),
             ProofFilePath = proofPath,
-            RecordedBy = callerUserId,
+            RecordedBy = await _access.ResolvePersonIdAsync(callerUserId),
             CreatedAt = DateTime.UtcNow
         };
 

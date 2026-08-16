@@ -82,13 +82,22 @@ public class AuthControllerTests
             Password = "Password123!"
         };
 
-        var userId = Guid.NewGuid();
-        var user = new User
+        var personId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        var person = new Person
         {
-            Id = userId,
+            Id = personId,
             Email = "test@example.com",
             FirstName = "Test",
             LastName = "User",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        var account = new UserAccount
+        {
+            Id = accountId,
+            PersonId = personId,
             PasswordHash = "hashed",
             EmailVerified = true,
             IsActive = true,
@@ -98,7 +107,7 @@ public class AuthControllerTests
 
         mockAuthService
             .Setup(x => x.LoginAsync(It.IsAny<LoginRequest>()))
-            .ReturnsAsync((user, "access_token", "refresh_token", 3600));
+            .ReturnsAsync((person, account, "access_token", "refresh_token", 3600));
 
         // Act
         var result = await controller.Login(request);

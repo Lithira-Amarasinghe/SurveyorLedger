@@ -34,18 +34,7 @@ public class CasbinReloadTests : WorkspaceIntegrationTestBase
         // A grant made after InitializeAsync's own load, followed by a reload, must not
         // leave two identical g(user, role, scope) rows - Casbin dedupes idempotently, but
         // if ClearPolicy() were ever removed this would start silently double-counting.
-        var newRoleTargetId = Guid.NewGuid();
-        await Context.Users.AddAsync(new Data.Entities.User
-        {
-            Id = newRoleTargetId,
-            FirstName = "Reload",
-            LastName = "Target",
-            EmailVerified = false,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        });
-        await Context.SaveChangesAsync();
+        var newRoleTargetId = await CreateUserAccountAsync("Reload", "Target", "reload-target@test.local");
 
         await GrantService.GrantAsync(newRoleTargetId, RoleConfiguration.SurveyorRoleId, Constants.ScopeTypes.Workspace, WorkspaceId, AdminId);
         await CasbinService.ReloadAsync();

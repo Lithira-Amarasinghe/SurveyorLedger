@@ -43,11 +43,11 @@ public class LandOwnershipTests : WorkspaceIntegrationTestBase
     {
         _landService = GetService<ILandService>();
         var request = NewLandRequest();
-        request.OwnerId = ClientId;
+        request.OwnerId = ClientPersonId;
 
         var land = await _landService.CreateAsync(WorkspaceId, AdminId, request);
 
-        Assert.Equal(ClientId, land.OwnerId);
+        Assert.Equal(ClientPersonId, land.OwnerId);
         Assert.Null(land.OwnerName);
     }
 
@@ -71,7 +71,7 @@ public class LandOwnershipTests : WorkspaceIntegrationTestBase
     {
         _landService = GetService<ILandService>();
         var request = NewLandRequest();
-        request.OwnerId = ClientId;
+        request.OwnerId = ClientPersonId;
         request.OwnerName = "Also A Name";
 
         await Assert.ThrowsAsync<ValidationException>(
@@ -97,7 +97,7 @@ public class LandOwnershipTests : WorkspaceIntegrationTestBase
         _landService = GetService<ILandService>();
 
         var outsiderId = Guid.NewGuid();
-        await Context.Users.AddAsync(new Data.Entities.User
+        await Context.People.AddAsync(new SurveyorLedger.Data.Entities.Person
         {
             Id = outsiderId,
             FirstName = "Outside",
@@ -133,7 +133,18 @@ public class LandOwnershipTests : WorkspaceIntegrationTestBase
             FirstName = "Declined",
             LastName = "Owner"
         });
-        await invitationService.DeclineInvitationAsync(invitation.Id, invitation.UserId);
+        // DeclineInvitationAsync's callerUserId is a UserAccount.Id, distinct from
+        // invitation.UserId (a Person.Id) post-split - simulate an already-registered
+        // account declining.
+        var accountId = Guid.NewGuid();
+        await Context.UserAccounts.AddAsync(new SurveyorLedger.Data.Entities.UserAccount
+        {
+            Id = accountId, PersonId = invitation.UserId, PasswordHash = "already-has-a-password",
+            EmailVerified = true, HasCompletedSignup = true, IsActive = true,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await Context.SaveChangesAsync();
+        await invitationService.DeclineInvitationAsync(invitation.Id, accountId);
 
         var request = NewLandRequest();
         request.OwnerId = invitation.UserId;
@@ -148,7 +159,7 @@ public class LandOwnershipTests : WorkspaceIntegrationTestBase
     {
         _landService = GetService<ILandService>();
         var createRequest = NewLandRequest();
-        createRequest.OwnerId = ClientId;
+        createRequest.OwnerId = ClientPersonId;
         var land = await _landService.CreateAsync(WorkspaceId, AdminId, createRequest);
 
         var updateRequest = NewLandRequest();

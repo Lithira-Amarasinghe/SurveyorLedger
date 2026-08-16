@@ -29,9 +29,9 @@ public class ClientServiceTests : WorkspaceIntegrationTestBase
     public async Task CreateAsync_PersistsClient()
     {
         _clientService = GetService<IClientService>();
-        var client = await _clientService.CreateAsync(WorkspaceId, AdminId, new ClientRequest { Name = "Acme Ltd", Phone = "0771234567" });
+        var client = await _clientService.CreateAsync(AdminId, new ClientRequest { Name = "Acme Ltd", Phone = "0771234567" });
 
-        Assert.Equal("Acme Ltd", client.Name);
+        Assert.Equal("Acme Ltd", client.FirstName);
         var fetched = await _clientService.GetByIdAsync(WorkspaceId, AdminId, client.Id);
         Assert.Equal(client.Id, fetched.Id);
     }
@@ -43,7 +43,7 @@ public class ClientServiceTests : WorkspaceIntegrationTestBase
         // scope (workspaceId) argument first, before any record lookup - a caller with
         // no role in that workspace at all gets 403, not 404.
         _clientService = GetService<IClientService>();
-        var client = await _clientService.CreateAsync(WorkspaceId, AdminId, new ClientRequest { Name = "Acme Ltd" });
+        var client = await _clientService.CreateAsync(AdminId, new ClientRequest { Name = "Acme Ltd" });
 
         var otherWorkspaceId = Guid.NewGuid();
         await Assert.ThrowsAsync<ForbiddenException>(
@@ -51,23 +51,26 @@ public class ClientServiceTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
-    public async Task Client_CannotCreateClient()
+    public async Task CreateAsync_IsGlobal_NoWorkspacePermissionGate()
     {
+        // CreateAsync/SearchAsync are deliberately global (no workspaceId) - a client-person
+        // row isn't workspace-scoped, so there's no per-workspace role to check here. Real
+        // isolation happens at GetByIdAsync/UpdateAsync/etc, which do take a workspaceId.
         _clientService = GetService<IClientService>();
-        await Assert.ThrowsAsync<ForbiddenException>(
-            () => _clientService.CreateAsync(WorkspaceId, ClientId, new ClientRequest { Name = "Acme Ltd" }));
+        var client = await _clientService.CreateAsync(ClientId, new ClientRequest { Name = "Acme Ltd" });
+        Assert.Equal("Acme Ltd", client.FirstName);
     }
 
     [Fact]
     public async Task DeleteAsync_SoftDeletes()
     {
         _clientService = GetService<IClientService>();
-        var client = await _clientService.CreateAsync(WorkspaceId, AdminId, new ClientRequest { Name = "Acme Ltd" });
+        var client = await _clientService.CreateAsync(AdminId, new ClientRequest { Name = "Acme Ltd" });
         await _clientService.DeleteAsync(WorkspaceId, AdminId, client.Id);
 
         // Client has a global IsActive query filter, so a soft-deleted row drops out of
         // SearchAsync entirely rather than showing up with IsActive=false.
-        var results = await _clientService.SearchAsync(WorkspaceId, AdminId, null);
+        var results = await _clientService.SearchAsync(AdminId, null);
         Assert.DoesNotContain(results, c => c.Id == client.Id);
     }
 
@@ -76,7 +79,7 @@ public class ClientServiceTests : WorkspaceIntegrationTestBase
     {
         _clientService = GetService<IClientService>();
         var invoiceService = GetService<IInvoiceService>();
-        var client = await _clientService.CreateAsync(WorkspaceId, AdminId, new ClientRequest { Name = "Acme Ltd" });
+        var client = await _clientService.CreateAsync(AdminId, new ClientRequest { Name = "Acme Ltd" });
 
         var invoice1 = await invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
@@ -102,7 +105,7 @@ public class ClientServiceTests : WorkspaceIntegrationTestBase
     {
         _clientService = GetService<IClientService>();
         var invoiceService = GetService<IInvoiceService>();
-        var client = await _clientService.CreateAsync(WorkspaceId, AdminId, new ClientRequest { Name = "Acme Ltd" });
+        var client = await _clientService.CreateAsync(AdminId, new ClientRequest { Name = "Acme Ltd" });
 
         var invoice = await invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {

@@ -1,14 +1,16 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Services;
 using SurveyorLedger.Core;
+using SurveyorLedger.Data.Configurations;
 using Xunit;
 
 namespace SurveyorLedger.API.Tests.Services;
 
 public class InvitationServiceTests : WorkspaceIntegrationTestBase
 {
-    protected override void ConfigureServices(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
+    protected override void ConfigureServices(IServiceCollection services)
     {
         services.AddScoped<IEmailService, NoOpEmailService>();
         services.AddScoped<IPasswordService, PasswordService>();
@@ -44,7 +46,7 @@ public class InvitationServiceTests : WorkspaceIntegrationTestBase
 
         await svc.CompleteInvitationAsync(invitation.Token, new SurveyorLedger.API.Models.Invitation.CompleteInvitationRequest
         {
-            FirstName = "Complete", LastName = "Me", Password = "Passw0rd!"
+            FirstName = "Complete", LastName = "Me", Password = "Passw0rd!", ConfirmPassword = "Passw0rd!"
         });
 
         var account = await Context.UserAccounts.FirstOrDefaultAsync(a => a.PersonId == invitation.UserId);

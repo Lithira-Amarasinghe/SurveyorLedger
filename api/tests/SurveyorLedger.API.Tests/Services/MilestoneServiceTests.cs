@@ -128,7 +128,7 @@ public class MilestoneServiceTests : WorkspaceIntegrationTestBase
 
         Assert.Equal("Completed", completed.Status);
         Assert.NotNull(completed.CompletedAt);
-        Assert.Equal(SurveyorId, completed.CompletedBy);
+        Assert.Equal(SurveyorPersonId, completed.CompletedBy);
     }
 
     [Fact]
@@ -225,7 +225,7 @@ public class MilestoneServiceTests : WorkspaceIntegrationTestBase
         await SeedJobsAsync();
         var milestone = await _milestoneService.CreateAsync(WorkspaceId, AdminId, _jobAId, new MilestoneRequest
         {
-            Title = "Site visit", SortOrder = 1
+            Title = "Site visit"
         });
 
         var loaded = await Context.Milestones.Include(m => m.CreatedByUser).FirstAsync(m => m.Id == milestone.Id);

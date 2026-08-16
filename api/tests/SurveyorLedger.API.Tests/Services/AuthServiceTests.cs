@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Models.Auth;
 using SurveyorLedger.API.Services;
 using SurveyorLedger.Core.Exceptions;
@@ -7,12 +9,26 @@ namespace SurveyorLedger.API.Tests.Services;
 
 public class AuthServiceTests : WorkspaceIntegrationTestBase
 {
-    protected override void ConfigureServices(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
+    protected override void ConfigureServices(IServiceCollection services)
     {
         services.AddScoped<IPasswordService, PasswordService>();
         services.AddScoped<ITokenService, TokenService>();
-        services.AddScoped<IEmailService, NoopEmailService>();
+        services.AddScoped<IEmailService, NoOpEmailService>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["JwtSettings:Key"] = "test-signing-key-at-least-32-characters-long-for-hs256",
+                ["JwtSettings:Issuer"] = "https://test.local",
+                ["JwtSettings:Audience"] = "test-api",
+                ["JwtSettings:ExpirationMinutes"] = "60",
+                ["JwtSettings:RefreshTokenExpirationDays"] = "7",
+                ["OTP:ExpirationMinutes"] = "3",
+                ["OTP:MaxAttempts"] = "3",
+                ["Lockout:MaxFailedAttempts"] = "5",
+                ["Lockout:DurationMinutes"] = "15"
+            })
+            .Build());
     }
 
     [Fact]

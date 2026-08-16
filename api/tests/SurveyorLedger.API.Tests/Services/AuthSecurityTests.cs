@@ -43,11 +43,11 @@ public class AuthSecurityTests : WorkspaceIntegrationTestBase
     /// <summary>Gives the seeded Surveyor a real, verified password so they can actually log in.</summary>
     private async Task<string> MakeLoginableAsync()
     {
-        var user = await Context.Users.FirstAsync(u => u.Id == SurveyorId);
-        user.PasswordHash = GetService<IPasswordService>().HashPassword(KnownPassword);
-        user.EmailVerified = true;
+        var account = await Context.UserAccounts.Include(a => a.Person).FirstAsync(a => a.Id == SurveyorId);
+        account.PasswordHash = GetService<IPasswordService>().HashPassword(KnownPassword);
+        account.EmailVerified = true;
         await Context.SaveChangesAsync();
-        return user.Email!;
+        return account.Person.Email!;
     }
 
     private LoginRequest Login(string email, string password) => new() { Email = email, Password = password };
@@ -58,9 +58,9 @@ public class AuthSecurityTests : WorkspaceIntegrationTestBase
         _authService = GetService<IAuthService>();
         var email = await MakeLoginableAsync();
 
-        var (user, accessToken, refreshToken, _) = await _authService.LoginAsync(Login(email, KnownPassword));
+        var (_, account, accessToken, refreshToken, _) = await _authService.LoginAsync(Login(email, KnownPassword));
 
-        Assert.Equal(SurveyorId, user.Id);
+        Assert.Equal(SurveyorId, account.Id);
         Assert.NotEmpty(accessToken);
         Assert.NotEmpty(refreshToken);
     }
@@ -90,9 +90,9 @@ public class AuthSecurityTests : WorkspaceIntegrationTestBase
 
         await _authService.LoginAsync(Login(email, KnownPassword));
 
-        var user = await Context.Users.FirstAsync(u => u.Id == SurveyorId);
-        Assert.Equal(0, user.FailedLoginAttempts);
-        Assert.Null(user.LockoutEndsAt);
+        var account = await Context.UserAccounts.FirstAsync(a => a.Id == SurveyorId);
+        Assert.Equal(0, account.FailedLoginAttempts);
+        Assert.Null(account.LockoutEndsAt);
     }
 
     [Fact]
@@ -100,9 +100,9 @@ public class AuthSecurityTests : WorkspaceIntegrationTestBase
     {
         _authService = GetService<IAuthService>();
         var email = await MakeLoginableAsync();
-        var (_, _, originalRefresh, _) = await _authService.LoginAsync(Login(email, KnownPassword));
+        var (_, _, _, originalRefresh, _) = await _authService.LoginAsync(Login(email, KnownPassword));
 
-        var (_, newAccess, newRefresh, _) = await _authService.RefreshTokenAsync(originalRefresh);
+        var (_, _, newAccess, newRefresh, _) = await _authService.RefreshTokenAsync(originalRefresh);
 
         Assert.NotEmpty(newAccess);
         Assert.NotEqual(originalRefresh, newRefresh);
@@ -118,8 +118,8 @@ public class AuthSecurityTests : WorkspaceIntegrationTestBase
         // so the whole family dies rather than letting the thief keep refreshing.
         _authService = GetService<IAuthService>();
         var email = await MakeLoginableAsync();
-        var (_, _, originalRefresh, _) = await _authService.LoginAsync(Login(email, KnownPassword));
-        var (_, _, currentRefresh, _) = await _authService.RefreshTokenAsync(originalRefresh);
+        var (_, _, _, originalRefresh, _) = await _authService.LoginAsync(Login(email, KnownPassword));
+        var (_, _, _, currentRefresh, _) = await _authService.RefreshTokenAsync(originalRefresh);
 
         await Assert.ThrowsAsync<AppException>(() => _authService.RefreshTokenAsync(originalRefresh));
 
@@ -139,7 +139,7 @@ public class AuthSecurityTests : WorkspaceIntegrationTestBase
     {
         _authService = GetService<IAuthService>();
         var email = await MakeLoginableAsync();
-        var (_, _, refreshToken, _) = await _authService.LoginAsync(Login(email, KnownPassword));
+        var (_, _, _, refreshToken, _) = await _authService.LoginAsync(Login(email, KnownPassword));
 
         await _authService.LogoutAsync(refreshToken);
 
@@ -154,7 +154,7 @@ public class AuthSecurityTests : WorkspaceIntegrationTestBase
         _authService = GetService<IAuthService>();
         var passwordService = GetService<IPasswordService>();
         var email = await MakeLoginableAsync();
-        var (_, _, refreshToken, _) = await _authService.LoginAsync(Login(email, KnownPassword));
+        var (_, _, _, refreshToken, _) = await _authService.LoginAsync(Login(email, KnownPassword));
 
         await _authService.RequestPasswordResetAsync(email);
         var verification = await Context.EmailVerifications
@@ -191,7 +191,7 @@ public class AuthSecurityTests : WorkspaceIntegrationTestBase
 
         await _authService.ResetPasswordAsync(email, "123456", "BrandNewPassword456!");
 
-        var (user, _, _, _) = await _authService.LoginAsync(Login(email, "BrandNewPassword456!"));
-        Assert.Equal(SurveyorId, user.Id);
+        var (_, account, _, _, _) = await _authService.LoginAsync(Login(email, "BrandNewPassword456!"));
+        Assert.Equal(SurveyorId, account.Id);
     }
 }

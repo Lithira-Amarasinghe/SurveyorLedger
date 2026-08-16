@@ -69,6 +69,7 @@ public class JobService : IJobService
     public async Task<Job> CreateAsync(Guid workspaceId, Guid callerUserId, JobRequest request)
     {
         await _access.EnsureAllowedAsync(callerUserId, "job", "create", workspaceId);
+        var createdByPersonId = await _access.ResolvePersonIdAsync(callerUserId);
 
         var job = new Job
         {
@@ -77,7 +78,7 @@ public class JobService : IJobService
             Title = request.Title.Trim(),
             Description = request.Description,
             Status = "Draft",
-            CreatedBy = callerUserId,
+            CreatedBy = createdByPersonId,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -201,14 +202,20 @@ public class JobService : IJobService
 
         var jobRole = await ResolveJobRoleAsync(role);
 
-        if (await _access.HasConsentCoverageAsync(targetUserId, Constants.ScopeTypes.Job, jobId))
+        // targetUserId is normally a Person.Id (picked via system-wide person search, same
+        // as ClientService/Land ownership) - a person may not have a UserAccount yet. Also
+        // accept a UserAccount.Id directly for callers that already have the account id.
+        var targetPerson = await _context.People.FirstOrDefaultAsync(p => p.Id == targetUserId && p.IsActive)
+            ?? await _context.UserAccounts.Where(a => a.Id == targetUserId && a.IsActive)
+                .Select(a => a.Person).FirstOrDefaultAsync()
+            ?? throw new NotFoundException("Person not found");
+
+        var targetAccount = await _context.UserAccounts.FirstOrDefaultAsync(a => a.PersonId == targetPerson.Id && a.IsActive);
+        if (targetAccount != null && await _access.HasConsentCoverageAsync(targetAccount.Id, Constants.ScopeTypes.Job, jobId))
         {
-            var access = await _grantService.GrantAsync(targetUserId, jobRole.Id, Constants.ScopeTypes.Job, jobId, callerUserId);
+            var access = await _grantService.GrantAsync(targetAccount.Id, jobRole.Id, Constants.ScopeTypes.Job, jobId, callerUserId);
             return new ParticipantAddResult(access, null);
         }
-
-        var targetPerson = await _context.People.FirstOrDefaultAsync(p => p.Id == targetUserId && p.IsActive)
-            ?? throw new NotFoundException("Person not found");
 
         var invitation = await _invitationService.CreateScopedInvitationAsync(
             Constants.ScopeTypes.Job, jobId, jobRole.Id, JobDisplayName(job), callerUserId,

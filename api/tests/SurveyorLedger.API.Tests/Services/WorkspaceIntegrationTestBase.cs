@@ -32,6 +32,12 @@ public abstract class WorkspaceIntegrationTestBase : IAsyncLifetime
     protected Guid SurveyorId { get; private set; }
     protected Guid ClientId { get; private set; }
 
+    /// <summary>Person.Id behind the seeded Admin/Surveyor/Client UserAccount - needed wherever a
+    /// field means Person (e.g. Land.OwnerId), not UserAccount.</summary>
+    protected Guid AdminPersonId { get; private set; }
+    protected Guid SurveyorPersonId { get; private set; }
+    protected Guid ClientPersonId { get; private set; }
+
     /// <summary>Register additional services needed by the concrete test class.</summary>
     protected virtual void ConfigureServices(IServiceCollection services) { }
 
@@ -140,6 +146,10 @@ public abstract class WorkspaceIntegrationTestBase : IAsyncLifetime
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             });
+
+            if (userAccountId == AdminId) AdminPersonId = personId;
+            else if (userAccountId == SurveyorId) SurveyorPersonId = personId;
+            else ClientPersonId = personId;
         }
         await Context.SaveChangesAsync();
 
