@@ -16,5 +16,5 @@ public class AuditLog
     public DateTime CreatedAt { get; set; }
 
     public Workspace Workspace { get; set; }
-    public User User { get; set; }
+    public UserAccount? User { get; set; }
 }

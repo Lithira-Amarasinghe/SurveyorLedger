@@ -21,7 +21,7 @@ public class Invitation
     public bool EmailFailed { get; set; }
     public DateTime CreatedAt { get; set; }
 
-    public User User { get; set; }
+    public Person User { get; set; }
     public Role Role { get; set; }
-    public User InvitedByUser { get; set; }
+    public UserAccount InvitedByUser { get; set; }
 }

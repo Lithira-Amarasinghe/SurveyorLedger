@@ -29,7 +29,7 @@ public class DocumentRequest
 
     public Job Job { get; set; }
     public Document? FulfilledDocument { get; set; }
-    public User RequestedByUser { get; set; }
-    public User? FulfilledByUser { get; set; }
-    public User? TargetUser { get; set; }
+    public Person RequestedByUser { get; set; }
+    public Person? FulfilledByUser { get; set; }
+    public Person? TargetUser { get; set; }
 }

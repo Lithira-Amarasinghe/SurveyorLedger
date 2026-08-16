@@ -27,7 +27,7 @@ public class Land
     public string? OwnerEmail { get; set; }
 
     public Workspace Workspace { get; set; }
-    public User? Owner { get; set; }
+    public Person? Owner { get; set; }
     public ICollection<LandSurvey> Surveys { get; set; } = new List<LandSurvey>();
     public ICollection<LandDeed> Deeds { get; set; } = new List<LandDeed>();
     public ICollection<LandBoundary> Boundaries { get; set; } = new List<LandBoundary>();

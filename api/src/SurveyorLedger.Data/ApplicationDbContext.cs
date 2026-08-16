@@ -7,7 +7,8 @@ public class ApplicationDbContext : DbContext
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
 
-    public DbSet<User> Users { get; set; }
+    public DbSet<Person> People { get; set; }
+    public DbSet<UserAccount> UserAccounts { get; set; }
     public DbSet<Workspace> Workspaces { get; set; }
     public DbSet<Subscription> Subscriptions { get; set; }
     public DbSet<Role> Roles { get; set; }
@@ -30,7 +31,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<Milestone> Milestones { get; set; }
     public DbSet<Document> Documents { get; set; }
     public DbSet<DocumentRequest> DocumentRequests { get; set; }
-    public DbSet<Client> Clients { get; set; }
     public DbSet<Quotation> Quotations { get; set; }
     public DbSet<Invoice> Invoices { get; set; }
     public DbSet<Payment> Payments { get; set; }
@@ -42,13 +42,13 @@ public class ApplicationDbContext : DbContext
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
 
-        modelBuilder.Entity<User>().HasQueryFilter(x => x.IsActive);
+        modelBuilder.Entity<Person>().HasQueryFilter(x => x.IsActive);
+        modelBuilder.Entity<UserAccount>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<Workspace>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<UserAccess>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<Land>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<Job>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<Milestone>().HasQueryFilter(x => x.IsActive);
-        modelBuilder.Entity<Client>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<Quotation>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<Invoice>().HasQueryFilter(x => x.IsActive);
     }

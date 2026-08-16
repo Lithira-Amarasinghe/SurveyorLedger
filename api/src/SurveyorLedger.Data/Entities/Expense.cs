@@ -21,5 +21,5 @@ public class Expense
     public DateTime CreatedAt { get; set; }
 
     public Job Job { get; set; }
-    public User RecordedByUser { get; set; }
+    public Person RecordedByUser { get; set; }
 }

@@ -23,6 +23,6 @@ public class Milestone
     public bool IsActive { get; set; } = true;
 
     public Job Job { get; set; }
-    public User CreatedByUser { get; set; }
-    public User? CompletedByUser { get; set; }
+    public Person CreatedByUser { get; set; }
+    public Person? CompletedByUser { get; set; }
 }

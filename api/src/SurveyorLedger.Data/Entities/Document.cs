@@ -23,5 +23,5 @@ public class Document
     public bool IsActive { get; set; } = true;
 
     public Job Job { get; set; }
-    public User UploadedByUser { get; set; }
+    public Person UploadedByUser { get; set; }
 }

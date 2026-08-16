@@ -19,6 +19,6 @@ public class StaffPayment
     public DateTime CreatedAt { get; set; }
 
     public Job Job { get; set; }
-    public User User { get; set; }
-    public User RecordedByUser { get; set; }
+    public Person User { get; set; }
+    public Person RecordedByUser { get; set; }
 }

@@ -11,7 +11,7 @@ public class Workspace
     public DateTime UpdatedAt { get; set; }
     public bool IsActive { get; set; } = true;
 
-    public User Owner { get; set; }
+    public UserAccount Owner { get; set; }
     public ICollection<Subscription> Subscriptions { get; set; } = new List<Subscription>();
     public ICollection<UserAccess> UserAccesses { get; set; } = new List<UserAccess>();
     public ICollection<AuditLog> AuditLogs { get; set; } = new List<AuditLog>();

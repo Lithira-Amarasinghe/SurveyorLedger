@@ -15,5 +15,5 @@ public class Payment
     public DateTime CreatedAt { get; set; }
 
     public Invoice Invoice { get; set; }
-    public User RecordedByUser { get; set; }
+    public Person RecordedByUser { get; set; }
 }

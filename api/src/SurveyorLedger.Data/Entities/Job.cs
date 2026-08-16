@@ -14,6 +14,6 @@ public class Job
     public bool IsActive { get; set; } = true;
 
     public Workspace Workspace { get; set; }
-    public User CreatedByUser { get; set; }
+    public Person CreatedByUser { get; set; }
     public ICollection<JobLand> Lands { get; set; } = new List<JobLand>();
 }

@@ -18,5 +18,5 @@ public class LandPhoto
     public DateTime CreatedAt { get; set; }
 
     public Land Land { get; set; } = null!;
-    public User UploadedByUser { get; set; } = null!;
+    public Person UploadedByUser { get; set; } = null!;
 }

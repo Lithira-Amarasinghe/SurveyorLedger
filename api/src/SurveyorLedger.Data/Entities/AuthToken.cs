@@ -10,5 +10,5 @@ public class AuthToken
     public DateTime? RevokedAt { get; set; }
     public DateTime CreatedAt { get; set; }
 
-    public User User { get; set; }
+    public UserAccount User { get; set; }
 }

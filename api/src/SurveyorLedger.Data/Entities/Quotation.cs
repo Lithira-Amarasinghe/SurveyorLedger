@@ -21,6 +21,6 @@ public class Quotation
     public bool IsActive { get; set; } = true;
 
     public Workspace Workspace { get; set; }
-    public Client Client { get; set; }
+    public Person Client { get; set; }
     public Job? Job { get; set; }
 }
