@@ -42,11 +42,48 @@ guard-safe route to actually view it.
   the workspace sidebar - a thin bar (workspace name for context, back-to-
   dashboard link) instead. Zero changes to the existing guard or route for
   full workspace members - purely additive.
-- **Org-readiness, not Org itself.** Not building the Org level now. The
-  `AccessType` tag (Member/JobOnly) and the union query stay expressed
-  generically enough that a third level later is one more branch in the
-  existing ancestor-walk pattern (`HasConsentCoverageAsync`,
-  `ScopedAccessService`), not a rewrite of this feature.
+- **Org-readiness, not Org itself.** Not building the Org level now. Every
+  piece of this feature that would otherwise hardcode "two levels" is instead
+  expressed as a walk over whatever hierarchy chain exists - see "Scaling
+  mechanism" below. Adding Org later means adding one entry to the existing
+  chain resolver (already done once this session for `HasConsentCoverageAsync`)
+  and nothing else in this feature changes shape.
+
+## Scaling mechanism
+
+This is the part that has to be right for Org to slot in later without a
+rewrite - three places in this feature would naturally get hardcoded to
+"Workspace vs Job" if built carelessly. Each is instead built on the generic
+ancestor-chain walk already established by `HasConsentCoverageAsync`
+(`ScopedAccessService`) and `RoleScopes` (DB-driven role↔scope mapping, no
+hardcoded switch) earlier this session:
+
+1. **`AccessType` is not a fixed two-value enum.** It's "the highest scope
+   level in this job's ancestor chain at which the user holds a qualifying
+   grant" - computed by walking the chain (`Job → Workspace → [Org, when it
+   exists]`) top-down and returning the first match. Today that walk only has
+   two rungs, so the practical values are `Workspace` (member at-or-above the
+   job) or `Job` (direct grant only, nothing above). Adding Org means the walk
+   gains a third rung and a third possible value (`Org`) - the field, the
+   query, and the UI that renders it don't change, they just start seeing a
+   value they already knew was theoretically possible.
+2. **`GetMyJobsAsync`'s union is a chain walk, not two hardcoded branches.**
+   Expressed as: "for each level above and including Job, does the user hold
+   a qualifying grant there" - resolve top-down, stop at the first hit,
+   dedupe by job. Concretely today that's still two checks (workspace
+   `job.view_all` role, direct job-scope grant) because that's all the chain
+   has - but written as a loop/resolver over the chain list, not two
+   independently-hand-written LINQ branches, so a third level is one more
+   iteration, not new code.
+3. **The dashboard's Jobs-view sub-filter list ("access type") is populated
+   from whatever `AccessType` values are actually present in the fetched
+   data, not a hardcoded two-item toggle.** An Org value showing up later
+   just becomes a third filter chip with no UI code change.
+
+Everything else in this feature (the `/app/job/:jobId` route, the guard, the
+two-section dashboard layout) is already level-count-agnostic as designed -
+they operate on "does this job have a level above it the user can't see" as a
+boolean, which holds regardless of how many levels exist above Job.
 
 ## Backend
 
