@@ -1,4 +1,3 @@
-using BCrypt.Net;
 using Microsoft.EntityFrameworkCore;
 using SurveyorLedger.API.Models.Auth;
 using SurveyorLedger.Core;
@@ -14,8 +13,8 @@ namespace SurveyorLedger.API.Services;
 public interface IAuthService
 {
     /// <summary>
-    /// Register a new user. Does NOT create a User row or issue tokens - signup data is
-    /// held in PendingRegistration until the OTP is confirmed via VerifyOtpAsync. Throws
+    /// Register a new user. Does NOT create a Person/UserAccount row or issue tokens - signup
+    /// data is held in PendingRegistration until the OTP is confirmed via VerifyOtpAsync. Throws
     /// AppException if the email is already registered, or if the verification email
     /// cannot be sent (registration is rolled back in that case).
     /// </summary>
@@ -23,25 +22,25 @@ public interface IAuthService
 
     /// <summary>
     /// Login user with email and password.
-    /// Returns user, access token, refresh token, and expiration time.
+    /// Returns the Person, the UserAccount, access token, refresh token, and expiration time.
     /// </summary>
-    Task<(User user, string accessToken, string refreshToken, int expiresIn)> LoginAsync(LoginRequest request);
+    Task<(Person person, UserAccount account, string accessToken, string refreshToken, int expiresIn)> LoginAsync(LoginRequest request);
 
     /// <summary>
     /// Exchange a valid refresh token for a fresh access token, rotating the refresh token
     /// (the old one is revoked). Throws AppException if the token is unknown, expired, or
     /// already revoked.
     /// </summary>
-    Task<(User user, string accessToken, string refreshToken, int expiresIn)> RefreshTokenAsync(string refreshToken);
+    Task<(Person person, UserAccount account, string accessToken, string refreshToken, int expiresIn)> RefreshTokenAsync(string refreshToken);
 
     /// <summary>Revokes a single refresh token - the logout path. Silently no-ops if unknown.</summary>
     Task LogoutAsync(string refreshToken);
 
     /// <summary>
-    /// Verify the OTP code for a pending registration. On success, creates the User row
-    /// from the matching PendingRegistration and consumes it. Does NOT issue tokens - the
-    /// caller must log in separately. Throws AppException if the OTP is invalid, expired,
-    /// or the pending registration is missing/expired.
+    /// Verify the OTP code for a pending registration. On success, creates BOTH the Person
+    /// and the UserAccount row from the matching PendingRegistration and consumes it. Does NOT
+    /// issue tokens - the caller must log in separately. Throws AppException if the OTP is
+    /// invalid, expired, or the pending registration is missing/expired.
     /// </summary>
     Task VerifyOtpAsync(string email, string otpCode);
 
@@ -66,22 +65,27 @@ public interface IAuthService
     Task ResetPasswordAsync(string email, string otpCode, string newPassword);
 
     /// <summary>
-    /// Get active user by email.
+    /// Get active person by email.
     /// </summary>
-    Task<User?> GetUserByEmailAsync(string email);
-    Task<User?> GetUserByIdAsync(Guid id);
+    Task<Person?> GetPersonByEmailAsync(string email);
 
     /// <summary>
-    /// System-wide account search by name/email, not scoped to any workspace - used for
+    /// Get the active (Person, UserAccount) pair for a UserAccount id - the caller identity
+    /// resolved from the JWT.
+    /// </summary>
+    Task<(Person person, UserAccount account)?> GetAccountByIdAsync(Guid userAccountId);
+
+    /// <summary>
+    /// System-wide person search by name/email, not scoped to any workspace - used for
     /// picking a land owner, which is a data-tracking reference, not an access grant.
     /// </summary>
-    Task<List<User>> SearchUsersAsync(string query);
+    Task<List<Person>> SearchPeopleAsync(string query);
 
     /// <summary>
     /// Updates the caller's own name/phone/address. Email/password are not touched here -
     /// those go through the dedicated verification/invite-accept flows.
     /// </summary>
-    Task<User> UpdateProfileAsync(Guid userId, Models.User.UpdateProfileRequest request);
+    Task<Person> UpdateProfileAsync(Guid userAccountId, Models.User.UpdateProfileRequest request);
 }
 
 /// <summary>
@@ -126,9 +130,9 @@ public class AuthService : IAuthService
     {
         var email = request.Email.Trim();
 
-        var existingUser = await _context.Users.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(u => u.Email == email);
-        if (existingUser != null)
+        var existingPerson = await _context.People.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.Email == email);
+        if (existingPerson != null)
         {
             _logger.LogWarning("Registration attempted for existing email: {Email}", email);
             throw new AppException(Constants.ErrorCodes.UserAlreadyExists, "Email already registered");
@@ -179,23 +183,25 @@ public class AuthService : IAuthService
     }
 
     /// <summary>
-    /// Login with email and password. User must be verified and active.
-    /// Returns tokens on success, throws AppException on failure.
+    /// Login with email and password. Login lookup joins through Person.Email -> UserAccount,
+    /// since email lives on Person only. Account must be verified and active.
+    /// Returns the Person/UserAccount pair plus tokens on success, throws AppException on failure.
     /// </summary>
-    public async Task<(User user, string accessToken, string refreshToken, int expiresIn)> LoginAsync(LoginRequest request)
+    public async Task<(Person person, UserAccount account, string accessToken, string refreshToken, int expiresIn)> LoginAsync(LoginRequest request)
     {
-        var user = await _context.Users
-            .FirstOrDefaultAsync(u => u.Email == request.Email && u.IsActive);
+        var account = await _context.UserAccounts
+            .Include(a => a.Person)
+            .FirstOrDefaultAsync(a => a.IsActive && a.Person.Email == request.Email && a.Person.IsActive);
 
         // No such account - nothing to count attempts against, and the generic message
         // keeps this indistinguishable from a wrong password.
-        if (user == null)
+        if (account == null)
         {
             _logger.LogWarning("Login failed for email: {Email} - no such account", request.Email);
             throw new AppException(Constants.ErrorCodes.InvalidCredentials, "Invalid email or password");
         }
 
-        if (user.LockoutEndsAt is DateTime lockedUntil && lockedUntil > DateTime.UtcNow)
+        if (account.LockoutEndsAt is DateTime lockedUntil && lockedUntil > DateTime.UtcNow)
         {
             var minutesLeft = (int)Math.Ceiling((lockedUntil - DateTime.UtcNow).TotalMinutes);
             _logger.LogWarning("Login blocked for {Email} - account locked for another {Minutes} minute(s)", request.Email, minutesLeft);
@@ -205,16 +211,16 @@ public class AuthService : IAuthService
 
         // PasswordHash is null for a person added but not yet accepted - no password has
         // ever been set, so treat it as invalid credentials rather than a crash.
-        if (user.PasswordHash == null || !_passwordService.VerifyPassword(request.Password, user.PasswordHash))
+        if (account.PasswordHash == null || !_passwordService.VerifyPassword(request.Password, account.PasswordHash))
         {
             var maxAttempts = int.Parse(_config["Lockout:MaxFailedAttempts"] ?? "5");
             var lockoutMinutes = int.Parse(_config["Lockout:DurationMinutes"] ?? "15");
 
-            user.FailedLoginAttempts++;
-            if (user.FailedLoginAttempts >= maxAttempts)
+            account.FailedLoginAttempts++;
+            if (account.FailedLoginAttempts >= maxAttempts)
             {
-                user.LockoutEndsAt = DateTime.UtcNow.AddMinutes(lockoutMinutes);
-                user.FailedLoginAttempts = 0;
+                account.LockoutEndsAt = DateTime.UtcNow.AddMinutes(lockoutMinutes);
+                account.FailedLoginAttempts = 0;
                 _logger.LogWarning("Account locked for {Email} after {MaxAttempts} failed attempts", request.Email, maxAttempts);
             }
             await _context.SaveChangesAsync();
@@ -223,15 +229,15 @@ public class AuthService : IAuthService
             throw new AppException(Constants.ErrorCodes.InvalidCredentials, "Invalid email or password");
         }
 
-        if (user.FailedLoginAttempts != 0 || user.LockoutEndsAt != null)
+        if (account.FailedLoginAttempts != 0 || account.LockoutEndsAt != null)
         {
-            user.FailedLoginAttempts = 0;
-            user.LockoutEndsAt = null;
+            account.FailedLoginAttempts = 0;
+            account.LockoutEndsAt = null;
         }
 
-        // Defensive only - under the current flow a User row can't exist unverified, but
+        // Defensive only - under the current flow a UserAccount row can't exist unverified, but
         // this stays in place in case of legacy data or a future path that creates one early.
-        if (!user.EmailVerified)
+        if (!account.EmailVerified)
         {
             _logger.LogWarning("Login attempted with unverified email: {Email}", request.Email);
             throw new AppException(
@@ -239,27 +245,27 @@ public class AuthService : IAuthService
                 "Email not verified. Please verify your email first.");
         }
 
-        // Generate tokens
-        var (accessToken, refreshToken, expiresIn) = _tokenService.GenerateTokens(user.Id, user.Email);
-        await PersistRefreshTokenAsync(user.Id, refreshToken);
+        // Generate tokens - subject id is the UserAccount id, never Person.Id.
+        var (accessToken, refreshToken, expiresIn) = _tokenService.GenerateTokens(account.Id, account.Person.Email);
+        await PersistRefreshTokenAsync(account.Id, refreshToken);
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("User logged in: {Email}", user.Email);
+        _logger.LogInformation("User logged in: {Email}", account.Person.Email);
 
-        return (user, accessToken, refreshToken, expiresIn);
+        return (account.Person, account, accessToken, refreshToken, expiresIn);
     }
 
     /// <summary>
     /// Rotate a refresh token: the presented one is revoked and a fresh pair is issued.
     /// Presenting an already-revoked token is treated as theft - the whole token family for
-    /// that user is revoked, since a legitimate client never replays a rotated token.
+    /// that account is revoked, since a legitimate client never replays a rotated token.
     /// </summary>
-    public async Task<(User user, string accessToken, string refreshToken, int expiresIn)> RefreshTokenAsync(string refreshToken)
+    public async Task<(Person person, UserAccount account, string accessToken, string refreshToken, int expiresIn)> RefreshTokenAsync(string refreshToken)
     {
         var hash = HashToken(refreshToken);
 
         var stored = await _context.AuthTokens
-            .Include(t => t.User)
+            .Include(t => t.User).ThenInclude(a => a.Person)
             .FirstOrDefaultAsync(t => t.TokenHash == hash && t.TokenType == RefreshTokenType);
 
         if (stored == null)
@@ -270,7 +276,7 @@ public class AuthService : IAuthService
 
         if (stored.RevokedAt != null)
         {
-            _logger.LogWarning("Refresh attempted with a revoked token for user {UserId} - revoking all sessions", stored.UserId);
+            _logger.LogWarning("Refresh attempted with a revoked token for account {UserId} - revoking all sessions", stored.UserId);
             await RevokeAllRefreshTokensAsync(stored.UserId);
             await _context.SaveChangesAsync();
             throw new AppException(Constants.ErrorCodes.InvalidToken, "Invalid refresh token", 401);
@@ -278,20 +284,20 @@ public class AuthService : IAuthService
 
         if (stored.ExpiresAt <= DateTime.UtcNow)
         {
-            _logger.LogInformation("Refresh attempted with an expired token for user {UserId}", stored.UserId);
+            _logger.LogInformation("Refresh attempted with an expired token for account {UserId}", stored.UserId);
             throw new AppException(Constants.ErrorCodes.TokenExpired, "Refresh token expired", 401);
         }
 
         if (!stored.User.IsActive)
             throw new AppException(Constants.ErrorCodes.InvalidToken, "Invalid refresh token", 401);
 
-        var (accessToken, newRefreshToken, expiresIn) = _tokenService.GenerateTokens(stored.User.Id, stored.User.Email);
+        var (accessToken, newRefreshToken, expiresIn) = _tokenService.GenerateTokens(stored.User.Id, stored.User.Person.Email);
 
         stored.RevokedAt = DateTime.UtcNow;
         await PersistRefreshTokenAsync(stored.User.Id, newRefreshToken);
         await _context.SaveChangesAsync();
 
-        return (stored.User, accessToken, newRefreshToken, expiresIn);
+        return (stored.User.Person, stored.User, accessToken, newRefreshToken, expiresIn);
     }
 
     public async Task LogoutAsync(string refreshToken)
@@ -307,13 +313,13 @@ public class AuthService : IAuthService
         await _context.SaveChangesAsync();
     }
 
-    private async Task PersistRefreshTokenAsync(Guid userId, string refreshToken)
+    private async Task PersistRefreshTokenAsync(Guid userAccountId, string refreshToken)
     {
         var refreshExpiryDays = int.Parse(_config["JwtSettings:RefreshTokenExpirationDays"] ?? "7");
         await _context.AuthTokens.AddAsync(new AuthToken
         {
             Id = Guid.NewGuid(),
-            UserId = userId,
+            UserId = userAccountId,
             TokenType = RefreshTokenType,
             TokenHash = HashToken(refreshToken),
             ExpiresAt = DateTime.UtcNow.AddDays(refreshExpiryDays),
@@ -321,10 +327,10 @@ public class AuthService : IAuthService
         });
     }
 
-    private async Task RevokeAllRefreshTokensAsync(Guid userId)
+    private async Task RevokeAllRefreshTokensAsync(Guid userAccountId)
     {
         var active = await _context.AuthTokens
-            .Where(t => t.UserId == userId && t.TokenType == RefreshTokenType && t.RevokedAt == null)
+            .Where(t => t.UserId == userAccountId && t.TokenType == RefreshTokenType && t.RevokedAt == null)
             .ToListAsync();
 
         foreach (var token in active)
@@ -343,8 +349,9 @@ public class AuthService : IAuthService
     }
 
     /// <summary>
-    /// Verify OTP code and complete registration by creating the User row. Does not issue
-    /// tokens - the caller must log in separately.
+    /// Verify OTP code and complete registration by creating BOTH the Person and the
+    /// UserAccount row in one transaction - a single new registration means one identity,
+    /// one login. Does not issue tokens - the caller must log in separately.
     /// </summary>
     public async Task VerifyOtpAsync(string email, string otpCode)
     {
@@ -396,22 +403,30 @@ public class AuthService : IAuthService
         // Defensive: guards against a race where the email got registered through another
         // path between OTP send and verification. RegisterAsync already blocks this in the
         // common case, so this should be unreachable in practice.
-        var alreadyExists = await _context.Users.IgnoreQueryFilters().AnyAsync(u => u.Email == email);
+        var alreadyExists = await _context.People.IgnoreQueryFilters().AnyAsync(p => p.Email == email);
         if (alreadyExists)
         {
             _context.PendingRegistrations.Remove(pending);
             verification.VerifiedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
-            _logger.LogError("OTP verified but a User already exists for email: {Email}", email);
+            _logger.LogError("OTP verified but a Person already exists for email: {Email}", email);
             throw new AppException(Constants.ErrorCodes.UserAlreadyExists, "Email already registered", 409);
         }
 
-        var user = new User
+        var person = new Person
         {
             Id = Guid.NewGuid(),
             Email = pending.Email,
             FirstName = pending.FirstName,
             LastName = pending.LastName,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        var account = new UserAccount
+        {
+            Id = Guid.NewGuid(),
+            PersonId = person.Id,
             PasswordHash = pending.PasswordHash,
             EmailVerified = true,
             EmailVerifiedAt = DateTime.UtcNow,
@@ -420,7 +435,8 @@ public class AuthService : IAuthService
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
-        await _context.Users.AddAsync(user);
+        await _context.People.AddAsync(person);
+        await _context.UserAccounts.AddAsync(account);
         _context.PendingRegistrations.Remove(pending);
         verification.VerifiedAt = DateTime.UtcNow;
 
@@ -480,47 +496,51 @@ public class AuthService : IAuthService
     }
 
     /// <summary>
-    /// Get active user by email.
+    /// Get active person by email.
     /// </summary>
-    public async Task<User?> GetUserByEmailAsync(string email)
+    public async Task<Person?> GetPersonByEmailAsync(string email)
     {
-        return await _context.Users.FirstOrDefaultAsync(u => u.Email == email && u.IsActive);
+        return await _context.People.FirstOrDefaultAsync(p => p.Email == email && p.IsActive);
     }
 
     /// <summary>
-    /// Get active user by id. Preferred over email lookup for resolving the
-    /// authenticated caller - a user may have no email yet (client, not invited).
+    /// Get the active (Person, UserAccount) pair for a UserAccount id - preferred over email
+    /// lookup for resolving the authenticated caller from the JWT subject.
     /// </summary>
-    public async Task<User?> GetUserByIdAsync(Guid id)
+    public async Task<(Person person, UserAccount account)?> GetAccountByIdAsync(Guid userAccountId)
     {
-        return await _context.Users.FirstOrDefaultAsync(u => u.Id == id && u.IsActive);
+        var account = await _context.UserAccounts.Include(a => a.Person)
+            .FirstOrDefaultAsync(a => a.Id == userAccountId && a.IsActive);
+        return account == null ? null : (account.Person, account);
     }
 
-    public async Task<List<User>> SearchUsersAsync(string query)
+    public async Task<List<Person>> SearchPeopleAsync(string query)
     {
         var term = query.Trim();
         if (term.Length < 2)
-            return new List<User>();
+            return new List<Person>();
 
-        return await _context.Users
-            .Where(u => u.IsActive && (
-                EF.Functions.Like(u.FirstName, $"%{term}%") ||
-                EF.Functions.Like(u.LastName, $"%{term}%") ||
-                (u.Email != null && EF.Functions.Like(u.Email, $"%{term}%"))))
-            .OrderBy(u => u.FirstName).ThenBy(u => u.LastName)
+        return await _context.People
+            .Where(p => p.IsActive && (
+                EF.Functions.Like(p.FirstName, $"%{term}%") ||
+                EF.Functions.Like(p.LastName, $"%{term}%") ||
+                (p.Email != null && EF.Functions.Like(p.Email, $"%{term}%"))))
+            .OrderBy(p => p.FirstName).ThenBy(p => p.LastName)
             .Take(20)
             .ToListAsync();
     }
 
-    public async Task<User> UpdateProfileAsync(Guid userId, Models.User.UpdateProfileRequest request)
+    public async Task<Person> UpdateProfileAsync(Guid userAccountId, Models.User.UpdateProfileRequest request)
     {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId && u.IsActive)
+        var account = await _context.UserAccounts.Include(a => a.Person)
+            .FirstOrDefaultAsync(a => a.Id == userAccountId && a.IsActive)
             ?? throw new AppException(Constants.ErrorCodes.UserNotFound, "User not found", 404);
 
-        user.FirstName = request.FirstName.Trim();
-        user.LastName = request.LastName.Trim();
-        user.Phone = request.Phone?.Trim();
-        user.Address = new Address
+        var person = account.Person;
+        person.FirstName = request.FirstName.Trim();
+        person.LastName = request.LastName.Trim();
+        person.Phone = request.Phone?.Trim();
+        person.Address = new Address
         {
             Street = request.Address?.Street,
             City = request.Address?.City,
@@ -528,10 +548,10 @@ public class AuthService : IAuthService
             PostalCode = request.Address?.PostalCode,
             Country = request.Address?.Country
         };
-        user.UpdatedAt = DateTime.UtcNow;
+        person.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
-        return user;
+        return person;
     }
 
     /// <summary>
@@ -546,8 +566,9 @@ public class AuthService : IAuthService
     {
         email = email.Trim();
 
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email && u.IsActive);
-        if (user == null || user.PasswordHash == null)
+        var account = await _context.UserAccounts.Include(a => a.Person)
+            .FirstOrDefaultAsync(a => a.Person.Email == email && a.IsActive && a.Person.IsActive);
+        if (account == null || account.PasswordHash == null)
         {
             _logger.LogInformation("Password reset requested for {Email} - no eligible account", email);
             return;
@@ -622,22 +643,23 @@ public class AuthService : IAuthService
 
         // Defensive: the account could in principle have been deactivated between request
         // and confirm. Same InvalidOtp error, not a distinct message - don't leak account state.
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email && u.IsActive)
+        var account = await _context.UserAccounts
+            .FirstOrDefaultAsync(a => a.Person.Email == email && a.IsActive && a.Person.IsActive)
             ?? throw new AppException(Constants.ErrorCodes.InvalidOtp, "No pending password reset for this email");
 
-        user.PasswordHash = _passwordService.HashPassword(newPassword);
-        user.UpdatedAt = DateTime.UtcNow;
+        account.PasswordHash = _passwordService.HashPassword(newPassword);
+        account.UpdatedAt = DateTime.UtcNow;
         verification.VerifiedAt = DateTime.UtcNow;
 
         // Resetting the password is the intended way out of a lockout - clearing it here
         // means a locked-out owner isn't stuck waiting once they've proven inbox control.
-        user.FailedLoginAttempts = 0;
-        user.LockoutEndsAt = null;
+        account.FailedLoginAttempts = 0;
+        account.LockoutEndsAt = null;
 
         // Resetting a password is the standard response to a suspected compromise, so every
         // existing session must die with it - otherwise an attacker holding a refresh token
         // keeps their access despite the reset.
-        await RevokeAllRefreshTokensAsync(user.Id);
+        await RevokeAllRefreshTokensAsync(account.Id);
 
         await _context.SaveChangesAsync();
         _logger.LogInformation("Password reset completed for: {Email}", email);

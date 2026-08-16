@@ -1,49 +1,61 @@
-using Xunit;
+using SurveyorLedger.API.Models.Auth;
 using SurveyorLedger.API.Services;
+using SurveyorLedger.Core.Exceptions;
+using Xunit;
 
 namespace SurveyorLedger.API.Tests.Services;
 
-/// <summary>
-/// Minimal unit tests for authentication service.
-/// Full integration tests with real database in separate integration test project.
-/// </summary>
-public class AuthServiceTests
+public class AuthServiceTests : WorkspaceIntegrationTestBase
 {
-    /// <summary>
-    /// Tests that PasswordService dependency works correctly for hashing.
-    /// </summary>
-    [Fact]
-    public void PasswordService_Integration_HashesAndVerifies()
+    protected override void ConfigureServices(Microsoft.Extensions.DependencyInjection.IServiceCollection services)
     {
-        // Arrange
-        var passwordService = new PasswordService();
-        var password = "TestPassword123!";
-
-        // Act
-        var hash = passwordService.HashPassword(password);
-        var isValid = passwordService.VerifyPassword(password, hash);
-
-        // Assert
-        Assert.NotEmpty(hash);
-        Assert.True(isValid);
+        services.AddScoped<IPasswordService, PasswordService>();
+        services.AddScoped<ITokenService, TokenService>();
+        services.AddScoped<IEmailService, NoopEmailService>();
+        services.AddScoped<IAuthService, AuthService>();
     }
 
-    /// <summary>
-    /// Tests that PasswordService rejects incorrect passwords.
-    /// </summary>
     [Fact]
-    public void PasswordService_Verification_RejectsWrongPassword()
+    public async Task Login_CreatesAccessTokenAndReturnsBothPersonAndAccount()
     {
-        // Arrange
-        var passwordService = new PasswordService();
-        var correctPassword = "TestPassword123!";
-        var wrongPassword = "WrongPassword";
-        var hash = passwordService.HashPassword(correctPassword);
+        var authService = GetService<IAuthService>();
+        var person = new SurveyorLedger.Data.Entities.Person
+        {
+            Id = Guid.NewGuid(), FirstName = "Nimal", LastName = "Perera", Email = "nimal@test.local",
+            IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        };
+        var passwordService = GetService<IPasswordService>();
+        var account = new SurveyorLedger.Data.Entities.UserAccount
+        {
+            Id = Guid.NewGuid(), PersonId = person.Id, PasswordHash = passwordService.HashPassword("Passw0rd!"),
+            EmailVerified = true, HasCompletedSignup = true, IsActive = true,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        };
+        Context.People.Add(person);
+        Context.UserAccounts.Add(account);
+        await Context.SaveChangesAsync();
 
-        // Act
-        var isValid = passwordService.VerifyPassword(wrongPassword, hash);
+        var (loggedInPerson, loggedInAccount, accessToken, refreshToken, expiresIn) =
+            await authService.LoginAsync(new LoginRequest { Email = "nimal@test.local", Password = "Passw0rd!" });
 
-        // Assert
-        Assert.False(isValid);
+        Assert.Equal(person.Id, loggedInPerson.Id);
+        Assert.Equal(account.Id, loggedInAccount.Id);
+        Assert.NotEmpty(accessToken);
+    }
+
+    [Fact]
+    public async Task Login_WithNoUserAccount_ThrowsInvalidCredentials()
+    {
+        var authService = GetService<IAuthService>();
+        var person = new SurveyorLedger.Data.Entities.Person
+        {
+            Id = Guid.NewGuid(), FirstName = "Kamal", LastName = "Silva", Email = "kamal@test.local",
+            IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        };
+        Context.People.Add(person);
+        await Context.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<AppException>(() =>
+            authService.LoginAsync(new LoginRequest { Email = "kamal@test.local", Password = "whatever" }));
     }
 }
