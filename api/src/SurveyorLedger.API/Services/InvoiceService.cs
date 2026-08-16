@@ -23,7 +23,7 @@ public interface IInvoiceService
 /// <summary>
 /// Deliberately does not depend on IClientService - ClientService depends on this
 /// service (for GetBalanceAsync) and a mutual constructor dependency would be a
-/// circular DI graph. ClientId is validated directly against _context.Clients instead.
+/// circular DI graph. ClientId is validated directly against _context.People instead.
 /// </summary>
 public class InvoiceService : IInvoiceService
 {
@@ -45,7 +45,7 @@ public class InvoiceService : IInvoiceService
     public async Task<Invoice> CreateAsync(Guid workspaceId, Guid callerUserId, InvoiceRequest request)
     {
         await _access.EnsureAllowedAsync(callerUserId, "invoice", "create", workspaceId);
-        await EnsureClientExistsAsync(workspaceId, request.ClientId);
+        await EnsureClientExistsAsync(request.ClientId);
         ValidateLineItems(request.LineItems);
 
         var invoice = new Invoice
@@ -98,7 +98,7 @@ public class InvoiceService : IInvoiceService
     public async Task<Invoice> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, InvoiceRequest request)
     {
         await _access.EnsureAllowedAsync(callerUserId, "invoice", "edit", workspaceId);
-        await EnsureClientExistsAsync(workspaceId, request.ClientId);
+        await EnsureClientExistsAsync(request.ClientId);
         ValidateLineItems(request.LineItems);
         var invoice = await FindInvoiceAsync(workspaceId, invoiceId);
 
@@ -233,9 +233,9 @@ public class InvoiceService : IInvoiceService
         return $"RCP-{count + 1:D4}";
     }
 
-    private async Task EnsureClientExistsAsync(Guid workspaceId, Guid clientId)
+    private async Task EnsureClientExistsAsync(Guid clientId)
     {
-        var exists = await _context.Clients.AnyAsync(c => c.Id == clientId && c.WorkspaceId == workspaceId);
+        var exists = await _context.People.AnyAsync(p => p.Id == clientId && p.IsActive);
         if (!exists)
             throw new NotFoundException("Client not found");
     }

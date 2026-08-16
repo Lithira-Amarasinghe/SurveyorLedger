@@ -33,7 +33,7 @@ public class QuotationService : IQuotationService
     public async Task<Quotation> CreateAsync(Guid workspaceId, Guid callerUserId, QuotationRequest request)
     {
         await _access.EnsureAllowedAsync(callerUserId, "quotation", "create", workspaceId);
-        await EnsureClientExistsAsync(workspaceId, request.ClientId);
+        await EnsureClientExistsAsync(request.ClientId);
         ValidateLineItems(request.LineItems);
 
         var quotation = new Quotation
@@ -86,7 +86,7 @@ public class QuotationService : IQuotationService
     public async Task<Quotation> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, QuotationRequest request)
     {
         await _access.EnsureAllowedAsync(callerUserId, "quotation", "edit", workspaceId);
-        await EnsureClientExistsAsync(workspaceId, request.ClientId);
+        await EnsureClientExistsAsync(request.ClientId);
         ValidateLineItems(request.LineItems);
         var quotation = await FindQuotationAsync(workspaceId, quotationId);
 
@@ -182,9 +182,9 @@ public class QuotationService : IQuotationService
         return $"{prefix}-{count + 1:D4}";
     }
 
-    private async Task EnsureClientExistsAsync(Guid workspaceId, Guid clientId)
+    private async Task EnsureClientExistsAsync(Guid clientId)
     {
-        var exists = await _context.Clients.AnyAsync(c => c.Id == clientId && c.WorkspaceId == workspaceId);
+        var exists = await _context.People.AnyAsync(p => p.Id == clientId && p.IsActive);
         if (!exists)
             throw new NotFoundException("Client not found");
     }

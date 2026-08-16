@@ -9,10 +9,10 @@ namespace SurveyorLedger.API.Services;
 
 public interface IClientService
 {
-    Task<Client> CreateAsync(Guid workspaceId, Guid callerUserId, ClientRequest request);
-    Task<List<Client>> SearchAsync(Guid workspaceId, Guid callerUserId, string? query);
-    Task<Client> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid clientId);
-    Task<Client> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid clientId, ClientRequest request);
+    Task<Person> CreateAsync(Guid callerUserId, ClientRequest request);
+    Task<List<Person>> SearchAsync(Guid callerUserId, string? query);
+    Task<Person> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid clientId);
+    Task<Person> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid clientId, ClientRequest request);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid clientId);
     Task<decimal> GetBalanceAsync(Guid workspaceId, Guid callerUserId, Guid clientId);
     Task<List<Payment>> GetPaymentHistoryAsync(Guid workspaceId, Guid callerUserId, Guid clientId);
@@ -21,6 +21,12 @@ public interface IClientService
 /// <summary>
 /// Resource string is "billingclient", not "client" - "client" is already taken by the
 /// pre-existing workspace-member "Client" role/person concept (see ScopedAccessService).
+/// CreateAsync/SearchAsync are deliberately global (no workspaceId) - clients are now
+/// bare Person rows, not workspace-scoped entities. Real isolation is Spec 2's job
+/// (job-scoped billing). GetByIdAsync/UpdateAsync/DeleteAsync/GetBalanceAsync/
+/// GetPaymentHistoryAsync still take workspaceId to gate the caller's permission via
+/// EnsureAllowedAsync against that workspace, but no longer filter the Person row itself
+/// by workspace.
 /// </summary>
 public class ClientService : IClientService
 {
@@ -37,15 +43,13 @@ public class ClientService : IClientService
         _logger = logger;
     }
 
-    public async Task<Client> CreateAsync(Guid workspaceId, Guid callerUserId, ClientRequest request)
+    public async Task<Person> CreateAsync(Guid callerUserId, ClientRequest request)
     {
-        await _access.EnsureAllowedAsync(callerUserId, "billingclient", "create", workspaceId);
-
-        var client = new Client
+        var person = new Person
         {
             Id = Guid.NewGuid(),
-            WorkspaceId = workspaceId,
-            Name = request.Name.Trim(),
+            FirstName = request.Name.Trim(), // ClientRequest.Name has no first/last split - stays on FirstName, LastName empty
+            LastName = "",
             Phone = request.Phone?.Trim(),
             Email = request.Email?.Trim(),
             Address = ToAddress(request.Address),
@@ -54,43 +58,43 @@ public class ClientService : IClientService
             UpdatedAt = DateTime.UtcNow
         };
 
-        await _context.Clients.AddAsync(client);
+        await _context.People.AddAsync(person);
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Client {ClientId} created in workspace {WorkspaceId} by {UserId}", client.Id, workspaceId, callerUserId);
-        return client;
+        _logger.LogInformation("Client-person {PersonId} created by {UserId}", person.Id, callerUserId);
+        return person;
     }
 
-    public async Task<List<Client>> SearchAsync(Guid workspaceId, Guid callerUserId, string? query)
+    public async Task<List<Person>> SearchAsync(Guid callerUserId, string? query)
     {
-        await _access.EnsureListAllowedAsync(callerUserId, workspaceId);
-
-        var clients = _context.Clients.Where(c => c.WorkspaceId == workspaceId);
+        var people = _context.People.AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(query))
         {
             var term = query.Trim();
-            clients = clients.Where(c =>
-                EF.Functions.Like(c.Name, $"%{term}%") ||
-                (c.Phone != null && EF.Functions.Like(c.Phone, $"%{term}%")) ||
-                (c.Email != null && EF.Functions.Like(c.Email, $"%{term}%")));
+            people = people.Where(p =>
+                EF.Functions.Like(p.FirstName, $"%{term}%") ||
+                EF.Functions.Like(p.LastName, $"%{term}%") ||
+                (p.Phone != null && EF.Functions.Like(p.Phone, $"%{term}%")) ||
+                (p.Email != null && EF.Functions.Like(p.Email, $"%{term}%")));
         }
 
-        return await clients.OrderByDescending(c => c.CreatedAt).ToListAsync();
+        return await people.OrderByDescending(p => p.CreatedAt).ToListAsync();
     }
 
-    public async Task<Client> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid clientId)
+    public async Task<Person> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid clientId)
     {
         await _access.EnsureAllowedAsync(callerUserId, "billingclient", "view", workspaceId);
         return await FindClientAsync(workspaceId, clientId);
     }
 
-    public async Task<Client> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid clientId, ClientRequest request)
+    public async Task<Person> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid clientId, ClientRequest request)
     {
         await _access.EnsureAllowedAsync(callerUserId, "billingclient", "edit", workspaceId);
         var client = await FindClientAsync(workspaceId, clientId);
 
-        client.Name = request.Name.Trim();
+        client.FirstName = request.Name.Trim();
+        client.LastName = "";
         client.Phone = request.Phone?.Trim();
         client.Email = request.Email?.Trim();
         client.Address = ToAddress(request.Address);
@@ -133,9 +137,9 @@ public class ClientService : IClientService
             .ToListAsync();
     }
 
-    internal async Task<Client> FindClientAsync(Guid workspaceId, Guid clientId)
+    internal async Task<Person> FindClientAsync(Guid workspaceId, Guid clientId)
     {
-        return await _context.Clients.FirstOrDefaultAsync(c => c.Id == clientId && c.WorkspaceId == workspaceId)
+        return await _context.People.FirstOrDefaultAsync(p => p.Id == clientId)
             ?? throw new NotFoundException("Client not found");
     }
 

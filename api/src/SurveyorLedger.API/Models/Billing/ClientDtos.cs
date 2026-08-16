@@ -13,7 +13,7 @@ public class ClientRequest
 public class ClientResponse
 {
     public Guid ClientId { get; set; }
-    public string Name { get; set; }
+    public string Name { get; set; } // FirstName + " " + LastName, trimmed
     public string? Phone { get; set; }
     public string? Email { get; set; }
     public AddressDto Address { get; set; }

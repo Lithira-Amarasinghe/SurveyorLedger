@@ -31,7 +31,7 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
     {
         _clientService = GetService<IClientService>();
         _invoiceService = GetService<IInvoiceService>();
-        var client = await _clientService.CreateAsync(WorkspaceId, AdminId, new ClientRequest { Name = "Acme Ltd" });
+        var client = await _clientService.CreateAsync(AdminId, new ClientRequest { Name = "Acme Ltd" });
         _clientId = client.Id;
 
         var invoice = await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
@@ -104,5 +104,37 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
 
         Assert.True(isOverdue);
         Assert.Equal(5, daysOverdue);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ValidatesClientIdAgainstPerson_NotClientEntity()
+    {
+        var person = new SurveyorLedger.Data.Entities.Person
+        {
+            Id = Guid.NewGuid(), FirstName = "Client", LastName = "Person", Email = "client-person@test.local",
+            IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        };
+        Context.People.Add(person);
+        await Context.SaveChangesAsync();
+
+        var svc = GetService<IInvoiceService>();
+        var invoice = await svc.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
+        {
+            ClientId = person.Id,
+            LineItems = new() { new LineItemDto { Description = "Survey fee", Quantity = 1, UnitPrice = 5000 } }
+        });
+
+        Assert.Equal(person.Id, invoice.ClientId);
+    }
+
+    [Fact]
+    public async Task ClientService_SearchAsync_IsGlobal_NotWorkspaceFiltered()
+    {
+        var clientService = GetService<IClientService>();
+        var created = await clientService.CreateAsync(AdminId, new ClientRequest { Name = "Global Client", Email = "global@test.local" });
+
+        var results = await clientService.SearchAsync(AdminId, "Global");
+
+        Assert.Contains(results, p => p.Id == created.Id);
     }
 }
