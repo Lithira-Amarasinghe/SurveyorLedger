@@ -11,8 +11,7 @@ import { AddPersonModalComponent } from './add-person-modal/add-person-modal.com
 interface MemberRow {
   key: string;
   displayName: string;
-  role: string;
-  pendingRole?: string;
+  roles: string[];
   dateLabel: string;
   isPending: boolean;
   invitationStatus?: Invitation['status'];
@@ -76,23 +75,32 @@ interface MemberRow {
                     }
                   </td>
                   <td class="px-lg py-sm">
-                    @if (isAdmin() && !row.isPending && !row.isOwner && row.pendingRole) {
-                      <span class="text-xs">Change to <strong>{{ row.pendingRole }}</strong>?
-                        <button class="text-primary-500 font-medium" (click)="confirmRoleChange(row)">Yes</button>
-                        <button class="text-neutral-500" (click)="cancelRoleChange(row)">No</button>
-                      </span>
-                    } @else if (isAdmin() && !row.isPending && !row.isOwner) {
-                      <select
-                        class="input-field py-xs"
-                        (change)="onRoleSelect(row, $any($event.target).value)"
-                      >
-                        @for (r of eligibleRoles(); track r) {
-                          <option [value]="r" [selected]="r === row.role">{{ r }}</option>
-                        }
-                      </select>
-                    } @else {
-                      <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ row.role }}</span>
-                    }
+                    <span class="flex flex-wrap items-center gap-xs">
+                      @for (r of row.roles; track r) {
+                        <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">
+                          {{ r }}
+                          @if (isAdmin() && !row.isPending && !row.isOwner && row.roles.length > 1) {
+                            <button class="text-neutral-400 hover:text-primary-500 ml-xs" (click)="removeRole(row, r)">&times;</button>
+                          }
+                        </span>
+                      }
+                      @if (row.roles.length === 0 && !row.isPending) {
+                        <span class="text-xs px-sm py-xs rounded bg-neutral-50 text-neutral-500" title="Assigned to a job only, not a workspace member. Use Add member to invite them to the workspace.">
+                          Job only
+                        </span>
+                      }
+                      @if (row.roles.length > 0 && isAdmin() && !row.isPending && !row.isOwner && addableRoles(row).length > 0) {
+                        <select
+                          class="input-field py-xs text-xs"
+                          (change)="addRole(row, $any($event.target).value); $any($event.target).value = ''"
+                        >
+                          <option value="" disabled selected>+ Add role</option>
+                          @for (r of addableRoles(row); track r) {
+                            <option [value]="r">{{ r }}</option>
+                          }
+                        </select>
+                      }
+                    </span>
                   </td>
                   <td class="px-lg py-sm">
                     @if (row.isPending) {
@@ -127,6 +135,8 @@ interface MemberRow {
                           }
                         }
                       }
+                    } @else if (row.roles.length === 0) {
+                      <!-- Job-only row: no workspace membership to remove from here - manage their job assignment from the job page instead. -->
                     } @else if (isAdmin() || row.isSelf) {
                       @if (confirming().has(row.key)) {
                         <span class="text-xs">Sure?
@@ -177,7 +187,11 @@ export class MembersComponent implements OnInit {
   }
 
   isAdmin(): boolean {
-    return this.currentWorkspace.current()?.role === 'Admin';
+    return (this.currentWorkspace.current()?.roles ?? []).includes('Admin');
+  }
+
+  addableRoles(row: MemberRow): string[] {
+    return this.eligibleRoles().filter(r => !row.roles.includes(r));
   }
 
   fetch(): void {
@@ -209,7 +223,7 @@ export class MembersComponent implements OnInit {
       .map(m => ({
         key: m.userId,
         displayName: `${m.firstName} ${m.lastName}`,
-        role: m.role,
+        roles: m.roles,
         dateLabel: new Date(m.assignedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
         isPending: false,
         isOwner: m.isOwner,
@@ -224,7 +238,7 @@ export class MembersComponent implements OnInit {
     const pendingRows: MemberRow[] = invitations.map(i => ({
       key: i.invitationId,
       displayName: i.email,
-      role: i.role,
+      roles: [i.role],
       dateLabel: `Invited ${new Date(i.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`,
       isPending: true,
       invitationStatus: i.status,
@@ -251,32 +265,28 @@ export class MembersComponent implements OnInit {
     });
   }
 
-  onRoleSelect(row: MemberRow, newRole: string): void {
-    if (newRole === row.role) {
-      this.cancelRoleChange(row);
-      return;
-    }
-    this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, pendingRole: newRole } : r));
-  }
+  addRole(row: MemberRow, role: string): void {
+    if (!role || row.roles.includes(role)) return;
+    const previousRoles = row.roles;
+    this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, roles: [...r.roles, role] } : r));
 
-  confirmRoleChange(row: MemberRow): void {
-    const newRole = row.pendingRole;
-    if (!newRole) return;
-    this.changeRole(row, newRole);
-  }
-
-  cancelRoleChange(row: MemberRow): void {
-    this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, pendingRole: undefined } : r));
-  }
-
-  private changeRole(row: MemberRow, newRole: string): void {
-    const previousRole = row.role;
-    this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, role: newRole, pendingRole: undefined } : r));
-
-    this.workspaceService.updateMemberRole(this.workspaceId, row.key, newRole).subscribe({
+    this.workspaceService.addMemberRole(this.workspaceId, row.key, role).subscribe({
       error: (err) => {
-        this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, role: previousRole } : r));
-        this.error.set(err.error?.message ?? 'Could not change role.');
+        this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, roles: previousRoles } : r));
+        this.error.set(err.error?.message ?? 'Could not add role.');
+      }
+    });
+  }
+
+  removeRole(row: MemberRow, role: string): void {
+    if (row.roles.length <= 1) return;
+    const previousRoles = row.roles;
+    this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, roles: r.roles.filter(x => x !== role) } : r));
+
+    this.workspaceService.removeMemberRole(this.workspaceId, row.key, role).subscribe({
+      error: (err) => {
+        this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, roles: previousRoles } : r));
+        this.error.set(err.error?.message ?? 'Could not remove role.');
       }
     });
   }

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Models.Job;
 using SurveyorLedger.API.Models.StaffPayment;
@@ -17,6 +18,13 @@ public class StaffPaymentServiceTests : WorkspaceIntegrationTestBase
     {
         services.AddScoped<IJobService, JobService>();
         services.AddScoped<IStaffPaymentService, StaffPaymentService>();
+        services.AddScoped<IInvitationService, InvitationService>();
+        services.AddSingleton<IEmailService, NoOpEmailService>();
+        services.AddSingleton<IPasswordService, PasswordService>();
+        services.AddSingleton<IConfiguration>(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["AppSettings:UiBaseUrl"] = "https://test.local" })
+                .Build());
     }
 
     private async Task SeedJobAsync()

@@ -20,11 +20,15 @@ public class ExpenseServiceTests : WorkspaceIntegrationTestBase
         services.AddScoped<IJobService, JobService>();
         services.AddScoped<IExpenseService, ExpenseService>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
+        services.AddScoped<IInvitationService, InvitationService>();
+        services.AddSingleton<IEmailService, NoOpEmailService>();
+        services.AddSingleton<IPasswordService, PasswordService>();
         services.AddSingleton<IConfiguration>(
             new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["Storage:UploadsRootPath"] = Path.Combine(Path.GetTempPath(), $"sl-expense-test-{Guid.NewGuid():N}")
+                    ["Storage:UploadsRootPath"] = Path.Combine(Path.GetTempPath(), $"sl-expense-test-{Guid.NewGuid():N}"),
+                    ["AppSettings:UiBaseUrl"] = "https://test.local"
                 })
                 .Build());
     }

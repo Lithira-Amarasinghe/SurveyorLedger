@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Models.Job;
 using SurveyorLedger.API.Services;
@@ -23,6 +24,13 @@ public class MemberRoleChangeTests : WorkspaceIntegrationTestBase
     {
         services.AddScoped<IJobService, JobService>();
         services.AddScoped<IWorkspaceService, WorkspaceService>();
+        services.AddScoped<IInvitationService, InvitationService>();
+        services.AddSingleton<IEmailService, NoOpEmailService>();
+        services.AddSingleton<IPasswordService, PasswordService>();
+        services.AddSingleton<IConfiguration>(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["AppSettings:UiBaseUrl"] = "https://test.local" })
+                .Build());
     }
 
     [Fact]
@@ -39,7 +47,8 @@ public class MemberRoleChangeTests : WorkspaceIntegrationTestBase
             ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == job.Id);
         Assert.Equal(RoleConfiguration.SurveyorRoleId, grantBefore.RoleId);
 
-        await _workspaceService.UpdateMemberRoleAsync(WorkspaceId, SurveyorId, AdminId, Constants.SystemRoles.Member);
+        await _workspaceService.AddMemberRoleAsync(WorkspaceId, SurveyorId, AdminId, Constants.SystemRoles.Member);
+        await _workspaceService.RemoveMemberRoleAsync(WorkspaceId, SurveyorId, AdminId, Constants.SystemRoles.Surveyor);
 
         var grantAfter = await Context.UserAccesses.FirstAsync(ua =>
             ua.UserId == SurveyorId && ua.IsActive &&
@@ -62,7 +71,8 @@ public class MemberRoleChangeTests : WorkspaceIntegrationTestBase
 
         Assert.True(await CasbinService.EnforceAsync(SurveyorId.ToString(), "land", "edit", job.Id.ToString()));
 
-        await _workspaceService.UpdateMemberRoleAsync(WorkspaceId, SurveyorId, AdminId, Constants.SystemRoles.Member);
+        await _workspaceService.AddMemberRoleAsync(WorkspaceId, SurveyorId, AdminId, Constants.SystemRoles.Member);
+        await _workspaceService.RemoveMemberRoleAsync(WorkspaceId, SurveyorId, AdminId, Constants.SystemRoles.Surveyor);
 
         Assert.True(await CasbinService.EnforceAsync(SurveyorId.ToString(), "land", "edit", job.Id.ToString()));
     }

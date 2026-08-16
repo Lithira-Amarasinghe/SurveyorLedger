@@ -179,11 +179,14 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
-    public async Task PendingInvitee_CannotBeAssignedToAJob_UntilTheyAccept()
+    public async Task PendingInvitee_GetsAJobScopeInviteInstead_UntilTheyAccept()
     {
-        // The end-to-end rule the whole design rests on: workspace first, then job. A
-        // person who has been invited but hasn't accepted holds no UserAccess of any
-        // scope, so there is nothing to build a job-scope grant from.
+        // A person who has been invited but hasn't accepted holds no UserAccess of any
+        // scope yet, so they have no consent coverage for the job - AddParticipantAsync
+        // falls back to creating a job-scope invite instead of an instant grant (same
+        // job-only-assignment rule ScopedAccessService.HasConsentCoverageAsync enforces
+        // everywhere else), rather than rejecting outright: the account already exists
+        // (IsActive) even before accept, so there's someone real to invite.
         _invitationService = GetService<IInvitationService>();
         var jobService = GetService<IJobService>();
 
@@ -191,12 +194,13 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
         var invitation = await _invitationService.CreateInvitationAsync(
             WorkspaceId, AdminId, NewPersonRequest("pending.person@test.local", "Surveyor"));
 
-        var rejected = await Assert.ThrowsAsync<AppException>(
-            () => jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId, "Surveyor"));
-        Assert.Equal(Constants.ErrorCodes.UserNotFound, rejected.Code);
+        var firstAttempt = await jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId, "Surveyor");
+        Assert.Null(firstAttempt.Access);
+        Assert.NotNull(firstAttempt.Invitation);
+        Assert.Equal(Constants.ScopeTypes.Job, firstAttempt.Invitation!.ScopeType);
 
-        // Setting a password isn't enough - assignment still fails until the invite is
-        // actually accepted.
+        // Setting a password isn't enough either - still no workspace-scope access until
+        // the workspace invite itself is accepted.
         await _invitationService.CompleteInvitationAsync(invitation.Token, new CompleteInvitationRequest
         {
             Password = "SomePassword123!",
@@ -205,21 +209,24 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
             LastName = "Person"
         });
 
-        var stillRejected = await Assert.ThrowsAsync<AppException>(
-            () => jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId, "Surveyor"));
-        Assert.Equal(Constants.ErrorCodes.UserNotFound, stillRejected.Code);
+        var secondAttempt = await jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId, "Surveyor");
+        Assert.Null(secondAttempt.Access);
+        Assert.NotNull(secondAttempt.Invitation);
 
-        // Accepting makes them a real member, and only then does assignment succeed.
+        // Accepting the workspace invite gives consent coverage - now assignment is instant.
         await _invitationService.AcceptInvitationAsync(invitation.Id, invitation.UserId);
 
         var grant = await jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId, "Surveyor");
-        Assert.Equal(Constants.ScopeTypes.Job, grant.ScopeType);
-        Assert.Equal(job.Id, grant.ScopeId);
+        Assert.Equal(Constants.ScopeTypes.Job, grant.Access?.ScopeType);
+        Assert.Equal(job.Id, grant.Access?.ScopeId);
     }
 
     [Fact]
-    public async Task DeclinedInvitee_StillCannotBeAssignedToAJob()
+    public async Task DeclinedInvitee_StillGetsAJobScopeInvite_NotAnInstantGrant()
     {
+        // Declining only marks the workspace invite Declined - it doesn't deactivate the
+        // account. No consent coverage exists, so job assignment still falls back to a
+        // fresh job-scope invite rather than throwing or granting instantly.
         _invitationService = GetService<IInvitationService>();
         var jobService = GetService<IJobService>();
 
@@ -228,8 +235,10 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
             WorkspaceId, AdminId, NewPersonRequest("declined.person@test.local", "Surveyor"));
         await _invitationService.DeclineInvitationAsync(invitation.Id, invitation.UserId);
 
-        await Assert.ThrowsAsync<AppException>(
-            () => jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId, "Surveyor"));
+        var result = await jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId, "Surveyor");
+        Assert.Null(result.Access);
+        Assert.NotNull(result.Invitation);
+        Assert.Equal(Constants.ScopeTypes.Job, result.Invitation!.ScopeType);
     }
 
     [Fact]

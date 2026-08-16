@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SurveyorLedger.API.Models.Invitation;
 using SurveyorLedger.API.Models.Job;
 using SurveyorLedger.API.Models.Land;
 using SurveyorLedger.API.Models.Responses;
@@ -80,18 +81,28 @@ namespace SurveyorLedger.API.Controllers
         }
 
         [HttpPost("{id}/participants/{userId}")]
-        public async Task<ActionResult<ApiResponse<JobParticipantResponse>>> AddParticipant(Guid workspaceId, Guid id, Guid userId, [FromBody] AddParticipantRequest request)
+        public async Task<ActionResult<ApiResponse<AddParticipantResponse>>> AddParticipant(Guid workspaceId, Guid id, Guid userId, [FromBody] AddParticipantRequest request)
         {
             var callerId = CallerId();
-            var participant = await _jobService.AddParticipantAsync(workspaceId, callerId, id, userId, request.Role);
-            return Ok(ApiResponse<JobParticipantResponse>.Ok(ToResponse(participant)));
+            var result = await _jobService.AddParticipantAsync(workspaceId, callerId, id, userId, request.Role);
+            return Ok(ApiResponse<AddParticipantResponse>.Ok(ToResponse(result)));
         }
 
-        [HttpDelete("{id}/participants/{userId}")]
-        public async Task<IActionResult> RemoveParticipant(Guid workspaceId, Guid id, Guid userId)
+        /// <summary>For someone typed by email in the "not found" fallback - always creates an invite, never an instant grant.</summary>
+        [HttpPost("{id}/participants/invite")]
+        public async Task<ActionResult<ApiResponse<AddParticipantResponse>>> InviteParticipant(Guid workspaceId, Guid id, [FromBody] InviteParticipantRequest request)
         {
             var callerId = CallerId();
-            await _jobService.RemoveParticipantAsync(workspaceId, callerId, id, userId);
+            var invitation = await _jobService.InviteParticipantByEmailAsync(
+                workspaceId, callerId, id, request.Role, request.Email, request.FirstName, request.LastName, request.Phone, request.Address);
+            return Ok(ApiResponse<AddParticipantResponse>.Ok(new AddParticipantResponse { Status = "invited", Invitation = ToResponse(invitation) }));
+        }
+
+        [HttpDelete("{id}/participants/{userId}/roles/{role}")]
+        public async Task<IActionResult> RemoveParticipant(Guid workspaceId, Guid id, Guid userId, string role)
+        {
+            var callerId = CallerId();
+            await _jobService.RemoveParticipantAsync(workspaceId, callerId, id, userId, role);
             return NoContent();
         }
 
@@ -141,6 +152,19 @@ namespace SurveyorLedger.API.Controllers
             Email = p.User.Email,
             Role = p.Role.Name,
             AssignedAt = p.AssignedAt
+        };
+
+        private static AddParticipantResponse ToResponse(ParticipantAddResult result) => result.Access != null
+            ? new AddParticipantResponse { Status = "added", Participant = ToResponse(result.Access) }
+            : new AddParticipantResponse { Status = "invited", Invitation = ToResponse(result.Invitation!) };
+
+        private static InvitationResponse ToResponse(Invitation i) => new()
+        {
+            InvitationId = i.Id,
+            Email = i.Email,
+            Role = i.Role.Name,
+            ExpiresAt = i.ExpiresAt,
+            Status = i.Status
         };
 
         private static LandResponse ToResponse(Land l) => new()

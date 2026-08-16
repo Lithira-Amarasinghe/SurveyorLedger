@@ -15,6 +15,10 @@ namespace SurveyorLedger.API.Services;
 ///   - "which records can they reach" -> SQL, because Casbin decides one object at a time
 ///     and cannot produce a filtered, paginated list.
 /// </summary>
+public record AccessibleJob(
+    Guid JobId, string JobNumber, string Title, string Status,
+    Guid WorkspaceId, string WorkspaceName, string AccessScopeType);
+
 public interface IScopedAccessService
 {
     /// <summary>Plain workspace-scoped permission check - no record involved (create, list, manage).</summary>
@@ -45,12 +49,28 @@ public interface IScopedAccessService
     IQueryable<Guid> AccessibleLandIds(Guid userId);
 
     /// <summary>
-    /// The role that applies to this caller for this specific job: their job-scoped grant
-    /// if one exists (Client only ever has this), otherwise their workspace-scoped role
-    /// (Admin/Surveyor, who don't need a per-job grant to have a role on every job).
+    /// The role(s) that apply to this caller for this specific job: their job-scoped grants
+    /// if any exist (Client only ever has this), otherwise their workspace-scoped role(s)
+    /// (Admin/Surveyor, who don't need a per-job grant to have a role on every job). A user
+    /// can hold more than one role at a scope, so this returns all of them.
     /// Throws <see cref="ForbiddenException"/> if neither exists - not a member at all.
     /// </summary>
-    Task<string> GetEffectiveJobRoleAsync(Guid userId, Guid workspaceId, Guid jobId);
+    Task<List<string>> GetEffectiveJobRolesAsync(Guid userId, Guid workspaceId, Guid jobId);
+
+    /// <summary>
+    /// Whether granting this user access at (scopeType, scopeId) needs no fresh consent -
+    /// true if they already hold active access at that exact scope, or at any ancestor scope
+    /// above it (e.g. a workspace member being added to a job under that workspace). False
+    /// means an invitation is required instead of an instant grant. Hierarchy-agnostic: the
+    /// ancestor walk is one small switch here, so adding a level above Workspace later is one
+    /// more branch, not a rewrite of every call site.
+    /// </summary>
+    Task<bool> HasConsentCoverageAsync(Guid userId, string scopeType, Guid scopeId);
+
+    /// <summary>Every job this user can open, across every workspace, tagged with the
+    /// real Constants.ScopeTypes value the access was found at (broadest wins, deduped).
+    /// Deliberately not workspace-filtered - see Global Constraints.</summary>
+    Task<List<AccessibleJob>> GetAccessibleJobsAsync(Guid userId);
 }
 
 public class ScopedAccessService : IScopedAccessService
@@ -152,20 +172,104 @@ public class ScopedAccessService : IScopedAccessService
             .Select(jl => jl.LandId);
     }
 
-    public async Task<string> GetEffectiveJobRoleAsync(Guid userId, Guid workspaceId, Guid jobId)
+    public async Task<List<string>> GetEffectiveJobRolesAsync(Guid userId, Guid workspaceId, Guid jobId)
     {
-        var jobRole = await _context.UserAccesses
-            .Where(ua => ua.UserId == userId && ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == jobId)
+        var jobRoles = await _context.UserAccesses
+            .Where(ua => ua.UserId == userId && ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == jobId)
             .Select(ua => ua.Role.Name)
-            .FirstOrDefaultAsync();
-        if (jobRole != null)
-            return jobRole;
+            .ToListAsync();
+        if (jobRoles.Count > 0)
+            return jobRoles;
 
-        var workspaceRole = await _context.UserAccesses
-            .Where(ua => ua.UserId == userId && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId)
+        var workspaceRoles = await _context.UserAccesses
+            .Where(ua => ua.UserId == userId && ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId)
             .Select(ua => ua.Role.Name)
-            .FirstOrDefaultAsync();
+            .ToListAsync();
 
-        return workspaceRole ?? throw new ForbiddenException("You are not a member of this workspace.");
+        if (workspaceRoles.Count == 0)
+            throw new ForbiddenException("You are not a member of this workspace.");
+
+        return workspaceRoles;
+    }
+
+    public async Task<bool> HasConsentCoverageAsync(Guid userId, string scopeType, Guid scopeId)
+    {
+        var hasThisScope = await _context.UserAccesses
+            .AnyAsync(ua => ua.UserId == userId && ua.IsActive && ua.ScopeType == scopeType && ua.ScopeId == scopeId);
+        if (hasThisScope)
+            return true;
+
+        // Ancestor walk - one branch per hierarchy level. Job's parent is Workspace; a level
+        // above Workspace (Organization) has no entity yet, so it stops here for now.
+        if (scopeType == Constants.ScopeTypes.Job)
+        {
+            var workspaceId = await _context.Jobs
+                .Where(j => j.Id == scopeId)
+                .Select(j => j.WorkspaceId)
+                .FirstOrDefaultAsync();
+
+            return await _context.UserAccesses
+                .AnyAsync(ua => ua.UserId == userId && ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Cross-workspace - deliberately not filtered by a single WorkspaceId, unlike every other
+    /// query in this codebase. This is user-scoped ("what can this caller see"), the same
+    /// category of exception as WorkspaceService.GetUserWorkspacesAsync and
+    /// InvitationService.GetMyInvitationsAsync, both of which also span every workspace for the
+    /// calling user. Every job returned is still independently permission-checked below.
+    /// </summary>
+    public async Task<List<AccessibleJob>> GetAccessibleJobsAsync(Guid userId)
+    {
+        // Workspace-level: workspaces where a held role carries job.view_all. A plain
+        // Workspace-scope UserAccess row (e.g. Member) does NOT qualify on its own - only a role
+        // whose permissions include job.view_all does. See spec's "qualifying grant" definition.
+        var workspaceAccesses = await _context.UserAccesses
+            .Where(ua => ua.UserId == userId && ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Workspace)
+            .ToListAsync();
+        var workspaceRoleIds = workspaceAccesses.Select(a => a.RoleId).Distinct().ToList();
+        var viewAllRoleIds = await _context.RolePermissions
+            .Include(rp => rp.Permission)
+            .Where(rp => workspaceRoleIds.Contains(rp.RoleId) && rp.Permission.Resource == "job" && rp.Permission.Action == "view_all")
+            .Select(rp => rp.RoleId)
+            .ToListAsync();
+        var viewAllWorkspaceIds = workspaceAccesses
+            .Where(a => viewAllRoleIds.Contains(a.RoleId))
+            .Select(a => a.ScopeId)
+            .Distinct()
+            .ToList();
+
+        var workspaceLevelJobs = await _context.Jobs
+            .Where(j => viewAllWorkspaceIds.Contains(j.WorkspaceId))
+            .ToListAsync();
+        var claimedJobIds = workspaceLevelJobs.Select(j => j.Id).ToHashSet();
+
+        // Job-level: direct job-scope grants not already claimed above. (Organization level, when
+        // it exists, inserts here - broader than Workspace, narrower than nothing above it - as
+        // one more block following this same shape: find qualifying grants at that level, add
+        // to claimedJobIds, tag Constants.ScopeTypes.Organization.)
+        var directJobIds = await AccessibleJobIds(userId).ToListAsync();
+        var jobLevelJobs = await _context.Jobs
+            .Where(j => directJobIds.Contains(j.Id) && !claimedJobIds.Contains(j.Id))
+            .ToListAsync();
+
+        var tagged = workspaceLevelJobs.Select(j => (Job: j, Scope: Constants.ScopeTypes.Workspace))
+            .Concat(jobLevelJobs.Select(j => (Job: j, Scope: Constants.ScopeTypes.Job)))
+            .ToList();
+
+        var workspaceIds = tagged.Select(t => t.Job.WorkspaceId).Distinct().ToList();
+        var workspaceNames = await _context.Workspaces
+            .Where(w => workspaceIds.Contains(w.Id))
+            .ToDictionaryAsync(w => w.Id, w => w.Name);
+
+        return tagged
+            .Select(t => new AccessibleJob(
+                t.Job.Id, t.Job.JobNumber, t.Job.Title, t.Job.Status,
+                t.Job.WorkspaceId, workspaceNames.GetValueOrDefault(t.Job.WorkspaceId, "Unknown workspace"),
+                t.Scope))
+            .ToList();
     }
 }

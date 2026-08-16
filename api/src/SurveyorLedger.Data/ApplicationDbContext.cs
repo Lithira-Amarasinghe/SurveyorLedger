@@ -11,6 +11,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Workspace> Workspaces { get; set; }
     public DbSet<Subscription> Subscriptions { get; set; }
     public DbSet<Role> Roles { get; set; }
+    public DbSet<RoleScope> RoleScopes { get; set; }
     public DbSet<Permission> Permissions { get; set; }
     public DbSet<RolePermission> RolePermissions { get; set; }
     public DbSet<UserAccess> UserAccesses { get; set; }

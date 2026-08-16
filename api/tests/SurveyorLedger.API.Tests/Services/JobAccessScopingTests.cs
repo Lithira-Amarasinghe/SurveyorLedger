@@ -1,6 +1,8 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Models.Job;
 using SurveyorLedger.API.Services;
+using SurveyorLedger.Core;
 using SurveyorLedger.Core.Exceptions;
 using SurveyorLedger.Data.Entities;
 using Xunit;
@@ -20,6 +22,13 @@ public class JobAccessScopingTests : WorkspaceIntegrationTestBase
     protected override void ConfigureServices(IServiceCollection services)
     {
         services.AddScoped<IJobService, JobService>();
+        services.AddScoped<IInvitationService, InvitationService>();
+        services.AddSingleton<IEmailService, NoOpEmailService>();
+        services.AddSingleton<IPasswordService, PasswordService>();
+        services.AddSingleton<IConfiguration>(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["AppSettings:UiBaseUrl"] = "https://test.local" })
+                .Build());
     }
 
     private async Task SeedJobsAsync()
@@ -107,7 +116,7 @@ public class JobAccessScopingTests : WorkspaceIntegrationTestBase
     public async Task RemovingParticipant_RevokesJobVisibility()
     {
         await SeedJobsAsync();
-        await _jobService.RemoveParticipantAsync(WorkspaceId, AdminId, _jobAId, SurveyorId);
+        await _jobService.RemoveParticipantAsync(WorkspaceId, AdminId, _jobAId, SurveyorId, "Surveyor");
 
         var jobs = await _jobService.GetJobsAsync(WorkspaceId, SurveyorId);
         Assert.Empty(jobs);
@@ -116,8 +125,11 @@ public class JobAccessScopingTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
-    public async Task AddParticipant_RejectsUserWithNoWorkspaceMembership()
+    public async Task AddParticipant_WithNoWorkspaceMembership_CreatesJobScopeInviteInstead()
     {
+        // No consent coverage (not a workspace member, no existing job grant) means
+        // AddParticipantAsync falls back to a job-scope invite rather than an instant
+        // grant or a rejection - same rule as InvitationFlowTests' pending/declined cases.
         await SeedJobsAsync();
         var outsiderId = Guid.NewGuid();
         await Context.Users.AddAsync(new User
@@ -125,6 +137,7 @@ public class JobAccessScopingTests : WorkspaceIntegrationTestBase
             Id = outsiderId,
             FirstName = "Outsider",
             LastName = "Person",
+            Email = "outsider@test.local",
             EmailVerified = false,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
@@ -132,7 +145,9 @@ public class JobAccessScopingTests : WorkspaceIntegrationTestBase
         });
         await Context.SaveChangesAsync();
 
-        await Assert.ThrowsAsync<AppException>(
-            () => _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobBId, outsiderId, "Surveyor"));
+        var result = await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobBId, outsiderId, "Surveyor");
+        Assert.Null(result.Access);
+        Assert.NotNull(result.Invitation);
+        Assert.Equal(Constants.ScopeTypes.Job, result.Invitation!.ScopeType);
     }
 }

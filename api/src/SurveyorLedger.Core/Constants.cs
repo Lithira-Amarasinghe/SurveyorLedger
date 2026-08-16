@@ -62,4 +62,9 @@ public static class Constants
         public const string Job = "Job";
         public const string Organization = "Organization";
     }
+
+    /// <summary>Root-to-leaf order of the access hierarchy - the one place this order is
+    /// declared. GetAccessibleJobsAsync (ScopedAccessService) walks it broadest-first.</summary>
+    public static readonly string[] ScopeHierarchy =
+        { ScopeTypes.Organization, ScopeTypes.Workspace, ScopeTypes.Job };
 }

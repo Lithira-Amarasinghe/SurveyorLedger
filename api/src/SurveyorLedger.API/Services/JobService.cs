@@ -1,6 +1,7 @@
 using System.Data;
 using Microsoft.EntityFrameworkCore;
 using SurveyorLedger.API.Models.Job;
+using SurveyorLedger.API.Models.Land;
 using SurveyorLedger.Core;
 using SurveyorLedger.Core.Exceptions;
 using SurveyorLedger.Data;
@@ -8,17 +9,37 @@ using SurveyorLedger.Data.Entities;
 
 namespace SurveyorLedger.API.Services;
 
+/// <summary>
+/// Result of AddParticipantAsync - exactly one of the two is set. Access means the grant
+/// happened instantly (target already had consent coverage); Invitation means an invite was
+/// created instead and nothing is granted until they accept.
+/// </summary>
+public record ParticipantAddResult(UserAccess? Access, Invitation? Invitation);
+
 public interface IJobService
 {
     Task<Job> CreateAsync(Guid workspaceId, Guid callerUserId, JobRequest request);
     Task<List<Job>> GetJobsAsync(Guid workspaceId, Guid callerUserId);
     Task<Job> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid jobId);
+
+    /// <summary>
+    /// Cross-workspace single-job fetch for a caller who may not be a workspace member (a
+    /// job-only grant) - resolves the job's workspace internally instead of taking it as a
+    /// parameter. Same 404-vs-403 order as GetByIdAsync: unknown job -> NotFoundException,
+    /// real job with no access -> ForbiddenException (via EnsureJobAccessAsync).
+    /// </summary>
+    Task<(Job Job, string WorkspaceName)> GetAccessibleJobDetailAsync(Guid callerUserId, Guid jobId);
     Task<Job> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid jobId, JobRequest request);
     Task<Job> UpdateStatusAsync(Guid workspaceId, Guid callerUserId, Guid jobId, string status);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid jobId);
 
-    Task<UserAccess> AddParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId, string role);
-    Task RemoveParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId);
+    /// <summary>Assigns an existing account to this job - instant if they already have consent coverage, otherwise creates an invite.</summary>
+    Task<ParticipantAddResult> AddParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId, string role);
+
+    /// <summary>Assigns someone by email who wasn't found in a search (may or may not have an account yet) - always creates an invite, same as the workspace invite flow.</summary>
+    Task<Invitation> InviteParticipantByEmailAsync(Guid workspaceId, Guid callerUserId, Guid jobId, string role, string email, string? firstName, string? lastName, string? phone, AddressDto? address);
+
+    Task RemoveParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId, string role);
     Task<List<UserAccess>> GetParticipantsAsync(Guid workspaceId, Guid callerUserId, Guid jobId);
 
     Task AddLandAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid landId);
@@ -31,13 +52,17 @@ public class JobService : IJobService
     private readonly ApplicationDbContext _context;
     private readonly IScopedAccessService _access;
     private readonly IUserAccessGrantService _grantService;
+    private readonly IInvitationService _invitationService;
     private readonly ILogger<JobService> _logger;
 
-    public JobService(ApplicationDbContext context, IScopedAccessService access, IUserAccessGrantService grantService, ILogger<JobService> logger)
+    public JobService(
+        ApplicationDbContext context, IScopedAccessService access, IUserAccessGrantService grantService,
+        IInvitationService invitationService, ILogger<JobService> logger)
     {
         _context = context;
         _access = access;
         _grantService = grantService;
+        _invitationService = invitationService;
         _logger = logger;
     }
 
@@ -111,6 +136,21 @@ public class JobService : IJobService
         return job;
     }
 
+    public async Task<(Job Job, string WorkspaceName)> GetAccessibleJobDetailAsync(Guid callerUserId, Guid jobId)
+    {
+        var job = await _context.Jobs.FirstOrDefaultAsync(j => j.Id == jobId)
+            ?? throw new NotFoundException("Job not found");
+
+        await _access.EnsureJobAccessAsync(callerUserId, job.WorkspaceId, jobId, "view");
+
+        var workspaceName = await _context.Workspaces
+            .Where(w => w.Id == job.WorkspaceId)
+            .Select(w => w.Name)
+            .FirstOrDefaultAsync() ?? "Unknown workspace";
+
+        return (job, workspaceName);
+    }
+
     public async Task<Job> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid jobId, JobRequest request)
     {
         var job = await FindJobAsync(workspaceId, jobId);
@@ -149,35 +189,64 @@ public class JobService : IJobService
     /// <summary>
     /// Grants job-scoped access: a UserAccess row at ScopeType=Job, ScopeId=jobId, using the
     /// role Admin picks for this specific job (Surveyor or Client) - independent of the
-    /// target's workspace role. The target must already be a workspace member; job
-    /// assignment doesn't create members, it only grants a job-scoped role on top.
+    /// target's workspace role. Instant if the target already has consent coverage for this
+    /// job (workspace member, or already on this job under another role); otherwise an
+    /// invite is created instead and nothing is granted until they accept - same rule as
+    /// ScopedAccessService.HasConsentCoverageAsync everywhere else.
     /// </summary>
-    public async Task<UserAccess> AddParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId, string role)
+    public async Task<ParticipantAddResult> AddParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId, string role)
     {
-        await FindJobAsync(workspaceId, jobId);
+        var job = await FindJobAsync(workspaceId, jobId);
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
-        var isMember = await _context.UserAccesses
-            .AnyAsync(ua => ua.UserId == targetUserId && ua.IsActive &&
-                ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId);
-        if (!isMember)
-            throw new AppException(Constants.ErrorCodes.UserNotFound,
-                "This person isn't a member of the workspace yet - add them as a member before assigning them to a job.", 400);
+        var jobRole = await ResolveJobRoleAsync(role);
 
-        var jobRole = await _context.Roles.FirstOrDefaultAsync(r =>
-                r.Name == role && r.IsSystem &&
-                (r.Name == Constants.SystemRoles.Surveyor || r.Name == Constants.SystemRoles.Client))
-            ?? throw new AppException(Constants.ErrorCodes.ValidationFailed, "Job role must be Surveyor or Client.", 400);
+        if (await _access.HasConsentCoverageAsync(targetUserId, Constants.ScopeTypes.Job, jobId))
+        {
+            var access = await _grantService.GrantAsync(targetUserId, jobRole.Id, Constants.ScopeTypes.Job, jobId, callerUserId);
+            return new ParticipantAddResult(access, null);
+        }
 
-        return await _grantService.GrantAsync(targetUserId, jobRole.Id, Constants.ScopeTypes.Job, jobId, callerUserId);
+        var targetUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == targetUserId && u.IsActive)
+            ?? throw new NotFoundException("User not found");
+
+        var invitation = await _invitationService.CreateScopedInvitationAsync(
+            Constants.ScopeTypes.Job, jobId, jobRole.Id, JobDisplayName(job), callerUserId,
+            targetUser.Email!, targetUser.FirstName, targetUser.LastName, targetUser.Phone, null);
+        return new ParticipantAddResult(null, invitation);
     }
 
-    public async Task RemoveParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId)
+    /// <summary>Same invite as above, but for someone found by typing an email rather than picking an existing account - mirrors WorkspaceService's invite-by-email flow, scoped to this job instead of the workspace.</summary>
+    public async Task<Invitation> InviteParticipantByEmailAsync(Guid workspaceId, Guid callerUserId, Guid jobId, string role, string email, string? firstName, string? lastName, string? phone, AddressDto? address)
+    {
+        var job = await FindJobAsync(workspaceId, jobId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+
+        var jobRole = await ResolveJobRoleAsync(role);
+
+        return await _invitationService.CreateScopedInvitationAsync(
+            Constants.ScopeTypes.Job, jobId, jobRole.Id, JobDisplayName(job), callerUserId,
+            email, firstName, lastName, phone, address);
+    }
+
+    private async Task<Role> ResolveJobRoleAsync(string role) =>
+        await _context.Roles
+            .Where(r => r.Name == role && r.IsSystem)
+            .Where(r => r.RoleScopes.Any(rs => rs.ScopeType == Constants.ScopeTypes.Job))
+            .FirstOrDefaultAsync()
+            ?? throw new AppException(Constants.ErrorCodes.ValidationFailed, "Job role must be Surveyor or Client.", 400);
+
+    private static string JobDisplayName(Job job) => $"{job.JobNumber} · {job.Title}";
+
+    public async Task RemoveParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId, string role)
     {
         await FindJobAsync(workspaceId, jobId);
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
-        await _grantService.RevokeAsync(targetUserId, Constants.ScopeTypes.Job, jobId);
+        var jobRole = await _context.Roles.FirstOrDefaultAsync(r => r.Name == role && r.IsSystem)
+            ?? throw new AppException(Constants.ErrorCodes.ValidationFailed, "Unknown role.", 400);
+
+        await _grantService.RevokeAsync(targetUserId, Constants.ScopeTypes.Job, jobId, jobRole.Id);
     }
 
     public async Task<List<UserAccess>> GetParticipantsAsync(Guid workspaceId, Guid callerUserId, Guid jobId)

@@ -8,13 +8,13 @@ using SurveyorLedger.Data.Entities;
 
 namespace SurveyorLedger.API.Services;
 
-public record WorkspaceWithAccess(Workspace Workspace, string Tier, string Role);
+public record WorkspaceWithAccess(Workspace Workspace, string Tier, List<string> Roles);
 
 /// <summary>Another scope this member holds access to beyond the workspace itself - e.g. a specific job.</summary>
 public record MemberScopeGrant(string ScopeType, Guid ScopeId, string Label, string Role);
 
 public record WorkspaceMember(
-    Guid UserId, string Email, string FirstName, string LastName, string Role, DateTime AssignedAt, bool IsOwner,
+    Guid UserId, string Email, string FirstName, string LastName, List<string> Roles, DateTime AssignedAt, bool IsOwner,
     List<string> FullAccessScopeTypes, List<MemberScopeGrant> AdditionalScopes);
 
 public record PermissionInfo(string Name, string Resource, string Action, string Description);
@@ -27,31 +27,34 @@ public interface IWorkspaceService
     Task<List<WorkspaceWithAccess>> GetUserWorkspacesAsync(Guid userId);
     Task<WorkspaceWithAccess?> GetWorkspaceByIdAsync(Guid workspaceId, Guid userId);
     Task<List<WorkspaceMember>> GetMembersAsync(Guid workspaceId, Guid callerUserId);
-    Task<string> UpdateMemberRoleAsync(Guid workspaceId, Guid targetUserId, Guid callerUserId, string newRoleName);
+    Task AddMemberRoleAsync(Guid workspaceId, Guid targetUserId, Guid callerUserId, string roleName);
+    Task RemoveMemberRoleAsync(Guid workspaceId, Guid targetUserId, Guid callerUserId, string roleName);
     Task RemoveMemberAsync(Guid workspaceId, Guid targetUserId, Guid callerUserId);
     Task<List<RoleWithPermissions>> GetWorkspaceRolesAsync(Guid workspaceId, Guid callerUserId);
 
     /// <summary>
-    /// Role names valid to pick in a given context - single source of truth for the invite/
-    /// role-change dropdown (Workspace scope: Admin, Surveyor, Member) and the job-assignment
-    /// dropdown (Job scope: Surveyor, Client). Mirrors the RegularExpression validators on
-    /// InvitationRequest/UpdateMemberRoleRequest/AddParticipantRequest - those stay as the
+    /// Role names valid to pick in a given context - reads the RoleScopes table, the single
+    /// source of truth for which roles apply at which scope (Workspace: Admin/Surveyor/Member,
+    /// Job: Surveyor/Client today). Mirrors the RegularExpression validators on
+    /// InvitationRequest/MemberRoleRequest/AddParticipantRequest - those stay as the
     /// actual server-side enforcement, this just lets the UI reflect the same rule instead
     /// of carrying its own hardcoded copy that can drift out of sync.
     /// </summary>
-    List<string> GetEligibleRoleNames(string scopeType);
+    Task<List<string>> GetEligibleRoleNamesAsync(string scopeType);
 }
 
 public class WorkspaceService : IWorkspaceService
 {
     private readonly ApplicationDbContext _context;
     private readonly ICasbinService _casbinService;
+    private readonly IUserAccessGrantService _grantService;
     private readonly ILogger<WorkspaceService> _logger;
 
-    public WorkspaceService(ApplicationDbContext context, ICasbinService casbinService, ILogger<WorkspaceService> logger)
+    public WorkspaceService(ApplicationDbContext context, ICasbinService casbinService, IUserAccessGrantService grantService, ILogger<WorkspaceService> logger)
     {
         _context = context;
         _casbinService = casbinService;
+        _grantService = grantService;
         _logger = logger;
     }
 
@@ -111,7 +114,7 @@ public class WorkspaceService : IWorkspaceService
         await _casbinService.AddRoleForUserAsync(userId.ToString(), adminRole.Name, workspace.Id.ToString());
 
         _logger.LogInformation("Workspace created: {WorkspaceId} by {UserId}", workspace.Id, userId);
-        return new WorkspaceWithAccess(workspace, workspace.SubscriptionTier, adminRole.Name);
+        return new WorkspaceWithAccess(workspace, workspace.SubscriptionTier, new List<string> { adminRole.Name });
     }
 
     public async Task<List<WorkspaceWithAccess>> GetUserWorkspacesAsync(Guid userId)
@@ -121,7 +124,8 @@ public class WorkspaceService : IWorkspaceService
             .Include(ua => ua.Role)
             .ToListAsync();
 
-        var workspaceIds = accesses.Select(a => a.ScopeId).Distinct().ToList();
+        var rolesByWorkspace = accesses.GroupBy(a => a.ScopeId).ToDictionary(g => g.Key, g => g.Select(a => a.Role.Name).ToList());
+        var workspaceIds = rolesByWorkspace.Keys.ToList();
 
         var workspaces = await _context.Workspaces
             .Where(w => workspaceIds.Contains(w.Id) && w.IsActive)
@@ -130,12 +134,11 @@ public class WorkspaceService : IWorkspaceService
         var result = new List<WorkspaceWithAccess>();
         foreach (var w in workspaces)
         {
-            var access = accesses.First(a => a.ScopeId == w.Id);
             var allowed = await _casbinService.EnforceAsync(userId.ToString(), "workspace", "view", w.Id.ToString());
             if (!allowed)
                 continue;
 
-            result.Add(new WorkspaceWithAccess(w, w.SubscriptionTier, access.Role.Name));
+            result.Add(new WorkspaceWithAccess(w, w.SubscriptionTier, rolesByWorkspace[w.Id]));
         }
 
         return result;
@@ -143,12 +146,12 @@ public class WorkspaceService : IWorkspaceService
 
     public async Task<WorkspaceWithAccess?> GetWorkspaceByIdAsync(Guid workspaceId, Guid userId)
     {
-        var access = await _context.UserAccesses
+        var roles = await _context.UserAccesses
             .Where(ua => ua.UserId == userId && ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId)
-            .Include(ua => ua.Role)
-            .FirstOrDefaultAsync();
+            .Select(ua => ua.Role.Name)
+            .ToListAsync();
 
-        if (access == null)
+        if (roles.Count == 0)
             return null;
 
         var allowed = await _casbinService.EnforceAsync(userId.ToString(), "workspace", "view", workspaceId.ToString());
@@ -161,7 +164,7 @@ public class WorkspaceService : IWorkspaceService
         if (workspace == null)
             return null;
 
-        return new WorkspaceWithAccess(workspace, workspace.SubscriptionTier, access.Role.Name);
+        return new WorkspaceWithAccess(workspace, workspace.SubscriptionTier, roles);
     }
 
     public async Task<List<WorkspaceMember>> GetMembersAsync(Guid workspaceId, Guid callerUserId)
@@ -184,8 +187,9 @@ public class WorkspaceService : IWorkspaceService
 
         // Clients are guest-like: they can see their own membership row but not the
         // rest of the roster. Every other role keeps the full-roster view.
-        var callerRole = accesses.FirstOrDefault(ua => ua.UserId == callerUserId)?.Role.Name;
-        if (callerRole == Constants.SystemRoles.Client)
+        var callerRoles = accesses.Where(ua => ua.UserId == callerUserId).Select(ua => ua.Role.Name).ToList();
+        var isGuestView = callerRoles.Count > 0 && callerRoles.All(r => r == Constants.SystemRoles.Client);
+        if (isGuestView)
             accesses = accesses.Where(ua => ua.UserId == callerUserId).ToList();
 
         // Which scope types each distinct role has blanket ("view_all") access to - e.g.
@@ -203,45 +207,88 @@ public class WorkspaceService : IWorkspaceService
             .GroupBy(x => x.RoleId)
             .ToDictionary(g => g.Key, g => g.Select(x => Capitalize(x.Resource)).ToList());
 
-        // Every other active scope these members hold beyond the workspace itself (job
-        // assignments today). One extra query, not one per row.
-        var memberIds = accesses.Select(a => a.UserId).ToList();
-        var extraScopes = await _context.UserAccesses
+        // Job-scope grants under THIS workspace's jobs only - scoped by job, not by who's
+        // already a workspace member, so a job-only participant (no Workspace-scope row at
+        // all) is captured here too, not just "extra" scopes for existing members. Filtering
+        // by job ownership (not just user id) also stops a person's job grant in a *different*
+        // workspace from leaking into this list.
+        var workspaceJobIds = await _context.Jobs
+            .Where(j => j.WorkspaceId == workspaceId)
+            .Select(j => j.Id)
+            .ToListAsync();
+        var jobScopes = await _context.UserAccesses
             .Include(ua => ua.Role)
-            .Where(ua => ua.IsActive && memberIds.Contains(ua.UserId) && ua.ScopeType != Constants.ScopeTypes.Workspace)
+            .Include(ua => ua.User)
+            .Where(ua => ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Job && workspaceJobIds.Contains(ua.ScopeId))
             .ToListAsync();
 
-        var jobIds = extraScopes.Where(s => s.ScopeType == Constants.ScopeTypes.Job).Select(s => s.ScopeId).Distinct().ToList();
+        var jobIds = jobScopes.Select(s => s.ScopeId).Distinct().ToList();
         var jobLabels = await _context.Jobs
             .Where(j => jobIds.Contains(j.Id))
             .ToDictionaryAsync(j => j.Id, j => $"{j.JobNumber} · {j.Title}");
 
-        var extraScopesByUser = extraScopes
+        var jobScopesByUser = jobScopes
             .GroupBy(s => s.UserId)
             .ToDictionary(g => g.Key, g => g
-                .Select(s => new MemberScopeGrant(
-                    s.ScopeType, s.ScopeId,
-                    s.ScopeType == Constants.ScopeTypes.Job ? jobLabels.GetValueOrDefault(s.ScopeId, "Unknown job") : s.ScopeId.ToString(),
-                    s.Role.Name))
+                .Select(s => new MemberScopeGrant(s.ScopeType, s.ScopeId, jobLabels.GetValueOrDefault(s.ScopeId, "Unknown job"), s.Role.Name))
                 .ToList());
 
-        return accesses
-            .Select(ua => new WorkspaceMember(
-                ua.UserId, ua.User.Email!, ua.User.FirstName, ua.User.LastName,
-                ua.Role.Name, ua.AssignedAt, ua.UserId == workspace.OwnerId,
-                fullAccessByRole.GetValueOrDefault(ua.RoleId, new List<string>()),
-                extraScopesByUser.GetValueOrDefault(ua.UserId, new List<MemberScopeGrant>())))
-            .ToList();
+        // view_all can in principle be granted through a job-scope role too, not just a
+        // workspace-scope one - fold both role sets in so this stays correct either way.
+        var jobRoleIds = jobScopes.Select(s => s.RoleId).Distinct().Except(roleIds).ToList();
+        if (jobRoleIds.Count > 0)
+        {
+            var extraViewAll = await _context.RolePermissions
+                .Include(rp => rp.Permission)
+                .Where(rp => jobRoleIds.Contains(rp.RoleId) && rp.Permission.Action == "view_all")
+                .Select(rp => new { rp.RoleId, rp.Permission.Resource })
+                .ToListAsync();
+            foreach (var group in extraViewAll.GroupBy(x => x.RoleId))
+                fullAccessByRole[group.Key] = group.Select(x => Capitalize(x.Resource)).ToList();
+        }
+
+        var workspaceMembers = accesses
+            .GroupBy(ua => ua.UserId)
+            .Select(g =>
+            {
+                var first = g.OrderBy(ua => ua.AssignedAt).First();
+                return new WorkspaceMember(
+                    first.UserId, first.User.Email!, first.User.FirstName, first.User.LastName,
+                    g.Select(ua => ua.Role.Name).ToList(), first.AssignedAt, first.UserId == workspace.OwnerId,
+                    g.SelectMany(ua => fullAccessByRole.GetValueOrDefault(ua.RoleId, new List<string>())).Distinct().ToList(),
+                    jobScopesByUser.GetValueOrDefault(first.UserId, new List<MemberScopeGrant>()));
+            })
+            .ToDictionary(m => m.UserId);
+
+        // Job-only people: hold a job-scope grant under this workspace but no Workspace-scope
+        // row at all, so they're absent from `accesses` entirely - add them as their own rows.
+        // Skipped entirely for a guest (Client-only) caller - same roster restriction as above.
+        var jobOnlyMembers = isGuestView
+            ? Enumerable.Empty<WorkspaceMember>()
+            : jobScopes
+            .Where(s => !workspaceMembers.ContainsKey(s.UserId))
+            .GroupBy(s => s.UserId)
+            .Select(g =>
+            {
+                var first = g.OrderBy(s => s.AssignedAt).First();
+                return new WorkspaceMember(
+                    first.UserId, first.User.Email!, first.User.FirstName, first.User.LastName,
+                    new List<string>(), first.AssignedAt, false,
+                    g.SelectMany(s => fullAccessByRole.GetValueOrDefault(s.RoleId, new List<string>())).Distinct().ToList(),
+                    jobScopesByUser.GetValueOrDefault(first.UserId, new List<MemberScopeGrant>()));
+            });
+
+        return workspaceMembers.Values.Concat(jobOnlyMembers).ToList();
     }
 
     private static string Capitalize(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
 
-    public List<string> GetEligibleRoleNames(string scopeType) => scopeType switch
-    {
-        Constants.ScopeTypes.Workspace => new List<string> { Constants.SystemRoles.Admin, Constants.SystemRoles.Surveyor, Constants.SystemRoles.Member },
-        Constants.ScopeTypes.Job => new List<string> { Constants.SystemRoles.Surveyor, Constants.SystemRoles.Client },
-        _ => throw new AppException(Constants.ErrorCodes.ValidationFailed, $"Unknown scope '{scopeType}'.", 400)
-    };
+    public Task<List<string>> GetEligibleRoleNamesAsync(string scopeType) =>
+        _context.RoleScopes
+            .Where(rs => rs.ScopeType == scopeType)
+            .Select(rs => rs.Role.Name)
+            .OrderBy(n => n)
+            .ToListAsync();
 
     public async Task<List<RoleWithPermissions>> GetWorkspaceRolesAsync(Guid workspaceId, Guid callerUserId)
     {
@@ -250,7 +297,7 @@ public class WorkspaceService : IWorkspaceService
         await EnsureManageMembersAsync(workspaceId, callerUserId);
 
         var roles = await _context.Roles
-            .Where(r => r.IsSystem && r.WorkspaceId == null)
+            .Where(r => r.IsSystem)
             .Include(r => r.RolePermissions)
                 .ThenInclude(rp => rp.Permission)
             .OrderBy(r => r.Name)
@@ -268,7 +315,27 @@ public class WorkspaceService : IWorkspaceService
             .ToList();
     }
 
-    public async Task<string> UpdateMemberRoleAsync(Guid workspaceId, Guid targetUserId, Guid callerUserId, string newRoleName)
+    public async Task AddMemberRoleAsync(Guid workspaceId, Guid targetUserId, Guid callerUserId, string roleName)
+    {
+        await EnsureManageMembersAsync(workspaceId, callerUserId);
+
+        var workspace = await _context.Workspaces.FirstOrDefaultAsync(w => w.Id == workspaceId && w.IsActive)
+            ?? throw new NotFoundException("Workspace not found");
+
+        var isMember = await _context.UserAccesses
+            .AnyAsync(ua => ua.UserId == targetUserId && ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId);
+        if (!isMember)
+            throw new NotFoundException("Member not found");
+
+        var role = await _context.Roles.FirstOrDefaultAsync(r => r.Name == roleName && r.IsSystem)
+            ?? throw new InvalidOperationException($"Role '{roleName}' not found");
+
+        var access = await _grantService.GrantAsync(targetUserId, role.Id, Constants.ScopeTypes.Workspace, workspaceId, callerUserId);
+        AddAudit("MemberRoleAdded", "UserAccess", access.Id, workspaceId, callerUserId, null, role.Name);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task RemoveMemberRoleAsync(Guid workspaceId, Guid targetUserId, Guid callerUserId, string roleName)
     {
         await EnsureManageMembersAsync(workspaceId, callerUserId);
 
@@ -278,23 +345,17 @@ public class WorkspaceService : IWorkspaceService
         if (targetUserId == workspace.OwnerId)
             throw new AppException(Constants.ErrorCodes.CannotModifyOwner, "The workspace owner's role cannot be changed.", 409);
 
-        var access = await _context.UserAccesses
+        var roles = await _context.UserAccesses
             .Where(ua => ua.UserId == targetUserId && ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId)
             .Include(ua => ua.Role)
-            .FirstOrDefaultAsync()
-            ?? throw new NotFoundException("Member not found");
+            .ToListAsync();
 
-        var newRole = await _context.Roles.FirstOrDefaultAsync(r => r.Name == newRoleName && r.IsSystem)
-            ?? throw new InvalidOperationException($"Role '{newRoleName}' not found");
+        var access = roles.FirstOrDefault(ua => ua.Role.Name == roleName)
+            ?? throw new NotFoundException("Member does not hold that role.");
 
-        if (access.Role.Name == newRole.Name)
-            return newRole.Name;
-
-        var oldRoleName = access.Role.Name;
-
-        // Workspace role and job role are independent facts - a job-scope grant (Surveyor or
-        // Client, picked explicitly by Admin at assignment time) is no longer derived from
-        // the workspace role, so changing the workspace role must NOT touch it.
+        if (roles.Count == 1)
+            throw new AppException(Constants.ErrorCodes.ValidationFailed,
+                "Cannot remove a member's last role - remove the member instead.", 409);
 
         // Serializable so a concurrent role-change/removal against the same workspace can't
         // also pass the "at least one other Admin exists" read before either commits its write.
@@ -306,20 +367,17 @@ public class WorkspaceService : IWorkspaceService
         {
             await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
 
-            if (oldRoleName == Constants.SystemRoles.Admin)
+            if (roleName == Constants.SystemRoles.Admin)
                 await EnsureNotLastAdminAsync(workspaceId, targetUserId);
 
-            access.RoleId = newRole.Id;
-            AddAudit("MemberRoleChanged", "UserAccess", access.Id, workspaceId, callerUserId, oldRoleName, newRole.Name);
+            access.IsActive = false;
+            AddAudit("MemberRoleRemoved", "UserAccess", access.Id, workspaceId, callerUserId, roleName, null);
 
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
         });
 
-        await _casbinService.RemoveRoleForUserAsync(targetUserId.ToString(), oldRoleName, workspaceId.ToString());
-        await _casbinService.AddRoleForUserAsync(targetUserId.ToString(), newRole.Name, workspaceId.ToString());
-
-        return newRole.Name;
+        await _casbinService.RemoveRoleForUserAsync(targetUserId.ToString(), roleName, workspaceId.ToString());
     }
 
     public async Task RemoveMemberAsync(Guid workspaceId, Guid targetUserId, Guid callerUserId)
@@ -334,13 +392,15 @@ public class WorkspaceService : IWorkspaceService
         if (targetUserId == workspace.OwnerId)
             throw new AppException(Constants.ErrorCodes.CannotModifyOwner, "The workspace owner cannot be removed.", 409);
 
-        var access = await _context.UserAccesses
+        var accesses = await _context.UserAccesses
             .Where(ua => ua.UserId == targetUserId && ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId)
             .Include(ua => ua.Role)
-            .FirstOrDefaultAsync()
-            ?? throw new NotFoundException("Member not found");
+            .ToListAsync();
+        if (accesses.Count == 0)
+            throw new NotFoundException("Member not found");
 
-        var roleName = access.Role.Name;
+        var roleNames = accesses.Select(a => a.Role.Name).ToList();
+        var isAdmin = roleNames.Contains(Constants.SystemRoles.Admin);
 
         // Job-scope grants for this workspace's jobs don't disappear on their own -
         // UserAccess for Workspace and Job scope are separate rows. Leaving them active
@@ -361,11 +421,14 @@ public class WorkspaceService : IWorkspaceService
         {
             await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
 
-            if (roleName == Constants.SystemRoles.Admin)
+            if (isAdmin)
                 await EnsureNotLastAdminAsync(workspaceId, targetUserId);
 
-            access.IsActive = false;
-            AddAudit("MemberRemoved", "UserAccess", access.Id, workspaceId, callerUserId, roleName, null);
+            foreach (var access in accesses)
+            {
+                access.IsActive = false;
+                AddAudit("MemberRemoved", "UserAccess", access.Id, workspaceId, callerUserId, access.Role.Name, null);
+            }
 
             foreach (var jobGrant in jobGrants)
                 jobGrant.IsActive = false;
@@ -374,7 +437,8 @@ public class WorkspaceService : IWorkspaceService
             await transaction.CommitAsync();
         });
 
-        await _casbinService.RemoveRoleForUserAsync(targetUserId.ToString(), roleName, workspaceId.ToString());
+        foreach (var roleName in roleNames)
+            await _casbinService.RemoveRoleForUserAsync(targetUserId.ToString(), roleName, workspaceId.ToString());
         foreach (var jobGrant in jobGrants)
             await _casbinService.RemoveRoleForUserAsync(targetUserId.ToString(), jobGrant.Role.Name, jobGrant.ScopeId.ToString());
     }

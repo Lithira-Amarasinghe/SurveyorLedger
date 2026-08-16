@@ -13,14 +13,19 @@ namespace SurveyorLedger.API.Services;
 public interface IUserAccessGrantService
 {
     /// <summary>
-    /// Grants (or reactivates/re-roles) a UserAccess row for (userId, scopeType, scopeId).
-    /// Matched on user+scope alone, not role - re-granting with a different role updates
-    /// the existing row instead of leaving a stale duplicate, and keeps Casbin consistent.
+    /// Grants (or reactivates) a UserAccess row for (userId, scopeType, scopeId, roleId).
+    /// Matched on user+scope+role - a user can hold more than one role at the same scope,
+    /// each as its own row. Re-granting the same (user, scope, role) reactivates it instead
+    /// of leaving a stale duplicate.
     /// </summary>
     Task<UserAccess> GrantAsync(Guid userId, Guid roleId, string scopeType, Guid scopeId, Guid assignedBy);
 
-    /// <summary>Soft-revokes every active UserAccess row for (userId, scopeType, scopeId).</summary>
-    Task RevokeAsync(Guid userId, string scopeType, Guid scopeId);
+    /// <summary>
+    /// Soft-revokes UserAccess row(s) for (userId, scopeType, scopeId). When <paramref name="roleId"/>
+    /// is given, only that one role is revoked, leaving any other roles the user holds at this
+    /// scope active. When omitted, every active role at this scope is revoked (full removal).
+    /// </summary>
+    Task RevokeAsync(Guid userId, string scopeType, Guid scopeId, Guid? roleId = null);
 }
 
 public class UserAccessGrantService : IUserAccessGrantService
@@ -41,7 +46,7 @@ public class UserAccessGrantService : IUserAccessGrantService
         var existing = await _context.UserAccesses
             .Include(ua => ua.User)
             .Include(ua => ua.Role)
-            .FirstOrDefaultAsync(ua => ua.UserId == userId && ua.ScopeType == scopeType && ua.ScopeId == scopeId);
+            .FirstOrDefaultAsync(ua => ua.UserId == userId && ua.ScopeType == scopeType && ua.ScopeId == scopeId && ua.RoleId == roleId);
 
         if (existing == null)
         {
@@ -68,31 +73,26 @@ public class UserAccessGrantService : IUserAccessGrantService
             return access;
         }
 
-        var roleChanged = existing.RoleId != roleId;
         var wasInactive = !existing.IsActive;
 
-        if (roleChanged && existing.IsActive)
-            await SyncCasbinAsync(() => _casbinService.RemoveRoleForUserAsync(userId.ToString(), existing.Role.Name, scopeId.ToString()));
-
-        existing.RoleId = roleId;
-        existing.Role = role;
         existing.IsActive = true;
         existing.AssignedBy = assignedBy;
         existing.AssignedAt = DateTime.UtcNow;
         existing.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
-        if (roleChanged || wasInactive)
+        if (wasInactive)
             await SyncCasbinAsync(() => _casbinService.AddRoleForUserAsync(userId.ToString(), role.Name, scopeId.ToString()));
 
         return existing;
     }
 
-    public async Task RevokeAsync(Guid userId, string scopeType, Guid scopeId)
+    public async Task RevokeAsync(Guid userId, string scopeType, Guid scopeId, Guid? roleId = null)
     {
         var accesses = await _context.UserAccesses
             .Include(ua => ua.Role)
-            .Where(ua => ua.UserId == userId && ua.IsActive && ua.ScopeType == scopeType && ua.ScopeId == scopeId)
+            .Where(ua => ua.UserId == userId && ua.IsActive && ua.ScopeType == scopeType && ua.ScopeId == scopeId
+                && (roleId == null || ua.RoleId == roleId))
             .ToListAsync();
 
         foreach (var access in accesses)

@@ -27,10 +27,10 @@ public class RoleConfiguration : IEntityTypeConfiguration<Role>
 
         var seededAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         builder.HasData(
-            new Role { Id = AdminRoleId, Name = Constants.SystemRoles.Admin, Description = "Full access to workspace settings, members, and data.", WorkspaceId = null, IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
-            new Role { Id = SurveyorRoleId, Name = Constants.SystemRoles.Surveyor, Description = "Performs assigned survey jobs.", WorkspaceId = null, IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
-            new Role { Id = ClientRoleId, Name = Constants.SystemRoles.Client, Description = "Views job status and results for their organization.", WorkspaceId = null, IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
-            new Role { Id = MemberRoleId, Name = Constants.SystemRoles.Member, Description = "Workspace membership only. No access to jobs or land until assigned.", WorkspaceId = null, IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt }
+            new Role { Id = AdminRoleId, Name = Constants.SystemRoles.Admin, Description = "Full access to workspace settings, members, and data.", IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
+            new Role { Id = SurveyorRoleId, Name = Constants.SystemRoles.Surveyor, Description = "Performs assigned survey jobs.", IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
+            new Role { Id = ClientRoleId, Name = Constants.SystemRoles.Client, Description = "Views job status and results for their organization.", IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt },
+            new Role { Id = MemberRoleId, Name = Constants.SystemRoles.Member, Description = "Workspace membership only. No access to jobs or land until assigned.", IsSystem = true, CreatedAt = seededAt, UpdatedAt = seededAt }
         );
     }
 }

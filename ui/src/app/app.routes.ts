@@ -27,6 +27,7 @@ import { ProfileComponent } from './pages/profile/profile.component';
 import { AppShellComponent } from './shell/app-shell.component';
 import { authGuard } from './core/auth.guard';
 import { unsavedChangesGuard } from './core/unsaved-changes.guard';
+import { jobAccessGuard } from './core/job-access.guard';
 import { guestGuard } from './core/guest.guard';
 import { workspaceResolveGuard } from './core/workspace-resolve.guard';
 
@@ -56,6 +57,7 @@ export const routes: Routes = [
     canActivate: [authGuard],
     children: [
       { path: 'dashboard', component: DashboardComponent },
+      { path: 'job/:workspaceId/:jobId', component: JobDetailComponent, canActivate: [jobAccessGuard], canDeactivate: [unsavedChangesGuard] },
       { path: 'profile', component: ProfileComponent, canDeactivate: [unsavedChangesGuard] },
       { path: 'invitations', component: InvitationsComponent },
       {

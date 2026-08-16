@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using SurveyorLedger.API.Models.Invitation;
 using SurveyorLedger.API.Models.Responses;
 using SurveyorLedger.API.Services;
+using SurveyorLedger.Core;
 using SurveyorLedger.Data;
 using SurveyorLedger.Data.Entities;
 
@@ -63,25 +64,53 @@ namespace SurveyorLedger.API.Controllers
             var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
             var invitations = await _invitationService.GetMyInvitationsAsync(userId);
 
-            var workspaceIds = invitations.Select(i => i.ScopeId).Distinct().ToList();
+            // Workspace-scope invites: ScopeId is the workspace itself.
+            var workspaceScopeIds = invitations.Where(i => i.ScopeType == Constants.ScopeTypes.Workspace).Select(i => i.ScopeId).Distinct().ToList();
             var workspaceNames = await _context.Workspaces
-                .Where(w => workspaceIds.Contains(w.Id))
+                .Where(w => workspaceScopeIds.Contains(w.Id))
+                .ToDictionaryAsync(w => w.Id, w => w.Name);
+
+            // Job-scope invites: ScopeId is a job, resolve Job -> its real Workspace + a label.
+            var jobScopeIds = invitations.Where(i => i.ScopeType == Constants.ScopeTypes.Job).Select(i => i.ScopeId).Distinct().ToList();
+            var jobs = await _context.Jobs
+                .Where(j => jobScopeIds.Contains(j.Id))
+                .ToDictionaryAsync(j => j.Id, j => j);
+            var jobWorkspaceIds = jobs.Values.Select(j => j.WorkspaceId).Distinct().ToList();
+            var jobWorkspaceNames = await _context.Workspaces
+                .Where(w => jobWorkspaceIds.Contains(w.Id))
                 .ToDictionaryAsync(w => w.Id, w => w.Name);
 
             var userIds = invitations.Select(i => i.UserId).Distinct().ToList();
             var hasLoginByUser = await _context.Users
                 .Where(u => userIds.Contains(u.Id))
-                .ToDictionaryAsync(u => u.Id, u => u.PasswordHash != null);
+                .ToDictionaryAsync(u => u.Id, u => u.HasCompletedSignup);
 
-            var response = invitations.Select(i => new MyInvitationResponse
+            var response = invitations.Select(i =>
             {
-                InvitationId = i.Id,
-                WorkspaceName = workspaceNames.GetValueOrDefault(i.ScopeId, "Unknown workspace"),
-                Role = i.Role.Name,
-                Status = i.Status,
-                ExpiresAt = i.ExpiresAt,
-                CreatedAt = i.CreatedAt,
-                HasLogin = hasLoginByUser.GetValueOrDefault(i.UserId, false)
+                string workspaceName;
+                string? jobLabel = null;
+                if (i.ScopeType == Constants.ScopeTypes.Workspace)
+                {
+                    workspaceName = workspaceNames.GetValueOrDefault(i.ScopeId, "Unknown workspace");
+                }
+                else
+                {
+                    var job = jobs.GetValueOrDefault(i.ScopeId);
+                    workspaceName = job != null ? jobWorkspaceNames.GetValueOrDefault(job.WorkspaceId, "Unknown workspace") : "Unknown workspace";
+                    jobLabel = job != null ? $"{job.JobNumber} · {job.Title}" : null;
+                }
+
+                return new MyInvitationResponse
+                {
+                    InvitationId = i.Id,
+                    WorkspaceName = workspaceName,
+                    Role = i.Role.Name,
+                    Status = i.Status,
+                    ExpiresAt = i.ExpiresAt,
+                    CreatedAt = i.CreatedAt,
+                    HasLogin = hasLoginByUser.GetValueOrDefault(i.UserId, false),
+                    JobLabel = jobLabel
+                };
             }).ToList();
 
             return Ok(ApiResponse<List<MyInvitationResponse>>.Ok(response));
@@ -111,18 +140,19 @@ namespace SurveyorLedger.API.Controllers
         public async Task<ActionResult<ApiResponse<InvitationPreviewResponse>>> GetInvitationByToken(string token)
         {
             var invitation = await _invitationService.GetByTokenAsync(token);
-            var workspace = await _context.Workspaces.FirstOrDefaultAsync(w => w.Id == invitation.ScopeId);
-            var hasLogin = await _context.Users.Where(u => u.Id == invitation.UserId).Select(u => u.PasswordHash != null).FirstOrDefaultAsync();
+            var (_, workspaceName, jobLabel) = await ResolveScopeAsync(invitation);
+            var hasLogin = await _context.Users.Where(u => u.Id == invitation.UserId).Select(u => u.HasCompletedSignup).FirstOrDefaultAsync();
 
             var expired = invitation.Status != "Pending" || invitation.ExpiresAt <= DateTime.UtcNow;
             var response = new InvitationPreviewResponse
             {
                 InvitationId = invitation.Id,
                 Email = invitation.Email,
-                WorkspaceName = workspace?.Name ?? "Unknown workspace",
+                WorkspaceName = workspaceName,
                 Role = invitation.Role.Name,
                 Expired = expired,
-                HasLogin = hasLogin
+                HasLogin = hasLogin,
+                JobLabel = jobLabel
             };
 
             return Ok(ApiResponse<InvitationPreviewResponse>.Ok(response));
@@ -153,11 +183,13 @@ namespace SurveyorLedger.API.Controllers
             var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
             var invitation = await _invitationService.AcceptInvitationAsync(id, userId);
             invitation = await WithRoleAsync(invitation);
+            var (workspaceId, _, _) = await ResolveScopeAsync(invitation);
 
             return Ok(ApiResponse<AcceptInvitationResponse>.Ok(new AcceptInvitationResponse
             {
-                WorkspaceId = invitation.ScopeId,
-                Role = invitation.Role.Name
+                WorkspaceId = workspaceId,
+                Role = invitation.Role.Name,
+                JobId = invitation.ScopeType == Constants.ScopeTypes.Job ? invitation.ScopeId : null
             }));
         }
 
@@ -176,6 +208,24 @@ namespace SurveyorLedger.API.Controllers
             if (invitation.Role == null)
                 invitation.Role = await _context.Roles.FirstAsync(r => r.Id == invitation.RoleId);
             return invitation;
+        }
+
+        /// <summary>
+        /// Resolves the real Workspace for an invitation regardless of scope - a Job-scope
+        /// invite's ScopeId is the job, not the workspace, so this walks Job -> WorkspaceId.
+        /// </summary>
+        private async Task<(Guid workspaceId, string workspaceName, string? jobLabel)> ResolveScopeAsync(Invitation invitation)
+        {
+            if (invitation.ScopeType == Constants.ScopeTypes.Workspace)
+            {
+                var ws = await _context.Workspaces.FirstOrDefaultAsync(w => w.Id == invitation.ScopeId);
+                return (invitation.ScopeId, ws?.Name ?? "Unknown workspace", null);
+            }
+
+            var job = await _context.Jobs.FirstOrDefaultAsync(j => j.Id == invitation.ScopeId);
+            var workspace = job == null ? null : await _context.Workspaces.FirstOrDefaultAsync(w => w.Id == job.WorkspaceId);
+            return (job?.WorkspaceId ?? Guid.Empty, workspace?.Name ?? "Unknown workspace",
+                job == null ? null : $"{job.JobNumber} · {job.Title}");
         }
 
         private static InvitationResponse ToResponse(Invitation i) => new()

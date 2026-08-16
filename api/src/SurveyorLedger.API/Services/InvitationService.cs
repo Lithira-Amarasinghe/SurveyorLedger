@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SurveyorLedger.API.Models.Invitation;
+using SurveyorLedger.API.Models.Land;
 using SurveyorLedger.Core;
 using SurveyorLedger.Core.Exceptions;
 using SurveyorLedger.Data;
@@ -16,6 +17,16 @@ public interface IInvitationService
     /// existing account alike.
     /// </summary>
     Task<Invitation> CreateInvitationAsync(Guid workspaceId, Guid invitedByUserId, InvitationRequest request);
+
+    /// <summary>
+    /// The scope-agnostic core of CreateInvitationAsync, for callers outside the workspace
+    /// controller (e.g. JobService, when a job assignment target has no consent coverage).
+    /// No permission check here - the caller has already authorized the action for its own
+    /// scope; this only handles the find-or-create-user / invitation bookkeeping.
+    /// </summary>
+    Task<Invitation> CreateScopedInvitationAsync(
+        string scopeType, Guid scopeId, Guid roleId, string displayName, Guid invitedByUserId,
+        string email, string? firstName, string? lastName, string? phone, AddressDto? address);
 
     Task<List<Invitation>> GetPendingInvitationsAsync(Guid workspaceId, Guid callerUserId);
     Task RevokeInvitationAsync(Guid workspaceId, Guid invitationId, Guid callerUserId);
@@ -95,38 +106,49 @@ public class InvitationService : IInvitationService
         var role = await _context.Roles.FirstOrDefaultAsync(r => r.Name == request.Role && r.IsSystem)
             ?? throw new AppException(Constants.ErrorCodes.ValidationFailed, $"Role '{request.Role}' not found", 400);
 
-        var email = request.Email.Trim();
+        return await CreateScopedInvitationAsync(
+            Constants.ScopeTypes.Workspace, workspaceId, role.Id, workspace.Name, invitedByUserId,
+            request.Email, request.FirstName, request.LastName, request.Phone, request.Address);
+    }
+
+    public async Task<Invitation> CreateScopedInvitationAsync(
+        string scopeType, Guid scopeId, Guid roleId, string displayName, Guid invitedByUserId,
+        string email, string? firstName, string? lastName, string? phone, AddressDto? address)
+    {
+        var role = await _context.Roles.FirstOrDefaultAsync(r => r.Id == roleId)
+            ?? throw new AppException(Constants.ErrorCodes.ValidationFailed, "Role not found", 400);
+
+        email = email.Trim();
 
         var targetUser = await _context.Users
             .FirstOrDefaultAsync(u => u.Email != null && u.Email.ToUpper() == email.ToUpper() && u.IsActive);
 
         if (targetUser != null)
         {
-            var alreadyMember = await _context.UserAccesses.AnyAsync(ua =>
-                ua.UserId == targetUser.Id && ua.IsActive &&
-                ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId);
-            if (alreadyMember)
-                throw new AppException(Constants.ErrorCodes.AlreadyMember, "This person is already a member of the workspace.", 409);
+            var alreadyHasAccess = await _context.UserAccesses.AnyAsync(ua =>
+                ua.UserId == targetUser.Id && ua.IsActive && ua.ScopeType == scopeType && ua.ScopeId == scopeId);
+            if (alreadyHasAccess)
+                throw new AppException(Constants.ErrorCodes.AlreadyMember, "This person already has access at this scope.", 409);
         }
         else
         {
-            if (string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName))
+            if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(lastName))
                 throw new AppException(Constants.ErrorCodes.ValidationFailed, "FirstName and LastName are required for a new person.", 400);
 
             targetUser = new User
             {
                 Id = Guid.NewGuid(),
                 Email = email,
-                FirstName = request.FirstName.Trim(),
-                LastName = request.LastName.Trim(),
-                Phone = request.Phone?.Trim(),
+                FirstName = firstName.Trim(),
+                LastName = lastName.Trim(),
+                Phone = phone?.Trim(),
                 Address = new Address
                 {
-                    Street = request.Address?.Street,
-                    City = request.Address?.City,
-                    District = request.Address?.District,
-                    PostalCode = request.Address?.PostalCode,
-                    Country = request.Address?.Country
+                    Street = address?.Street,
+                    City = address?.City,
+                    District = address?.District,
+                    PostalCode = address?.PostalCode,
+                    Country = address?.Country
                 },
                 PasswordHash = null,
                 EmailVerified = false,
@@ -139,8 +161,8 @@ public class InvitationService : IInvitationService
 
         // A new invite for the same person/scope supersedes any existing pending one.
         var existingPending = await _context.Invitations
-            .Where(i => i.UserId == targetUser.Id && i.ScopeType == Constants.ScopeTypes.Workspace &&
-                i.ScopeId == workspaceId && i.Status == "Pending")
+            .Where(i => i.UserId == targetUser.Id && i.ScopeType == scopeType &&
+                i.ScopeId == scopeId && i.Status == "Pending")
             .ToListAsync();
         foreach (var stale in existingPending)
             stale.Status = "Revoked";
@@ -150,8 +172,8 @@ public class InvitationService : IInvitationService
             Id = Guid.NewGuid(),
             UserId = targetUser.Id,
             Email = email,
-            ScopeType = Constants.ScopeTypes.Workspace,
-            ScopeId = workspaceId,
+            ScopeType = scopeType,
+            ScopeId = scopeId,
             RoleId = role.Id,
             Token = Guid.NewGuid().ToString("N"),
             InvitedBy = invitedByUserId,
@@ -160,13 +182,18 @@ public class InvitationService : IInvitationService
             CreatedAt = DateTime.UtcNow
         };
 
-        invitation.EmailFailed = !await TrySendInviteEmailAsync(invitation, workspace.Name);
+        invitation.EmailFailed = !await TrySendInviteEmailAsync(invitation, displayName);
 
         await _context.Invitations.AddAsync(invitation);
-        AddAudit("InvitationCreated", "Invitation", invitation.Id, workspaceId, invitedByUserId, null, $"{email}:{role.Name}");
+        // AddAudit's workspaceId param is a real FK to Workspaces - only safe to pass scopeId
+        // when the scope actually is a workspace. A job-scoped invite has no workspace id to
+        // hand it, so the audit row is left unattributed to a workspace (still has ResourceId
+        // pointing at the Invitation itself).
+        AddAudit("InvitationCreated", "Invitation", invitation.Id,
+            scopeType == Constants.ScopeTypes.Workspace ? scopeId : null, invitedByUserId, null, $"{email}:{role.Name}");
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Invitation created for {Email} to workspace {WorkspaceId} by {UserId}", email, workspaceId, invitedByUserId);
+        _logger.LogInformation("Invitation created for {Email} to {ScopeType} {ScopeId} by {UserId}", email, scopeType, scopeId, invitedByUserId);
         return invitation;
     }
 
@@ -284,7 +311,7 @@ public class InvitationService : IInvitationService
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == invitation.UserId && u.IsActive)
             ?? throw new NotFoundException("User not found");
 
-        if (user.PasswordHash != null)
+        if (user.HasCompletedSignup)
             throw new AppException(Constants.ErrorCodes.UserAlreadyExists,
                 "This account already has a password - log in and accept the invitation from there.", 409);
 
@@ -303,6 +330,7 @@ public class InvitationService : IInvitationService
             };
         }
         user.PasswordHash = _passwordService.HashPassword(request.Password);
+        user.HasCompletedSignup = true;
         // Receiving and clicking the tokenized invite link is itself proof of email
         // ownership - equivalent trust to an OTP, so this skips a separate OTP round-trip.
         user.EmailVerified = true;
@@ -379,7 +407,11 @@ public class InvitationService : IInvitationService
         await _grantService.GrantAsync(invitation.UserId, invitation.RoleId, invitation.ScopeType, invitation.ScopeId, invitation.InvitedBy);
 
         invitation.Status = "Accepted";
-        AddAudit("InvitationAccepted", "Invitation", invitation.Id, invitation.ScopeId, invitation.UserId, null, invitation.ScopeType);
+        // Same FK constraint as CreateScopedInvitationAsync's AddAudit call - workspaceId is
+        // a real FK to Workspaces, only safe to pass when the scope actually is a workspace.
+        AddAudit("InvitationAccepted", "Invitation", invitation.Id,
+            invitation.ScopeType == Constants.ScopeTypes.Workspace ? invitation.ScopeId : null,
+            invitation.UserId, null, invitation.ScopeType);
         await _context.SaveChangesAsync();
     }
 

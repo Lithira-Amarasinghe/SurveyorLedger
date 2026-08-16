@@ -6,6 +6,7 @@ export interface CurrentWorkspace {
   description: string;
   createdAt: string;
   role: string;
+  roles: string[];
   tier: string;
 }
 

@@ -23,6 +23,9 @@ import { AuthService } from '../../core/auth.service';
 
           <h1 class="text-lg font-semibold text-neutral-900">Join {{ p.workspaceName }}</h1>
           <p class="text-sm text-neutral-600 mt-xs">You've been invited as <strong>{{ p.role }}</strong>.</p>
+          @if (p.jobLabel) {
+            <p class="text-xs text-neutral-500 mt-xs">For the job {{ p.jobLabel }} only - not full workspace access.</p>
+          }
 
           @if (mismatchEmail()) {
             <p class="text-sm text-primary-500 mt-lg">
@@ -234,7 +237,15 @@ export class AcceptInviteComponent implements OnInit {
     this.accepting.set(true);
 
     this.invitationService.accept(preview.invitationId).subscribe({
-      next: (result) => this.router.navigate(['/app/workspace', result.workspaceId]),
+      next: (result) => {
+        // A job-only grant doesn't include workspace.view, so the workspace overview would
+        // 403 for them - route straight to the job they were actually invited to instead.
+        if (result.jobId) {
+          this.router.navigate(['/app/job', result.workspaceId, result.jobId]);
+        } else {
+          this.router.navigate(['/app/workspace', result.workspaceId]);
+        }
+      },
       error: (err) => {
         this.accepting.set(false);
         const message = err.error?.message ?? 'Could not accept the invite.';

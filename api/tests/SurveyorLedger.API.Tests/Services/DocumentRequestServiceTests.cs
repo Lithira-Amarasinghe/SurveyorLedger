@@ -25,11 +25,15 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddScoped<IDocumentService, DocumentService>();
         services.AddScoped<IDocumentRequestService, DocumentRequestService>();
+        services.AddScoped<IInvitationService, InvitationService>();
+        services.AddSingleton<IEmailService, NoOpEmailService>();
+        services.AddSingleton<IPasswordService, PasswordService>();
         services.AddSingleton<IConfiguration>(
             new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["Storage:UploadsRootPath"] = Path.Combine(Path.GetTempPath(), $"sl-docreq-test-{Guid.NewGuid():N}")
+                    ["Storage:UploadsRootPath"] = Path.Combine(Path.GetTempPath(), $"sl-docreq-test-{Guid.NewGuid():N}"),
+                    ["AppSettings:UiBaseUrl"] = "https://test.local"
                 })
                 .Build());
     }

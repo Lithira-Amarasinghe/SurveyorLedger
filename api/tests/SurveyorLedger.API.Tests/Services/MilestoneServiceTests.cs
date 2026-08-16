@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Models.Job;
 using SurveyorLedger.API.Models.Milestone;
@@ -25,6 +26,13 @@ public class MilestoneServiceTests : WorkspaceIntegrationTestBase
     {
         services.AddScoped<IJobService, JobService>();
         services.AddScoped<IMilestoneService, MilestoneService>();
+        services.AddScoped<IInvitationService, InvitationService>();
+        services.AddSingleton<IEmailService, NoOpEmailService>();
+        services.AddSingleton<IPasswordService, PasswordService>();
+        services.AddSingleton<IConfiguration>(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["AppSettings:UiBaseUrl"] = "https://test.local" })
+                .Build());
     }
 
     private async Task SeedJobsAsync()

@@ -65,7 +65,7 @@ namespace SurveyorLedger.API.Controllers
                 Email = m.Email,
                 FirstName = m.FirstName,
                 LastName = m.LastName,
-                Role = m.Role,
+                Roles = m.Roles,
                 AssignedAt = m.AssignedAt,
                 IsOwner = m.IsOwner,
                 FullAccessScopeTypes = m.FullAccessScopeTypes,
@@ -108,19 +108,28 @@ namespace SurveyorLedger.API.Controllers
 
         /// <summary>Role names valid to pick for the given scope - "Workspace" for invite/role-change, "Job" for assigning someone to a job.</summary>
         [HttpGet("{id}/roles/eligible")]
-        public ActionResult<ApiResponse<List<string>>> GetEligibleRoles(Guid id, [FromQuery] string scope)
+        public async Task<ActionResult<ApiResponse<List<string>>>> GetEligibleRoles(Guid id, [FromQuery] string scope)
         {
-            var names = _workspaceService.GetEligibleRoleNames(scope);
+            var names = await _workspaceService.GetEligibleRoleNamesAsync(scope);
             return Ok(ApiResponse<List<string>>.Ok(names));
         }
 
-        [HttpPut("{id}/members/{userId}")]
-        public async Task<ActionResult<ApiResponse<object>>> UpdateMemberRole(Guid id, Guid userId, [FromBody] UpdateMemberRoleRequest request)
+        [HttpPost("{id}/members/{userId}/roles")]
+        public async Task<ActionResult<ApiResponse<object>>> AddMemberRole(Guid id, Guid userId, [FromBody] MemberRoleRequest request)
         {
             var callerUserId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
-            var role = await _workspaceService.UpdateMemberRoleAsync(id, userId, callerUserId, request.Role);
+            await _workspaceService.AddMemberRoleAsync(id, userId, callerUserId, request.Role);
 
-            return Ok(ApiResponse<object>.Ok(new { userId, role }));
+            return Ok(ApiResponse<object>.Ok(new { userId, role = request.Role }));
+        }
+
+        [HttpDelete("{id}/members/{userId}/roles/{roleName}")]
+        public async Task<IActionResult> RemoveMemberRole(Guid id, Guid userId, string roleName)
+        {
+            var callerUserId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
+            await _workspaceService.RemoveMemberRoleAsync(id, userId, callerUserId, roleName);
+
+            return NoContent();
         }
 
         [HttpDelete("{id}/members/{userId}")]
@@ -140,7 +149,7 @@ namespace SurveyorLedger.API.Controllers
             CreatedAt = w.Workspace.CreatedAt,
             IsActive = w.Workspace.IsActive,
             Tier = w.Tier,
-            Role = w.Role
+            Roles = w.Roles
         };
     }
 }

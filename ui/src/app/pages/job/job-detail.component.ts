@@ -7,7 +7,7 @@ import { Observable, Subject, forkJoin } from 'rxjs';
 import { Job, JobParticipant, JobService } from '../../core/job.service';
 import { Land, addressLine } from '../../core/land.service';
 import { AuthService } from '../../core/auth.service';
-import { PersonWithRole } from './add-person-widget/add-person-widget.component';
+import { InviteByEmail, PersonWithRole } from './add-person-widget/add-person-widget.component';
 import { Milestone, MilestoneService } from '../../core/milestone.service';
 import { Document, DocumentService } from '../../core/document.service';
 import { DocumentRequest, DocumentRequestService } from '../../core/document-request.service';
@@ -85,22 +85,37 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
 
         <div class="card">
           <h2 class="text-sm font-semibold text-neutral-900 mb-md">People</h2>
-          @if (participants().length > 0) {
+          @if (groupedParticipants().length > 0) {
             <div class="space-y-xs mb-md">
-              @for (p of participants(); track p.userId) {
+              @for (g of groupedParticipants(); track g.userId) {
                 <div class="flex items-center justify-between px-md py-sm rounded bg-neutral-50">
-                  <div>
-                    <span class="text-sm text-neutral-900">{{ p.firstName }} {{ p.lastName }}</span>
-                    <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600 ml-sm">{{ p.role }}</span>
+                  <div class="flex items-center flex-wrap gap-xs">
+                    <span class="text-sm text-neutral-900">{{ g.firstName }} {{ g.lastName }}</span>
+                    @for (role of g.roles; track role) {
+                      <span class="text-xs pl-sm pr-xs py-xs rounded bg-neutral-100 text-neutral-600 flex items-center gap-xs">
+                        {{ role }}
+                        <button type="button" class="text-neutral-400 hover:text-primary-500" title="Remove this role" (click)="removeParticipant({ userId: g.userId, role })">
+                          ×
+                        </button>
+                      </span>
+                    }
+                    @if (jobRoleOptions(g.roles).length > 0) {
+                      <select class="input-field w-28 py-xs text-xs" [ngModel]="''" (ngModelChange)="addRoleToParticipant(g.userId, $event)">
+                        <option value="" disabled selected>+ role</option>
+                        @for (r of jobRoleOptions(g.roles); track r) {
+                          <option [value]="r">{{ r }}</option>
+                        }
+                      </select>
+                    }
                   </div>
-                  <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="removeParticipant(p)">
-                    Remove
-                  </button>
                 </div>
               }
             </div>
           }
-          <app-add-person-widget #personWidget [workspaceId]="workspaceId" (added)="onPersonAdded($event)" />
+          @if (personMessage()) {
+            <p class="text-xs text-primary-600 mb-sm">{{ personMessage() }}</p>
+          }
+          <app-add-person-widget #personWidget [workspaceId]="workspaceId" (added)="onPersonAdded($event)" (invited)="onPersonInvited($event)" />
         </div>
 
         <div class="card">
@@ -418,7 +433,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                 } @else if (requestTargetKind === 'person') {
                   <select class="input-field text-sm" [(ngModel)]="requestTargetUserIdDraft">
                     <option value="" disabled>Select a person</option>
-                    @for (p of participants(); track p.userId) {
+                    @for (p of uniqueParticipants(); track p.userId) {
                       <option [value]="p.userId">{{ p.firstName }} {{ p.lastName }}</option>
                     }
                   </select>
@@ -479,6 +494,21 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   jobId = '';
   job = signal<Job | null>(null);
   participants = signal<JobParticipant[]>([]);
+  /** One entry per person, for pickers that target a person rather than a specific role-grant. */
+  uniqueParticipants = computed(() => {
+    const seen = new Set<string>();
+    return this.participants().filter(p => (seen.has(p.userId) ? false : (seen.add(p.userId), true)));
+  });
+  /** One row per person with all their job roles collected, for the People card. */
+  groupedParticipants = computed(() => {
+    const byUser = new Map<string, { userId: string; firstName: string; lastName: string; roles: string[] }>();
+    for (const p of this.participants()) {
+      const g = byUser.get(p.userId);
+      if (g) g.roles.push(p.role);
+      else byUser.set(p.userId, { userId: p.userId, firstName: p.firstName, lastName: p.lastName, roles: [p.role] });
+    }
+    return [...byUser.values()];
+  });
   lands = signal<Land[]>([]);
   milestones = signal<Milestone[]>([]);
   milestoneStatuses = MILESTONE_STATUSES;
@@ -568,7 +598,11 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   }
 
   ngOnInit(): void {
-    this.workspaceId = this.currentWorkspace.current()?.workspaceId ?? '';
+    // Falls back to the route param for /app/job/:workspaceId/:jobId (job-only access, no
+    // CurrentWorkspaceService set - see jobAccessGuard) - the normal workspace-shell route
+    // still resolves via CurrentWorkspaceService as before.
+    this.workspaceId = this.currentWorkspace.current()?.workspaceId
+      ?? this.route.snapshot.paramMap.get('workspaceId') ?? '';
     this.jobId = this.route.snapshot.paramMap.get('jobId') ?? '';
     this.fetch();
   }
@@ -690,20 +724,51 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     });
   }
 
+  personMessage = signal('');
+
   onPersonAdded({ person, role }: PersonWithRole): void {
     this.jobService.addParticipant(this.workspaceId, this.jobId, person.userId, role).subscribe({
-      next: () => {
+      next: (result) => {
         this.personWidget?.markAdded();
-        this.jobService.getParticipants(this.workspaceId, this.jobId).subscribe(participants => this.participants.set(participants));
+        if (result.status === 'invited') {
+          this.personMessage.set(`Invitation sent to ${person.name} - pending acceptance.`);
+        } else {
+          this.personMessage.set('');
+          this.jobService.getParticipants(this.workspaceId, this.jobId).subscribe(participants => this.participants.set(participants));
+        }
       },
       error: (err) => this.personWidget?.markFailed(err.error?.message ?? 'Could not add person.')
     });
   }
 
-  removeParticipant(p: JobParticipant): void {
-    this.jobService.removeParticipant(this.workspaceId, this.jobId, p.userId).subscribe({
-      next: () => this.participants.update(list => list.filter(x => x.userId !== p.userId)),
+  onPersonInvited({ email, firstName, lastName, phone, role }: InviteByEmail): void {
+    this.jobService.inviteParticipant(this.workspaceId, this.jobId, role, email, firstName, lastName, phone).subscribe({
+      next: () => {
+        this.personWidget?.markAdded();
+        this.personMessage.set(`Invitation sent to ${email} - pending acceptance.`);
+      },
+      error: (err) => this.personWidget?.markFailed(err.error?.message ?? 'Could not send invitation.')
+    });
+  }
+
+  removeParticipant(p: { userId: string; role: string }): void {
+    this.jobService.removeParticipant(this.workspaceId, this.jobId, p.userId, p.role).subscribe({
+      next: () => this.participants.update(list => list.filter(x => !(x.userId === p.userId && x.role === p.role))),
       error: (err) => this.error.set(err.error?.message ?? 'Could not remove participant.')
+    });
+  }
+
+  /** Roles this job scope allows that the person doesn't already hold - mirrors WorkspaceService.GetEligibleRoleNames('Job'). */
+  private readonly allJobRoles = ['Surveyor', 'Client'];
+  jobRoleOptions(heldRoles: string[]): string[] {
+    return this.allJobRoles.filter(r => !heldRoles.includes(r));
+  }
+
+  addRoleToParticipant(userId: string, role: string): void {
+    if (!role) return;
+    this.jobService.addParticipant(this.workspaceId, this.jobId, userId, role).subscribe({
+      next: () => this.jobService.getParticipants(this.workspaceId, this.jobId).subscribe(participants => this.participants.set(participants)),
+      error: (err) => this.error.set(err.error?.message ?? 'Could not add role.')
     });
   }
 

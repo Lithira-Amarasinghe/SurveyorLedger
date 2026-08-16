@@ -416,6 +416,7 @@ public class AuthService : IAuthService
             EmailVerified = true,
             EmailVerifiedAt = DateTime.UtcNow,
             IsActive = true,
+            HasCompletedSignup = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };

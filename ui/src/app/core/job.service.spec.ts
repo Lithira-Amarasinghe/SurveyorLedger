@@ -53,9 +53,9 @@ describe('JobService', () => {
     req.flush({ success: true, data: {} });
   });
 
-  it('removeParticipant() deletes with no body', () => {
-    service.removeParticipant(workspaceId, 'j1', 'u2').subscribe();
-    const req = httpMock.expectOne(`${base}/j1/participants/u2`);
+  it('removeParticipant() deletes the given role for the user', () => {
+    service.removeParticipant(workspaceId, 'j1', 'u2', 'Surveyor').subscribe();
+    const req = httpMock.expectOne(`${base}/j1/participants/u2/roles/Surveyor`);
     expect(req.request.method).toBe('DELETE');
     req.flush(null);
   });
@@ -80,5 +80,19 @@ describe('JobService', () => {
     const req = httpMock.expectOne(`${base}/j1/lands/land1`);
     expect(req.request.method).toBe('DELETE');
     req.flush(null);
+  });
+
+  it('getMine() gets the cross-workspace jobs list', () => {
+    service.getMine().subscribe();
+    const req = httpMock.expectOne(`${environment.apiBaseUrl}/jobs/mine`);
+    expect(req.request.method).toBe('GET');
+    req.flush({ success: true, data: [] });
+  });
+
+  it('getStandalone() gets a job by id with no workspace prefix', () => {
+    service.getStandalone('j1').subscribe();
+    const req = httpMock.expectOne(`${environment.apiBaseUrl}/jobs/j1`);
+    expect(req.request.method).toBe('GET');
+    req.flush({ success: true, data: {} });
   });
 });

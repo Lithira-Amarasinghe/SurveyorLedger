@@ -95,8 +95,8 @@ public class DocumentRequestService : IDocumentRequestService
 
         if (request.TargetRole != null)
         {
-            var callerRole = await _access.GetEffectiveJobRoleAsync(callerUserId, workspaceId, jobId);
-            if (callerRole != request.TargetRole)
+            var callerRoles = await _access.GetEffectiveJobRolesAsync(callerUserId, workspaceId, jobId);
+            if (!callerRoles.Contains(request.TargetRole))
                 throw new ForbiddenException($"This request is for the {request.TargetRole} role.");
         }
 

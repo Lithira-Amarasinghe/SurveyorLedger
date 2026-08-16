@@ -16,6 +16,13 @@ public class User
     public bool IsActive { get; set; } = true;
 
     /// <summary>
+    /// Whether this account has completed signup via any method (password set, or a future
+    /// OAuth login linked) - distinct from PasswordHash != null, which only means "has a
+    /// password" and would be permanently false for an OAuth-only account.
+    /// </summary>
+    public bool HasCompletedSignup { get; set; }
+
+    /// <summary>
     /// Consecutive failed login attempts, reset on any successful login. Drives the
     /// temporary lockout below - the per-account half of brute-force protection (the
     /// per-IP rate limiter in Program.cs is the other half; neither covers the other's

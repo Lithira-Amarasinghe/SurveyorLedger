@@ -181,7 +181,10 @@ describe('addressLine', () => {
     ownerId: null,
     ownerName: null,
     ownerPhone: null,
-    ownerEmail: null
+    ownerEmail: null,
+    latitude: null,
+    longitude: null,
+    hasActiveLocationShareLink: false
   };
 
   it('joins street and city with a comma', () => {

@@ -35,6 +35,9 @@ const STATUS_STYLES: Record<string, string> = {
               <div>
                 <p class="text-sm font-medium text-neutral-900">{{ inv.workspaceName }}</p>
                 <p class="text-xs text-neutral-500">Role: {{ inv.role }}</p>
+                @if (inv.jobLabel) {
+                  <p class="text-xs text-neutral-500">Job only: {{ inv.jobLabel }}</p>
+                }
               </div>
               <div class="flex items-center gap-sm">
                 <span class="text-xs px-sm py-xs rounded" [class]="statusStyle(inv.status)">{{ inv.status }}</span>

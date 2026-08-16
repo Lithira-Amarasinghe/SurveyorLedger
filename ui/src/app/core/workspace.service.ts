@@ -11,7 +11,7 @@ export interface Workspace {
   createdAt: string;
   isActive: boolean;
   tier: string;
-  role: string;
+  roles: string[];
 }
 
 /** An extra scope a member holds access to beyond the workspace itself - today, a specific job. */
@@ -27,7 +27,7 @@ export interface Member {
   email: string;
   firstName: string;
   lastName: string;
-  role: string;
+  roles: string[];
   assignedAt: string;
   isOwner: boolean;
   /** Scope types this member's role grants blanket access to (e.g. "Job" for Admin). */
@@ -85,8 +85,12 @@ export class WorkspaceService {
       .pipe(map(res => res.data));
   }
 
-  updateMemberRole(workspaceId: string, userId: string, role: string): Observable<void> {
-    return this.http.put<void>(`${this.apiUrl}/${workspaceId}/members/${userId}`, { role });
+  addMemberRole(workspaceId: string, userId: string, role: string): Observable<void> {
+    return this.http.post<void>(`${this.apiUrl}/${workspaceId}/members/${userId}/roles`, { role });
+  }
+
+  removeMemberRole(workspaceId: string, userId: string, role: string): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/${workspaceId}/members/${userId}/roles/${role}`);
   }
 
   removeMember(workspaceId: string, userId: string): Observable<void> {

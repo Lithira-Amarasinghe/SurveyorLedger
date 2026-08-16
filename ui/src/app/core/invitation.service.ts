@@ -24,6 +24,8 @@ export interface MyInvitation {
   expiresAt: string;
   createdAt: string;
   hasLogin: boolean;
+  /** Set only for a job-scoped invite - joining one job, not the whole workspace. */
+  jobLabel?: string;
 }
 
 export interface InvitationPreview {
@@ -33,11 +35,15 @@ export interface InvitationPreview {
   role: string;
   expired: boolean;
   hasLogin: boolean;
+  /** Set only for a job-scoped invite - joining one job, not the whole workspace. */
+  jobLabel?: string;
 }
 
 export interface AcceptInvitationResult {
   workspaceId: string;
   role: string;
+  /** Set only for a job-scoped invite - route to the job page, not the workspace overview. */
+  jobId?: string;
 }
 
 export interface AddMemberRequest {

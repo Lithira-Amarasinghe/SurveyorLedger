@@ -36,7 +36,7 @@ public class WorkspaceResponse
     public required string Tier { get; set; }
 
     /// <summary>
-    /// The caller's role name on this workspace.
+    /// The caller's role name(s) on this workspace.
     /// </summary>
-    public required string Role { get; set; }
+    public required List<string> Roles { get; set; }
 }

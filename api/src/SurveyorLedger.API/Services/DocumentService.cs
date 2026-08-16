@@ -50,7 +50,7 @@ public class DocumentService : IDocumentService
     {
         await FindJobAsync(workspaceId, jobId);
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
-        var callerRole = await _access.GetEffectiveJobRoleAsync(callerUserId, workspaceId, jobId);
+        var callerRoles = await _access.GetEffectiveJobRolesAsync(callerUserId, workspaceId, jobId);
 
         var documents = await _context.Documents
             .Include(d => d.UploadedByUser)
@@ -58,7 +58,7 @@ public class DocumentService : IDocumentService
             .OrderByDescending(d => d.CreatedAt)
             .ToListAsync();
 
-        return documents.Where(d => IsVisible(d, callerRole)).ToList();
+        return documents.Where(d => IsVisible(d, callerRoles)).ToList();
     }
 
     public async Task<Document> UploadAsync(Guid workspaceId, Guid callerUserId, Guid jobId, IFormFile file, DocumentCategory category, DocumentVisibility visibility, string? displayFileName = null)
@@ -117,10 +117,10 @@ public class DocumentService : IDocumentService
     {
         await FindJobAsync(workspaceId, jobId);
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
-        var callerRole = await _access.GetEffectiveJobRoleAsync(callerUserId, workspaceId, jobId);
+        var callerRoles = await _access.GetEffectiveJobRolesAsync(callerUserId, workspaceId, jobId);
 
         var document = await FindDocumentAsync(jobId, documentId);
-        if (!IsVisible(document, callerRole))
+        if (!IsVisible(document, callerRoles))
             throw new NotFoundException("Document not found");
 
         var content = await _fileStorageService.OpenAsync(document.StoredPath, CancellationToken.None);
@@ -150,8 +150,8 @@ public class DocumentService : IDocumentService
         return document;
     }
 
-    private static bool IsVisible(Document document, string callerRole) =>
-        callerRole != Constants.SystemRoles.Client || document.Visibility == DocumentVisibility.ClientVisible;
+    private static bool IsVisible(Document document, List<string> callerRoles) =>
+        !callerRoles.Contains(Constants.SystemRoles.Client) || document.Visibility == DocumentVisibility.ClientVisible;
 
     private async Task<Job> FindJobAsync(Guid workspaceId, Guid jobId)
     {

@@ -70,6 +70,6 @@ export class PersonService {
   }
 
   private toPerson(m: Member): Person {
-    return { userId: m.userId, name: `${m.firstName} ${m.lastName}`, roleLabel: m.role };
+    return { userId: m.userId, name: `${m.firstName} ${m.lastName}`, roleLabel: m.roles.join(', ') };
   }
 }
