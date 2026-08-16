@@ -169,12 +169,6 @@ using (var scope = app.Services.CreateScope())
         "UPDATE UserAccesses SET RoleId = '00000000-0000-0000-0000-000000000005' " +
         "WHERE ScopeType = 'Workspace' AND RoleId = '00000000-0000-0000-0000-000000000004'");
 
-    // HasCompletedSignup backfill (AddUserHasCompletedSignup migration) - accounts
-    // that already had a password before this column existed completed signup
-    // already. Safe every startup: WHERE clause matches zero rows once applied.
-    await dbContext.Database.ExecuteSqlRawAsync(
-        "UPDATE Users SET HasCompletedSignup = 1 WHERE PasswordHash IS NOT NULL AND HasCompletedSignup = 0");
-
     var casbinService = scope.ServiceProvider.GetRequiredService<ICasbinService>();
     await casbinService.InitializeAsync();
 }
