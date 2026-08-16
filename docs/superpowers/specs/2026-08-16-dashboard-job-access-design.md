@@ -57,7 +57,20 @@ rewrite - three places in this feature would naturally get hardcoded to
 "Workspace vs Job" if built carelessly. Each is instead built on the generic
 ancestor-chain walk already established by `HasConsentCoverageAsync`
 (`ScopedAccessService`) and `RoleScopes` (DB-driven role↔scope mapping, no
-hardcoded switch) earlier this session:
+hardcoded switch) earlier this session.
+
+**Definition, stated once, reused everywhere below: a "qualifying grant" at
+scope level L means the user holds a role at L whose permissions include
+viewing this job** (`job.view_all` at a level above Job, or simply existing
+at Job level, since every Job-scope role - Surveyor, Client - already
+carries `job:view` on its own grant). This is deliberately *not* "holds any
+`UserAccess` row at L" - a workspace `Member` role has a workspace-scope row
+but no `job.view_all`, so it does not qualify a job as Workspace-level
+access unless the user also holds `job.view_all` specifically. Getting this
+wrong would either hide jobs a real member can see, or claim access to jobs
+they can't actually open - either way, this single definition is the thing
+every level's query must implement correctly, not a detail left to
+per-level judgment.
 
 1. **`AccessScopeType` is the real `Constants.ScopeTypes` value the grant was
    found at - `"Job"`, `"Workspace"`, or (later) `"Organization"` - not a
@@ -104,7 +117,11 @@ boolean, which holds regardless of how many levels exist above Job.
 
 ## Backend
 
-**`Constants.cs`**: add `public static readonly string[] ScopeHierarchy = { Organization, Workspace, Job };`
+**`Constants.cs`**: add
+```csharp
+public static readonly string[] ScopeHierarchy =
+    { ScopeTypes.Organization, ScopeTypes.Workspace, ScopeTypes.Job };
+```
 next to the existing `ScopeTypes` class (root → leaf order, the one place
 this is declared).
 
@@ -120,7 +137,10 @@ public record AccessibleJob(
     Guid WorkspaceId, string WorkspaceName, string AccessScopeType);
 ```
 Implementation walks `Constants.ScopeHierarchy` broadest-first, skipping
-`Organization` (no backing data yet) until that level exists:
+`Organization` (no backing data yet) until that level exists. **Dedupe by
+JobId as it goes - once a job is claimed at a broader level, narrower levels
+never re-add or overwrite it**, so a job never appears twice and always
+reports its true broadest access level:
 1. **Workspace-level**: reuse the existing `job.view_all`-role-per-workspace
    check (already written 2-3 times this session in `WorkspaceService`/
    `JobService` - worth factoring into one shared helper here as part of
@@ -129,11 +149,32 @@ Implementation walks `Constants.ScopeHierarchy` broadest-first, skipping
 2. **Job-level**: `AccessibleJobIds(userId)` minus job ids already claimed at
    Workspace level → `AccessScopeType = Constants.ScopeTypes.Job`.
 
+**Not a tenant-isolation violation, despite querying across workspaces**:
+this endpoint is deliberately user-scoped, not workspace-scoped - every job
+it returns is independently permission-checked via the level walk above, the
+same category of exception `GetUserWorkspacesAsync` and `GetMyInvitationsAsync`
+already are (both also query across every workspace for "what does this
+specific caller have"). The hard rule from `.claude/rules.md` ("every
+tenant-scoped query goes through `WorkspaceId` filtering") is about
+*request-scoped* endpoints that take a workspace as context - this one
+takes a user as context and filters by their access instead. Worth a code
+comment at the query site saying exactly this, so a future reviewer doesn't
+mistake it for a missed `WorkspaceId` filter.
+
+**No schema/migration changes** - `ScopeHierarchy` is a code constant, no DB
+column. Reuses existing indexes (`UserAccesses.UserId`, `RolePermissions.RoleId`)
+for both queries - no new index needed at current scale.
+
 **New endpoint** `GET /api/jobs/{jobId}` (not nested under `/workspace/{id}`)
 - resolves the job's `WorkspaceId` internally, runs the same
 `EnsureJobAccessAsync` check `JobService.GetByIdAsync` already does (already
 proven to work for a job-only Client - no `workspace.view` involved), returns
-the job plus its workspace name for display context.
+the job plus its workspace name for display context. **Same 404-vs-403
+behavior as the existing nested route**: unknown `jobId` → 404 (job doesn't
+exist); real job, no access → 403 (exists, not yours) - matches
+`JobService.GetByIdAsync`'s existing `FindJobAsync`-then-`EnsureJobAccessAsync`
+order, so this new entry point doesn't introduce a second, inconsistent
+information-disclosure behavior for the same resource.
 
 **New endpoint** `GET /api/jobs/mine` - wraps `GetAccessibleJobsAsync`, backs
 the dashboard's Jobs section/filtered view.
