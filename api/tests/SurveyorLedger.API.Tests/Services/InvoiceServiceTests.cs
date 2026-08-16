@@ -31,7 +31,7 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
     {
         _clientService = GetService<IClientService>();
         _invoiceService = GetService<IInvoiceService>();
-        var client = await _clientService.CreateAsync(AdminId, new ClientRequest { Name = "Acme Ltd" });
+        var client = await _clientService.CreateAsync(WorkspaceId, AdminId, new ClientRequest { Name = "Acme Ltd" });
         _clientId = client.Id;
 
         var invoice = await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
@@ -131,9 +131,9 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
     public async Task ClientService_SearchAsync_IsGlobal_NotWorkspaceFiltered()
     {
         var clientService = GetService<IClientService>();
-        var created = await clientService.CreateAsync(AdminId, new ClientRequest { Name = "Global Client", Email = "global@test.local" });
+        var created = await clientService.CreateAsync(WorkspaceId, AdminId, new ClientRequest { Name = "Global Client", Email = "global@test.local" });
 
-        var results = await clientService.SearchAsync(AdminId, "Global");
+        var results = await clientService.SearchAsync(WorkspaceId, AdminId, "Global");
 
         Assert.Contains(results, p => p.Id == created.Id);
     }

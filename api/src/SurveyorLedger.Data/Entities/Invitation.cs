@@ -1,7 +1,7 @@
 namespace SurveyorLedger.Data.Entities;
 
 /// <summary>
-/// A pending grant: create the User (if needed) and the Invitation together, up front,
+/// A pending grant: create the Person (if needed) and the Invitation together, up front,
 /// but never touch UserAccess until they accept. ScopeType/ScopeId mirrors UserAccess's
 /// shape - today always ("Workspace", workspaceId), but consistent with the rest of the
 /// system if a different scope type is ever invited into directly.

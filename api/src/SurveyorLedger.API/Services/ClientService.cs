@@ -9,8 +9,8 @@ namespace SurveyorLedger.API.Services;
 
 public interface IClientService
 {
-    Task<Person> CreateAsync(Guid callerUserId, ClientRequest request);
-    Task<List<Person>> SearchAsync(Guid callerUserId, string? query);
+    Task<Person> CreateAsync(Guid workspaceId, Guid callerUserId, ClientRequest request);
+    Task<List<Person>> SearchAsync(Guid workspaceId, Guid callerUserId, string? query);
     Task<Person> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid clientId);
     Task<Person> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid clientId, ClientRequest request);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid clientId);
@@ -43,8 +43,10 @@ public class ClientService : IClientService
         _logger = logger;
     }
 
-    public async Task<Person> CreateAsync(Guid callerUserId, ClientRequest request)
+    public async Task<Person> CreateAsync(Guid workspaceId, Guid callerUserId, ClientRequest request)
     {
+        await _access.EnsureAllowedAsync(callerUserId, "billingclient", "create", workspaceId);
+
         var person = new Person
         {
             Id = Guid.NewGuid(),
@@ -65,8 +67,10 @@ public class ClientService : IClientService
         return person;
     }
 
-    public async Task<List<Person>> SearchAsync(Guid callerUserId, string? query)
+    public async Task<List<Person>> SearchAsync(Guid workspaceId, Guid callerUserId, string? query)
     {
+        await _access.EnsureListAllowedAsync(callerUserId, workspaceId);
+
         var people = _context.People.AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(query))

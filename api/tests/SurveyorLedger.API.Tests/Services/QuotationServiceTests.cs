@@ -32,7 +32,7 @@ public class QuotationServiceTests : WorkspaceIntegrationTestBase
     {
         _clientService = GetService<IClientService>();
         _quotationService = GetService<IQuotationService>();
-        var client = await _clientService.CreateAsync(AdminId, new ClientRequest { Name = "Acme Ltd" });
+        var client = await _clientService.CreateAsync(WorkspaceId, AdminId, new ClientRequest { Name = "Acme Ltd" });
         _clientId = client.Id;
     }
 

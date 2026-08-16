@@ -24,14 +24,14 @@ namespace SurveyorLedger.API.Controllers
         [HttpGet]
         public async Task<ActionResult<ApiResponse<List<ClientResponse>>>> Search(Guid workspaceId, [FromQuery] string? query)
         {
-            var clients = await _clientService.SearchAsync(CallerId(), query);
+            var clients = await _clientService.SearchAsync(workspaceId, CallerId(), query);
             return Ok(ApiResponse<List<ClientResponse>>.Ok(clients.Select(ToResponse).ToList()));
         }
 
         [HttpPost]
         public async Task<ActionResult<ApiResponse<ClientResponse>>> Create(Guid workspaceId, [FromBody] ClientRequest request)
         {
-            var client = await _clientService.CreateAsync(CallerId(), request);
+            var client = await _clientService.CreateAsync(workspaceId, CallerId(), request);
             return CreatedAtAction(nameof(GetById), new { workspaceId, id = client.Id }, ApiResponse<ClientResponse>.Ok(ToResponse(client)));
         }
 

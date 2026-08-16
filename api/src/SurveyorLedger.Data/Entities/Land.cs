@@ -19,7 +19,7 @@ public class Land
     /// <summary>
     /// Owner reference - either OwnerId (an existing account, any workspace or none) or
     /// the plain OwnerName/Phone/Email fields, never both. Decoupled from workspace
-    /// membership entirely: OwnerId just needs a User row to exist, not access.
+    /// membership entirely: OwnerId just needs a Person row to exist, not access.
     /// </summary>
     public Guid? OwnerId { get; set; }
     public string? OwnerName { get; set; }
