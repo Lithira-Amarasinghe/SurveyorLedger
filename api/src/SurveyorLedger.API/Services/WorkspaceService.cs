@@ -181,7 +181,7 @@ public class WorkspaceService : IWorkspaceService
 
         var accesses = await _context.UserAccesses
             .Where(ua => ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId)
-            .Include(ua => ua.User)
+            .Include(ua => ua.User).ThenInclude(a => a.Person)
             .Include(ua => ua.Role)
             .ToListAsync();
 
@@ -218,7 +218,7 @@ public class WorkspaceService : IWorkspaceService
             .ToListAsync();
         var jobScopes = await _context.UserAccesses
             .Include(ua => ua.Role)
-            .Include(ua => ua.User)
+            .Include(ua => ua.User).ThenInclude(a => a.Person)
             .Where(ua => ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Job && workspaceJobIds.Contains(ua.ScopeId))
             .ToListAsync();
 
@@ -253,7 +253,7 @@ public class WorkspaceService : IWorkspaceService
             {
                 var first = g.OrderBy(ua => ua.AssignedAt).First();
                 return new WorkspaceMember(
-                    first.UserId, first.User.Email!, first.User.FirstName, first.User.LastName,
+                    first.UserId, first.User.Person.Email!, first.User.Person.FirstName, first.User.Person.LastName,
                     g.Select(ua => ua.Role.Name).ToList(), first.AssignedAt, first.UserId == workspace.OwnerId,
                     g.SelectMany(ua => fullAccessByRole.GetValueOrDefault(ua.RoleId, new List<string>())).Distinct().ToList(),
                     jobScopesByUser.GetValueOrDefault(first.UserId, new List<MemberScopeGrant>()));
@@ -272,7 +272,7 @@ public class WorkspaceService : IWorkspaceService
             {
                 var first = g.OrderBy(s => s.AssignedAt).First();
                 return new WorkspaceMember(
-                    first.UserId, first.User.Email!, first.User.FirstName, first.User.LastName,
+                    first.UserId, first.User.Person.Email!, first.User.Person.FirstName, first.User.Person.LastName,
                     new List<string>(), first.AssignedAt, false,
                     g.SelectMany(s => fullAccessByRole.GetValueOrDefault(s.RoleId, new List<string>())).Distinct().ToList(),
                     jobScopesByUser.GetValueOrDefault(first.UserId, new List<MemberScopeGrant>()));

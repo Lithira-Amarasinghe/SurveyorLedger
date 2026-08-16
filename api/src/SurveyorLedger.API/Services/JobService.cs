@@ -207,12 +207,12 @@ public class JobService : IJobService
             return new ParticipantAddResult(access, null);
         }
 
-        var targetUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == targetUserId && u.IsActive)
-            ?? throw new NotFoundException("User not found");
+        var targetPerson = await _context.People.FirstOrDefaultAsync(p => p.Id == targetUserId && p.IsActive)
+            ?? throw new NotFoundException("Person not found");
 
         var invitation = await _invitationService.CreateScopedInvitationAsync(
             Constants.ScopeTypes.Job, jobId, jobRole.Id, JobDisplayName(job), callerUserId,
-            targetUser.Email!, targetUser.FirstName, targetUser.LastName, targetUser.Phone, null);
+            targetPerson.Email!, targetPerson.FirstName, targetPerson.LastName, targetPerson.Phone, null);
         return new ParticipantAddResult(null, invitation);
     }
 
@@ -255,7 +255,7 @@ public class JobService : IJobService
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
 
         return await _context.UserAccesses
-            .Include(ua => ua.User)
+            .Include(ua => ua.User).ThenInclude(a => a.Person)
             .Include(ua => ua.Role)
             .Where(ua => ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == jobId && ua.IsActive)
             .OrderBy(ua => ua.AssignedAt)
