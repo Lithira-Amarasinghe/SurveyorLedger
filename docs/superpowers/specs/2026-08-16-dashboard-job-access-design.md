@@ -33,7 +33,8 @@ guard-safe route to actually view it.
   job — workspace-derived and direct — into one list, workspace name shown
   per row), "Workspace" (workspaces section only, direct-access jobs hidden -
   they have no workspace to list under). Within the flattened Jobs view,
-  narrow further by workspace, status, and access type (Member/Job-only).
+  narrow further by workspace, status, and access scope type (`Workspace` /
+  `Job`, whatever values are actually present - see "Scaling mechanism").
 - **New route `/app/job/:jobId`, not a patch to `workspaceResolveGuard`.**
   Modifying the existing guard to conditionally allow job-only access risks
   leaking workspace-shell nav (Overview/Land/Billing/Members/Roles tabs) to
@@ -58,27 +59,43 @@ ancestor-chain walk already established by `HasConsentCoverageAsync`
 (`ScopedAccessService`) and `RoleScopes` (DB-driven role↔scope mapping, no
 hardcoded switch) earlier this session:
 
-1. **`AccessType` is not a fixed two-value enum.** It's "the highest scope
-   level in this job's ancestor chain at which the user holds a qualifying
-   grant" - computed by walking the chain (`Job → Workspace → [Org, when it
-   exists]`) top-down and returning the first match. Today that walk only has
-   two rungs, so the practical values are `Workspace` (member at-or-above the
-   job) or `Job` (direct grant only, nothing above). Adding Org means the walk
-   gains a third rung and a third possible value (`Org`) - the field, the
-   query, and the UI that renders it don't change, they just start seeing a
-   value they already knew was theoretically possible.
-2. **`GetMyJobsAsync`'s union is a chain walk, not two hardcoded branches.**
-   Expressed as: "for each level above and including Job, does the user hold
-   a qualifying grant there" - resolve top-down, stop at the first hit,
-   dedupe by job. Concretely today that's still two checks (workspace
-   `job.view_all` role, direct job-scope grant) because that's all the chain
-   has - but written as a loop/resolver over the chain list, not two
-   independently-hand-written LINQ branches, so a third level is one more
-   iteration, not new code.
-3. **The dashboard's Jobs-view sub-filter list ("access type") is populated
-   from whatever `AccessType` values are actually present in the fetched
-   data, not a hardcoded two-item toggle.** An Org value showing up later
-   just becomes a third filter chip with no UI code change.
+1. **`AccessScopeType` is the real `Constants.ScopeTypes` value the grant was
+   found at - `"Job"`, `"Workspace"`, or (later) `"Organization"` - not a
+   synthetic `Member`/`JobOnly` label.** `Constants.ScopeTypes.Organization`
+   already exists in `Constants.cs`, unused - this feature is the first
+   consumer that gives it meaning. Reusing the real scope-type string instead
+   of inventing a parallel label means there's only ever one vocabulary for
+   "what level is this" in the codebase, and it's already the field returned
+   everywhere else (`UserAccess.ScopeType`, `Invitation.ScopeType`, `RoleScope.ScopeType`).
+2. **A declared root-to-leaf order, not an implicit one.** Add
+   `Constants.ScopeHierarchy = [Organization, Workspace, Job]` (root → leaf) -
+   the single place hierarchy order is written down. `GetAccessibleJobsAsync`
+   walks it broadest-first: for each level, find jobs visible via a
+   qualifying grant *at that level*, record them with `AccessScopeType =
+   that level`, skip jobs a broader level already claimed. Concretely today
+   (`Organization` skipped, no data behind it yet):
+   - `Workspace`: jobs in any workspace where the user holds a role with
+     `job.view_all` (the same check `WorkspaceService`/`JobService` already
+     do per-workspace, just run across all workspaces).
+   - `Job`: `ScopedAccessService.AccessibleJobIds(userId)` (direct job-scope
+     grants), minus jobs already claimed at `Workspace`.
+   Adding `Organization` later means writing the one query for "jobs visible
+   via an Org-level grant" and it slots into the existing loop at its
+   declared position - no change to the `Workspace`/`Job` branches, no change
+   to the dedupe logic, no change to callers.
+3. **The dashboard's Jobs-view "access type" filter is populated from
+   whatever `AccessScopeType` values are actually present in the fetched
+   data**, not a hardcoded toggle list. An `Organization` value showing up
+   later is a third filter chip with no UI code change.
+4. **Row routing is a leaf-vs-not-leaf rule, not a level-name check.**
+   `AccessScopeType === Constants.ScopeTypes.Job` (the leaf, narrowest
+   possible grant) → `/app/job/:jobId` (minimal view - nothing above Job
+   confirmed accessible). Anything else (`Workspace` today, `Organization`
+   later) → the existing `/app/workspace/:id/jobs/:jobId` full-shell route,
+   since holding a grant at any non-leaf level already implies
+   `workspace.view` under this codebase's existing role seeding (every
+   workspace-scope role carries `workspace:view`). This rule needs zero
+   changes when Org is added - it was never level-name-specific.
 
 Everything else in this feature (the `/app/job/:jobId` route, the guard, the
 two-section dashboard layout) is already level-count-agnostic as designed -
@@ -87,18 +104,30 @@ boolean, which holds regardless of how many levels exist above Job.
 
 ## Backend
 
-**New method** `IJobService.GetMyJobsAsync(Guid userId)` (or a home on
-`ScopedAccessService` if that fits better at implementation time - decide
-then, not architecturally significant): union of two existing per-workspace
-rules, run across every workspace instead of one -
-1. Jobs in any workspace where the user holds a role with `job.view_all`
-   (same check `WorkspaceService`/`JobService` already do per-workspace).
-2. Jobs reachable via `ScopedAccessService.AccessibleJobIds(userId)` (direct
-   job-scope grants).
+**`Constants.cs`**: add `public static readonly string[] ScopeHierarchy = { Organization, Workspace, Job };`
+next to the existing `ScopeTypes` class (root → leaf order, the one place
+this is declared).
 
-Each result tagged `AccessType: "Member" | "JobOnly"` - is the user a
-workspace-scope member of that job's workspace or not. Include workspace
-name/id and job fields needed for the list (number, title, status).
+**New method** `ScopedAccessService.GetAccessibleJobsAsync(Guid userId)` -
+homed here rather than `JobService` because every other cross-cutting access
+question already lives in this service (`HasConsentCoverageAsync`,
+`AccessibleJobIds`), and this method is workspace-agnostic by nature (no
+`workspaceId` parameter, unlike everything on `JobService`). Returns
+`List<AccessibleJob>` where:
+```csharp
+public record AccessibleJob(
+    Guid JobId, string JobNumber, string Title, string Status,
+    Guid WorkspaceId, string WorkspaceName, string AccessScopeType);
+```
+Implementation walks `Constants.ScopeHierarchy` broadest-first, skipping
+`Organization` (no backing data yet) until that level exists:
+1. **Workspace-level**: reuse the existing `job.view_all`-role-per-workspace
+   check (already written 2-3 times this session in `WorkspaceService`/
+   `JobService` - worth factoring into one shared helper here as part of
+   this change, not just copied a fourth time) → every job in each such
+   workspace, `AccessScopeType = Constants.ScopeTypes.Workspace`.
+2. **Job-level**: `AccessibleJobIds(userId)` minus job ids already claimed at
+   Workspace level → `AccessScopeType = Constants.ScopeTypes.Job`.
 
 **New endpoint** `GET /api/jobs/{jobId}` (not nested under `/workspace/{id}`)
 - resolves the job's `WorkspaceId` internally, runs the same
@@ -106,8 +135,8 @@ name/id and job fields needed for the list (number, title, status).
 proven to work for a job-only Client - no `workspace.view` involved), returns
 the job plus its workspace name for display context.
 
-**New endpoint** `GET /api/jobs/mine` - wraps `GetMyJobsAsync`, backs the
-dashboard's Jobs section/filtered view.
+**New endpoint** `GET /api/jobs/mine` - wraps `GetAccessibleJobsAsync`, backs
+the dashboard's Jobs section/filtered view.
 
 ## Frontend
 
@@ -124,9 +153,11 @@ minimal layout: top bar (workspace name, "Back to dashboard") + the existing
 `JobDetailComponent`, no sidebar.
 
 **Row routing** (both the direct-access section and the flattened Jobs
-view): `AccessType === 'Member'` → `/app/workspace/:workspaceId/jobs/:jobId`
-(existing route, full shell). `AccessType === 'JobOnly'` → `/app/job/:jobId`
-(new route, minimal shell).
+view): `accessScopeType === 'Job'` (leaf-level grant, nothing above
+confirmed) → `/app/job/:jobId` (new route, minimal shell). Any other value
+(`'Workspace'` today, `'Organization'` later) → `/app/workspace/:workspaceId/jobs/:jobId`
+(existing route, full shell) - same leaf-vs-not-leaf rule from "Scaling
+mechanism" above, no per-level branching in the component.
 
 **Invite-accept redirect** (`accept-invite.component.ts`, from the earlier
 session fix): job-scope accept now routes to `/app/job/:jobId` instead of
