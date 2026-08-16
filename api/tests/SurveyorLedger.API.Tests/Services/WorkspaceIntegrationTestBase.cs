@@ -37,6 +37,38 @@ public abstract class WorkspaceIntegrationTestBase : IAsyncLifetime
 
     protected T GetService<T>() where T : notnull => _provider.GetRequiredService<T>();
 
+    /// <summary>Create a Person+UserAccount pair for testing. Returns the UserAccount.Id.</summary>
+    protected async Task<Guid> CreateUserAccountAsync(string firstName, string lastName, string email)
+    {
+        var personId = Guid.NewGuid();
+        var userAccountId = Guid.NewGuid();
+
+        await Context.People.AddAsync(new Person
+        {
+            Id = personId,
+            FirstName = firstName,
+            LastName = lastName,
+            Email = email,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        await Context.UserAccounts.AddAsync(new UserAccount
+        {
+            Id = userAccountId,
+            PersonId = personId,
+            EmailVerified = true,
+            HasCompletedSignup = true,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        await Context.SaveChangesAsync();
+        return userAccountId;
+    }
+
     public async Task InitializeAsync()
     {
         var connectionString = $"Server=(localdb)\\mssqllocaldb;Database={_databaseName};Integrated Security=true;";
@@ -84,15 +116,26 @@ public abstract class WorkspaceIntegrationTestBase : IAsyncLifetime
             UpdatedAt = DateTime.UtcNow
         });
 
-        foreach (var (id, first) in new[] { (AdminId, "Admin"), (SurveyorId, "Surveyor"), (ClientId, "Client") })
+        foreach (var (userAccountId, first) in new[] { (AdminId, "Admin"), (SurveyorId, "Surveyor"), (ClientId, "Client") })
         {
-            await Context.Users.AddAsync(new User
+            var personId = Guid.NewGuid();
+            await Context.People.AddAsync(new Person
             {
-                Id = id,
+                Id = personId,
                 FirstName = first,
                 LastName = "Person",
                 Email = $"{first.ToLower()}@test.local",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+
+            await Context.UserAccounts.AddAsync(new UserAccount
+            {
+                Id = userAccountId,
+                PersonId = personId,
                 EmailVerified = true,
+                HasCompletedSignup = true,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow

@@ -131,19 +131,7 @@ public class JobAccessScopingTests : WorkspaceIntegrationTestBase
         // AddParticipantAsync falls back to a job-scope invite rather than an instant
         // grant or a rejection - same rule as InvitationFlowTests' pending/declined cases.
         await SeedJobsAsync();
-        var outsiderId = Guid.NewGuid();
-        await Context.Users.AddAsync(new User
-        {
-            Id = outsiderId,
-            FirstName = "Outsider",
-            LastName = "Person",
-            Email = "outsider@test.local",
-            EmailVerified = false,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        });
-        await Context.SaveChangesAsync();
+        var outsiderId = await CreateUserAccountAsync("Outsider", "Person", "outsider@test.local");
 
         var result = await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobBId, outsiderId, "Surveyor");
         Assert.Null(result.Access);

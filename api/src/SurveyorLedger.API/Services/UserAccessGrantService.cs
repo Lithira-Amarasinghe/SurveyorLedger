@@ -50,7 +50,7 @@ public class UserAccessGrantService : IUserAccessGrantService
 
         if (existing == null)
         {
-            var user = await _context.Users.FirstAsync(u => u.Id == userId);
+            var account = await _context.UserAccounts.FirstAsync(a => a.Id == userId);
             var access = new UserAccess
             {
                 Id = Guid.NewGuid(),
@@ -69,7 +69,7 @@ public class UserAccessGrantService : IUserAccessGrantService
             await SyncCasbinAsync(() => _casbinService.AddRoleForUserAsync(userId.ToString(), role.Name, scopeId.ToString()));
 
             access.Role = role;
-            access.User = user;
+            access.User = account;
             return access;
         }
 

@@ -67,13 +67,7 @@ public class AccessibleJobsTests : WorkspaceIntegrationTestBase
         _access = GetService<IScopedAccessService>();
         var job = await _jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Job A" });
 
-        var jobOnlyUserId = Guid.NewGuid();
-        await Context.Users.AddAsync(new User
-        {
-            Id = jobOnlyUserId, FirstName = "Job", LastName = "Only", Email = "jobonly@test.local",
-            EmailVerified = true, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
-        });
-        await Context.SaveChangesAsync();
+        var jobOnlyUserId = await CreateUserAccountAsync("Job", "Only", "jobonly@test.local");
         await GrantService.GrantAsync(jobOnlyUserId, RoleConfiguration.ClientRoleId, Constants.ScopeTypes.Job, job.Id, AdminId);
 
         var jobs = await _access.GetAccessibleJobsAsync(jobOnlyUserId);
@@ -105,13 +99,7 @@ public class AccessibleJobsTests : WorkspaceIntegrationTestBase
         _jobService = GetService<IJobService>();
         var job = await _jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Job A" });
 
-        var jobOnlyUserId = Guid.NewGuid();
-        await Context.Users.AddAsync(new User
-        {
-            Id = jobOnlyUserId, FirstName = "Job", LastName = "Only", Email = "jobonly2@test.local",
-            EmailVerified = true, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
-        });
-        await Context.SaveChangesAsync();
+        var jobOnlyUserId = await CreateUserAccountAsync("Job", "Only", "jobonly2@test.local");
         await GrantService.GrantAsync(jobOnlyUserId, RoleConfiguration.ClientRoleId, Constants.ScopeTypes.Job, job.Id, AdminId);
 
         var (result, workspaceName) = await _jobService.GetAccessibleJobDetailAsync(jobOnlyUserId, job.Id);
@@ -126,13 +114,7 @@ public class AccessibleJobsTests : WorkspaceIntegrationTestBase
         _jobService = GetService<IJobService>();
         var job = await _jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Job A" });
 
-        var strangerId = Guid.NewGuid();
-        await Context.Users.AddAsync(new User
-        {
-            Id = strangerId, FirstName = "Stranger", LastName = "Person", Email = "stranger@test.local",
-            EmailVerified = true, IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
-        });
-        await Context.SaveChangesAsync();
+        var strangerId = await CreateUserAccountAsync("Stranger", "Person", "stranger@test.local");
 
         await Assert.ThrowsAsync<SurveyorLedger.Core.Exceptions.ForbiddenException>(
             () => _jobService.GetAccessibleJobDetailAsync(strangerId, job.Id));
