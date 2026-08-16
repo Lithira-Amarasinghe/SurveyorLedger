@@ -402,4 +402,16 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
         var uploaded = Assert.Single(docs, d => d.Id == fulfilled.FulfilledDocumentId);
         Assert.Equal(DocumentVisibility.ClientVisible, uploaded.Visibility);
     }
+
+    [Fact]
+    public async Task CreateAsync_SetsRequestedByUser_AsPersonNotUserAccount()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
+
+        var loaded = await Context.DocumentRequests.Include(r => r.RequestedByUser).FirstAsync(r => r.Id == request.Id);
+        Assert.IsType<SurveyorLedger.Data.Entities.Person>(loaded.RequestedByUser);
+        Assert.Equal("Admin", loaded.RequestedByUser.FirstName);
+        Assert.NotEqual(AdminId, loaded.RequestedBy); // RequestedBy is the Person.Id, not the caller's UserAccount.Id
+    }
 }

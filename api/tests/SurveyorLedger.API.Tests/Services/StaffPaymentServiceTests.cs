@@ -1,9 +1,11 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Models.Job;
 using SurveyorLedger.API.Models.StaffPayment;
 using SurveyorLedger.API.Services;
 using SurveyorLedger.Core.Exceptions;
+using SurveyorLedger.Data.Entities;
 using Xunit;
 
 namespace SurveyorLedger.API.Tests.Services;
@@ -122,5 +124,28 @@ public class StaffPaymentServiceTests : WorkspaceIntegrationTestBase
             Amount = 1000m,
             PaidDate = DateTime.UtcNow
         }));
+    }
+
+    [Fact]
+    public async Task CreateAsync_SetsRecordedByUser_AsPersonNotUserAccount()
+    {
+        await SeedJobAsync();
+        // StaffPayment.UserId (the payee) is a Person.Id post-split, picked from a person
+        // search - reverse-resolve SurveyorId's UserAccount to its Person to use here.
+        var surveyorPersonId = await Context.UserAccounts
+            .Where(a => a.Id == SurveyorId).Select(a => a.PersonId).FirstAsync();
+
+        var payment = await _staffPaymentService.CreateAsync(WorkspaceId, AdminId, _jobId, new StaffPaymentRequest
+        {
+            UserId = surveyorPersonId,
+            Type = "Salary",
+            Amount = 30000m,
+            PaidDate = DateTime.UtcNow
+        });
+
+        var loaded = await Context.StaffPayments.Include(p => p.RecordedByUser).FirstAsync(p => p.Id == payment.Id);
+        Assert.IsType<Person>(loaded.RecordedByUser);
+        Assert.Equal("Admin", loaded.RecordedByUser.FirstName);
+        Assert.NotEqual(AdminId, loaded.RecordedBy); // RecordedBy is the Person.Id, not the caller's UserAccount.Id
     }
 }

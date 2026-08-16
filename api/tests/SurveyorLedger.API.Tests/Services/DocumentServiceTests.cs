@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Models.Job;
@@ -217,5 +218,18 @@ public class DocumentServiceTests : WorkspaceIntegrationTestBase
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             _documentService.UpdateVisibilityAsync(WorkspaceId, ClientId, _jobAId, doc.Id, DocumentVisibility.ClientVisible));
+    }
+
+    [Fact]
+    public async Task UploadAsync_SetsUploadedByUser_AsPersonNotUserAccount()
+    {
+        await SeedJobsAsync();
+        var doc = await _documentService.UploadAsync(WorkspaceId, AdminId, _jobAId,
+            MakeFile(), DocumentCategory.Other, DocumentVisibility.Internal);
+
+        var loaded = await Context.Documents.Include(d => d.UploadedByUser).FirstAsync(d => d.Id == doc.Id);
+        Assert.IsType<Person>(loaded.UploadedByUser);
+        Assert.Equal("Admin", loaded.UploadedByUser.FirstName);
+        Assert.NotEqual(AdminId, loaded.UploadedBy); // UploadedBy is the Person.Id, not the caller's UserAccount.Id
     }
 }

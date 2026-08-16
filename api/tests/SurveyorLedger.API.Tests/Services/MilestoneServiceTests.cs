@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Models.Job;
@@ -216,5 +217,20 @@ public class MilestoneServiceTests : WorkspaceIntegrationTestBase
 
         await Assert.ThrowsAsync<ForbiddenException>(
             () => _milestoneService.ReorderAsync(WorkspaceId, SurveyorId, _jobBId, new List<Guid> { milestone.Id }));
+    }
+
+    [Fact]
+    public async Task CreateAsync_SetsCreatedByUser_AsPersonNotUserAccount()
+    {
+        await SeedJobsAsync();
+        var milestone = await _milestoneService.CreateAsync(WorkspaceId, AdminId, _jobAId, new MilestoneRequest
+        {
+            Title = "Site visit", SortOrder = 1
+        });
+
+        var loaded = await Context.Milestones.Include(m => m.CreatedByUser).FirstAsync(m => m.Id == milestone.Id);
+        Assert.IsType<SurveyorLedger.Data.Entities.Person>(loaded.CreatedByUser);
+        Assert.Equal("Admin", loaded.CreatedByUser.FirstName);
+        Assert.NotEqual(AdminId, loaded.CreatedBy); // CreatedBy is the Person.Id, not the caller's UserAccount.Id
     }
 }

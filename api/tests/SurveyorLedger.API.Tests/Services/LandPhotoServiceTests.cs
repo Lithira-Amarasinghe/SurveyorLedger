@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Models.Land;
 using SurveyorLedger.API.Services;
 using SurveyorLedger.Core.Exceptions;
+using SurveyorLedger.Data.Entities;
 using Xunit;
 
 namespace SurveyorLedger.API.Tests.Services;
@@ -92,5 +93,16 @@ public class LandPhotoServiceTests : WorkspaceIntegrationTestBase
         Assert.Equal(photo.Id, found.Id);
         using var reader = new StreamReader(content);
         Assert.Equal("fake-image-bytes", await reader.ReadToEndAsync());
+    }
+
+    [Fact]
+    public async Task UploadPhotoAsync_SetsUploadedByUser_AsPersonNotUserAccount()
+    {
+        await SeedLandAsync();
+        var photo = await _landService.UploadPhotoAsync(WorkspaceId, AdminId, _landId, MakePhoto());
+
+        Assert.IsType<Person>(photo.UploadedByUser);
+        Assert.Equal("Admin", photo.UploadedByUser.FirstName);
+        Assert.NotEqual(AdminId, photo.UploadedBy); // UploadedBy is the Person.Id, not the caller's UserAccount.Id
     }
 }

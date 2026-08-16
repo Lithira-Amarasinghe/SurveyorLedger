@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Models.Expense;
@@ -127,5 +128,20 @@ public class ExpenseServiceTests : WorkspaceIntegrationTestBase
         await SeedJobAsync();
         await Assert.ThrowsAsync<ValidationException>(
             () => _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest { Category = "NotACategory", Amount = 100m, IncurredDate = DateTime.UtcNow }));
+    }
+
+    [Fact]
+    public async Task CreateAsync_SetsRecordedByUser_AsPersonNotUserAccount()
+    {
+        await SeedJobAsync();
+        var expense = await _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest
+        {
+            Category = "Travel", Amount = 100m, IncurredDate = DateTime.UtcNow
+        });
+
+        var loaded = await Context.Expenses.Include(e => e.RecordedByUser).FirstAsync(e => e.Id == expense.Id);
+        Assert.IsType<SurveyorLedger.Data.Entities.Person>(loaded.RecordedByUser);
+        Assert.Equal("Admin", loaded.RecordedByUser.FirstName);
+        Assert.NotEqual(AdminId, loaded.RecordedBy); // RecordedBy is the Person.Id, not the caller's UserAccount.Id
     }
 }
