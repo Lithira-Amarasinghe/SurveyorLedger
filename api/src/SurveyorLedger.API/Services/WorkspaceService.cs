@@ -13,7 +13,7 @@ public record WorkspaceWithAccess(Workspace Workspace, string Tier, List<string>
 /// <summary>Another scope this member holds access to beyond the workspace itself - e.g. a specific job.</summary>
 public record MemberScopeGrant(string ScopeType, Guid ScopeId, string Label, string Role);
 
-public record WorkspaceMember(
+public record MemberInfo(
     Guid UserId, string Email, string FirstName, string LastName, List<string> Roles, DateTime AssignedAt, bool IsOwner,
     List<string> FullAccessScopeTypes, List<MemberScopeGrant> AdditionalScopes);
 
@@ -26,7 +26,7 @@ public interface IWorkspaceService
     Task<WorkspaceWithAccess> CreateWorkspaceAsync(Guid userId, WorkspaceRequest request);
     Task<List<WorkspaceWithAccess>> GetUserWorkspacesAsync(Guid userId);
     Task<WorkspaceWithAccess?> GetWorkspaceByIdAsync(Guid workspaceId, Guid userId);
-    Task<List<WorkspaceMember>> GetMembersAsync(Guid workspaceId, Guid callerUserId);
+    Task<List<MemberInfo>> GetMembersAsync(Guid workspaceId, Guid callerUserId);
     Task AddMemberRoleAsync(Guid workspaceId, Guid targetUserId, Guid callerUserId, string roleName);
     Task RemoveMemberRoleAsync(Guid workspaceId, Guid targetUserId, Guid callerUserId, string roleName);
     Task RemoveMemberAsync(Guid workspaceId, Guid targetUserId, Guid callerUserId);
@@ -167,7 +167,7 @@ public class WorkspaceService : IWorkspaceService
         return new WorkspaceWithAccess(workspace, workspace.SubscriptionTier, roles);
     }
 
-    public async Task<List<WorkspaceMember>> GetMembersAsync(Guid workspaceId, Guid callerUserId)
+    public async Task<List<MemberInfo>> GetMembersAsync(Guid workspaceId, Guid callerUserId)
     {
         // Viewing the roster is available to any member (needed for self-leave — a
         // non-Admin has to be able to see the list to find their own row). Only the
@@ -252,7 +252,7 @@ public class WorkspaceService : IWorkspaceService
             .Select(g =>
             {
                 var first = g.OrderBy(ua => ua.AssignedAt).First();
-                return new WorkspaceMember(
+                return new MemberInfo(
                     first.UserId, first.User.Person.Email!, first.User.Person.FirstName, first.User.Person.LastName,
                     g.Select(ua => ua.Role.Name).ToList(), first.AssignedAt, first.UserId == workspace.OwnerId,
                     g.SelectMany(ua => fullAccessByRole.GetValueOrDefault(ua.RoleId, new List<string>())).Distinct().ToList(),
@@ -264,14 +264,14 @@ public class WorkspaceService : IWorkspaceService
         // row at all, so they're absent from `accesses` entirely - add them as their own rows.
         // Skipped entirely for a guest (Client-only) caller - same roster restriction as above.
         var jobOnlyMembers = isGuestView
-            ? Enumerable.Empty<WorkspaceMember>()
+            ? Enumerable.Empty<MemberInfo>()
             : jobScopes
             .Where(s => !workspaceMembers.ContainsKey(s.UserId))
             .GroupBy(s => s.UserId)
             .Select(g =>
             {
                 var first = g.OrderBy(s => s.AssignedAt).First();
-                return new WorkspaceMember(
+                return new MemberInfo(
                     first.UserId, first.User.Person.Email!, first.User.Person.FirstName, first.User.Person.LastName,
                     new List<string>(), first.AssignedAt, false,
                     g.SelectMany(s => fullAccessByRole.GetValueOrDefault(s.RoleId, new List<string>())).Distinct().ToList(),
