@@ -85,6 +85,8 @@ public class DocumentService : IDocumentService
             await _fileStorageService.SaveAsync(stream, storedRelativePath, CancellationToken.None);
         }
 
+        var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
+
         var document = new Document
         {
             Id = Guid.NewGuid(),
@@ -95,7 +97,7 @@ public class DocumentService : IDocumentService
             FileSizeBytes = file.Length,
             Category = category,
             Visibility = visibility,
-            UploadedBy = callerUserId,
+            UploadedBy = callerPersonId,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -104,10 +106,10 @@ public class DocumentService : IDocumentService
         await _context.Documents.AddAsync(document);
         await _context.SaveChangesAsync();
 
-        // UploadedBy == callerUserId always here - fetch once so the caller (ToResponse)
+        // UploadedBy == callerPersonId always here - fetch once so the caller (ToResponse)
         // can render the uploader's name without a second round trip through this service.
-        document.UploadedByUser = await _context.Users.FindAsync(callerUserId)
-            ?? throw new NotFoundException("Uploading user not found");
+        document.UploadedByUser = await _context.People.FindAsync(callerPersonId)
+            ?? throw new NotFoundException("Uploading person not found");
 
         _logger.LogInformation("Document {DocumentId} uploaded for job {JobId} by {UserId}", document.Id, jobId, callerUserId);
         return document;

@@ -71,6 +71,10 @@ public interface IScopedAccessService
     /// real Constants.ScopeTypes value the access was found at (broadest wins, deduped).
     /// Deliberately not workspace-filtered - see Global Constraints.</summary>
     Task<List<AccessibleJob>> GetAccessibleJobsAsync(Guid userId);
+
+    /// <summary>Resolves a caller's UserAccount.Id (the JWT subject) to the Person.Id behind it - needed
+    /// wherever an actor field (CreatedBy, RecordedBy, UploadedBy, ...) means Person, not UserAccount.</summary>
+    Task<Guid> ResolvePersonIdAsync(Guid userAccountId);
 }
 
 public class ScopedAccessService : IScopedAccessService
@@ -272,4 +276,7 @@ public class ScopedAccessService : IScopedAccessService
                 t.Scope))
             .ToList();
     }
+
+    public async Task<Guid> ResolvePersonIdAsync(Guid userAccountId) =>
+        await _context.UserAccounts.Where(a => a.Id == userAccountId).Select(a => a.PersonId).FirstAsync();
 }

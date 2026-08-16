@@ -69,6 +69,8 @@ public class MilestoneService : IMilestoneService
             .Select(m => (int?)m.SortOrder)
             .MaxAsync() ?? -1;
 
+        var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
+
         var milestone = new Milestone
         {
             Id = Guid.NewGuid(),
@@ -78,7 +80,7 @@ public class MilestoneService : IMilestoneService
             DueDate = request.DueDate,
             Status = "Pending",
             SortOrder = nextSortOrder + 1,
-            CreatedBy = callerUserId,
+            CreatedBy = callerPersonId,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -121,7 +123,7 @@ public class MilestoneService : IMilestoneService
         if (status == "Completed")
         {
             milestone.CompletedAt = DateTime.UtcNow;
-            milestone.CompletedBy = callerUserId;
+            milestone.CompletedBy = await _access.ResolvePersonIdAsync(callerUserId);
         }
         else
         {

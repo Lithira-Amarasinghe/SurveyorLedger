@@ -61,6 +61,7 @@ public class DocumentRequestService : IDocumentRequestService
             throw new ValidationException("Title is required.");
 
         await ValidateTargetAsync(jobId, targetRole, targetUserId);
+        var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
 
         var request = new DocumentRequest
         {
@@ -72,7 +73,7 @@ public class DocumentRequestService : IDocumentRequestService
             Status = "Pending",
             TargetRole = targetRole,
             TargetUserId = targetUserId,
-            RequestedBy = callerUserId,
+            RequestedBy = callerPersonId,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -89,8 +90,9 @@ public class DocumentRequestService : IDocumentRequestService
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
 
         var request = await FindRequestAsync(jobId, requestId);
+        var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
 
-        if (request.TargetUserId.HasValue && request.TargetUserId != callerUserId)
+        if (request.TargetUserId.HasValue && request.TargetUserId != callerPersonId)
             throw new ForbiddenException("This request is for a specific person.");
 
         if (request.TargetRole != null)
@@ -100,16 +102,19 @@ public class DocumentRequestService : IDocumentRequestService
                 throw new ForbiddenException($"This request is for the {request.TargetRole} role.");
         }
 
-        return await LinkFulfilledDocumentAsync(workspaceId, jobId, request, file, visibility, callerUserId, displayFileName);
+        return await LinkFulfilledDocumentAsync(workspaceId, jobId, request, file, visibility, callerUserId, callerPersonId, displayFileName);
     }
 
     /// <summary>
     /// Shared by FulfillAsync (authenticated) and UploadViaShareTokenAsync (anonymous, via
     /// link) - one implementation of "upload, replace-deletes-previous, link, mark Fulfilled"
-    /// regardless of which path got here. attributedUserId is the caller for FulfillAsync,
-    /// or the request's RequestedBy for an anonymous link upload (no real caller to attribute to).
+    /// regardless of which path got here. attributedUserAccountId is who IDocumentService
+    /// checks job access against (a UserAccount.Id); attributedPersonId is who gets recorded
+    /// as FulfilledBy (a Person.Id). For FulfillAsync both derive from the real caller; for
+    /// an anonymous link upload there is no caller, so both are derived from the request's
+    /// original requester instead.
     /// </summary>
-    private async Task<DocumentRequest> LinkFulfilledDocumentAsync(Guid workspaceId, Guid jobId, DocumentRequest request, IFormFile file, DocumentVisibility visibility, Guid attributedUserId, string? displayFileName)
+    private async Task<DocumentRequest> LinkFulfilledDocumentAsync(Guid workspaceId, Guid jobId, DocumentRequest request, IFormFile file, DocumentVisibility visibility, Guid attributedUserAccountId, Guid attributedPersonId, string? displayFileName)
     {
         // Reopening keeps the previous FulfilledDocumentId as a reference (not cleared) so
         // the old file and the "via request" link stay visible until a replacement lands.
@@ -117,11 +122,11 @@ public class DocumentRequestService : IDocumentRequestService
         // superseded and soft-deleted here rather than kept alongside it.
         var previousDocumentId = request.FulfilledDocumentId;
 
-        var document = await _documentService.UploadAsync(workspaceId, attributedUserId, jobId, file, request.Category, visibility, displayFileName);
+        var document = await _documentService.UploadAsync(workspaceId, attributedUserAccountId, jobId, file, request.Category, visibility, displayFileName);
 
         request.FulfilledDocumentId = document.Id;
         request.FulfilledAt = DateTime.UtcNow;
-        request.FulfilledBy = attributedUserId;
+        request.FulfilledBy = attributedPersonId;
         request.Status = "Fulfilled";
         request.UpdatedAt = DateTime.UtcNow;
 
@@ -237,7 +242,15 @@ public class DocumentRequestService : IDocumentRequestService
         if (request.Status == "Fulfilled")
             throw new ValidationException("This document has already been provided.");
 
-        return await LinkFulfilledDocumentAsync(job.WorkspaceId, job.Id, request, file, DocumentVisibility.ClientVisible, request.RequestedBy, displayFileName);
+        // No authenticated caller for a share-link upload - attribute the job-access check
+        // and the FulfilledBy record to the original requester (reverse-resolved to their
+        // UserAccount.Id for the access check, Person.Id for the record).
+        var requesterAccountId = await _context.UserAccounts
+            .Where(a => a.PersonId == request.RequestedBy)
+            .Select(a => a.Id)
+            .FirstOrDefaultAsync();
+
+        return await LinkFulfilledDocumentAsync(job.WorkspaceId, job.Id, request, file, DocumentVisibility.ClientVisible, requesterAccountId, request.RequestedBy, displayFileName);
     }
 
     /// <summary>Shared by CreateAsync and UpdateTargetAsync - one place for the three targeting rules.</summary>
@@ -249,8 +262,18 @@ public class DocumentRequestService : IDocumentRequestService
         if (targetRole != null && targetRole != Constants.SystemRoles.Admin && targetRole != Constants.SystemRoles.Surveyor && targetRole != Constants.SystemRoles.Client)
             throw new ValidationException($"Unknown target role '{targetRole}'.");
 
-        if (targetUserId.HasValue && !await _access.AccessibleJobIds(targetUserId.Value).AnyAsync(id => id == jobId))
-            throw new ValidationException("The targeted person is not assigned to this job.");
+        if (targetUserId.HasValue)
+        {
+            // targetUserId is a Person.Id (from the person picker); AccessibleJobIds is
+            // keyed by UserAccount.Id, so reverse-resolve before checking.
+            var targetAccountId = await _context.UserAccounts
+                .Where(a => a.PersonId == targetUserId.Value)
+                .Select(a => a.Id)
+                .FirstOrDefaultAsync();
+
+            if (!await _access.AccessibleJobIds(targetAccountId).AnyAsync(id => id == jobId))
+                throw new ValidationException("The targeted person is not assigned to this job.");
+        }
     }
 
     private async Task<Job> FindJobAsync(Guid workspaceId, Guid jobId)

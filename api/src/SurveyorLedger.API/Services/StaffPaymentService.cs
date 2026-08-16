@@ -41,6 +41,7 @@ public class StaffPaymentService : IStaffPaymentService
         await _access.EnsureAllowedAsync(callerUserId, "staffpayment", "create", workspaceId);
         ValidateType(request.Type);
         await ValidateUserAsync(request.UserId);
+        var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
 
         var payment = new StaffPayment
         {
@@ -52,7 +53,7 @@ public class StaffPaymentService : IStaffPaymentService
             Amount = request.Amount,
             PaidDate = request.PaidDate,
             Notes = request.Notes,
-            RecordedBy = callerUserId,
+            RecordedBy = callerPersonId,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -71,7 +72,10 @@ public class StaffPaymentService : IStaffPaymentService
         var query = _context.StaffPayments.Include(p => p.User).Where(p => p.JobId == jobId);
 
         if (!await _access.HasViewAllAsync(callerUserId, "staffpayment", workspaceId))
-            query = query.Where(p => p.UserId == callerUserId);
+        {
+            var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
+            query = query.Where(p => p.UserId == callerPersonId);
+        }
 
         return await query.OrderByDescending(p => p.PaidDate).ToListAsync();
     }
@@ -82,8 +86,12 @@ public class StaffPaymentService : IStaffPaymentService
         await _access.EnsureAllowedAsync(callerUserId, "staffpayment", "view", workspaceId);
         var payment = await FindStaffPaymentAsync(jobId, staffPaymentId);
 
-        if (payment.UserId != callerUserId && !await _access.HasViewAllAsync(callerUserId, "staffpayment", workspaceId))
-            throw new NotFoundException("Staff payment not found");
+        if (!await _access.HasViewAllAsync(callerUserId, "staffpayment", workspaceId))
+        {
+            var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
+            if (payment.UserId != callerPersonId)
+                throw new NotFoundException("Staff payment not found");
+        }
 
         return payment;
     }
@@ -124,7 +132,7 @@ public class StaffPaymentService : IStaffPaymentService
 
     private async Task ValidateUserAsync(Guid userId)
     {
-        var exists = await _context.Users.AnyAsync(u => u.Id == userId && u.IsActive);
+        var exists = await _context.People.AnyAsync(p => p.Id == userId && p.IsActive);
         if (!exists)
             throw new ValidationException("UserId does not match an existing account.");
     }

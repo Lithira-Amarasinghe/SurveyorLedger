@@ -437,6 +437,8 @@ public class LandService : ILandService
             await _fileStorage.SaveAsync(stream, relativePath, CancellationToken.None);
         }
 
+        var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
+
         var photo = new LandPhoto
         {
             Id = Guid.NewGuid(),
@@ -445,7 +447,7 @@ public class LandService : ILandService
             StoredPath = relativePath,
             ContentType = file.ContentType,
             FileSizeBytes = file.Length,
-            UploadedBy = callerUserId,
+            UploadedBy = callerPersonId,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -513,7 +515,7 @@ public class LandService : ILandService
 
         if (hasAccountOwner)
         {
-            var ownerExists = await _context.Users.AnyAsync(u => u.Id == request.OwnerId!.Value && u.IsActive);
+            var ownerExists = await _context.People.AnyAsync(p => p.Id == request.OwnerId!.Value && p.IsActive);
             if (!ownerExists)
                 throw new ValidationException("OwnerId does not match an existing account.");
         }

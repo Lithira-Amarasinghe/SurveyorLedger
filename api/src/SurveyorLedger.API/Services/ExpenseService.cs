@@ -43,6 +43,7 @@ public class ExpenseService : IExpenseService
         await FindJobAsync(workspaceId, jobId);
         await _access.EnsureAllowedAsync(callerUserId, "expense", "create", workspaceId);
         ValidateCategory(request.Category);
+        var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
 
         var expense = new Expense
         {
@@ -53,7 +54,7 @@ public class ExpenseService : IExpenseService
             Amount = request.Amount,
             Description = request.Description,
             IncurredDate = request.IncurredDate,
-            RecordedBy = callerUserId,
+            RecordedBy = callerPersonId,
             CreatedAt = DateTime.UtcNow
         };
 
