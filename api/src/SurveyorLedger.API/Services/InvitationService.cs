@@ -120,22 +120,29 @@ public class InvitationService : IInvitationService
 
         email = email.Trim();
 
-        var targetUser = await _context.Users
-            .FirstOrDefaultAsync(u => u.Email != null && u.Email.ToUpper() == email.ToUpper() && u.IsActive);
+        var targetPerson = await _context.People
+            .FirstOrDefaultAsync(p => p.Email != null && p.Email.ToUpper() == email.ToUpper() && p.IsActive);
 
-        if (targetUser != null)
+        if (targetPerson != null)
         {
-            var alreadyHasAccess = await _context.UserAccesses.AnyAsync(ua =>
-                ua.UserId == targetUser.Id && ua.IsActive && ua.ScopeType == scopeType && ua.ScopeId == scopeId);
-            if (alreadyHasAccess)
-                throw new AppException(Constants.ErrorCodes.AlreadyMember, "This person already has access at this scope.", 409);
+            var account = await _context.UserAccounts.FirstOrDefaultAsync(a => a.PersonId == targetPerson.Id && a.IsActive);
+            if (account != null)
+            {
+                var alreadyHasAccess = await _context.UserAccesses.AnyAsync(ua =>
+                    ua.UserId == account.Id && ua.IsActive && ua.ScopeType == scopeType && ua.ScopeId == scopeId);
+                if (alreadyHasAccess)
+                    throw new AppException(Constants.ErrorCodes.AlreadyMember, "This person already has access at this scope.", 409);
+            }
+            // A Person with no UserAccount yet (e.g. an existing billing client, or a still-
+            // pending invitee from a different scope) is a valid invite target - falls through
+            // to reuse the existing Person row, same as before under the old User model.
         }
         else
         {
             if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(lastName))
                 throw new AppException(Constants.ErrorCodes.ValidationFailed, "FirstName and LastName are required for a new person.", 400);
 
-            targetUser = new User
+            targetPerson = new Person
             {
                 Id = Guid.NewGuid(),
                 Email = email,
@@ -150,18 +157,16 @@ public class InvitationService : IInvitationService
                     PostalCode = address?.PostalCode,
                     Country = address?.Country
                 },
-                PasswordHash = null,
-                EmailVerified = false,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
-            await _context.Users.AddAsync(targetUser);
+            await _context.People.AddAsync(targetPerson);
         }
 
         // A new invite for the same person/scope supersedes any existing pending one.
         var existingPending = await _context.Invitations
-            .Where(i => i.UserId == targetUser.Id && i.ScopeType == scopeType &&
+            .Where(i => i.UserId == targetPerson.Id && i.ScopeType == scopeType &&
                 i.ScopeId == scopeId && i.Status == "Pending")
             .ToListAsync();
         foreach (var stale in existingPending)
@@ -170,7 +175,7 @@ public class InvitationService : IInvitationService
         var invitation = new Invitation
         {
             Id = Guid.NewGuid(),
-            UserId = targetUser.Id,
+            UserId = targetPerson.Id,
             Email = email,
             ScopeType = scopeType,
             ScopeId = scopeId,
@@ -223,9 +228,12 @@ public class InvitationService : IInvitationService
 
     public async Task<List<Invitation>> GetMyInvitationsAsync(Guid callerUserId)
     {
+        var callerAccount = await _context.UserAccounts.FirstOrDefaultAsync(a => a.Id == callerUserId);
+        if (callerAccount == null) return new List<Invitation>();
+
         var invitations = await _context.Invitations
             .Include(i => i.Role)
-            .Where(i => i.UserId == callerUserId)
+            .Where(i => i.UserId == callerAccount.PersonId)
             .OrderByDescending(i => i.CreatedAt)
             .ToListAsync();
 
@@ -297,7 +305,9 @@ public class InvitationService : IInvitationService
     {
         var invitation = await LoadAcceptableInvitationAsync(i => i.Id == invitationId);
 
-        if (invitation.UserId != callerUserId)
+        var callerAccount = await _context.UserAccounts.FirstOrDefaultAsync(a => a.Id == callerUserId)
+            ?? throw new ForbiddenException("This invitation is for a different account.");
+        if (invitation.UserId != callerAccount.PersonId)
             throw new ForbiddenException("This invitation is for a different account.");
 
         await GrantAndMarkAcceptedAsync(invitation);
@@ -308,19 +318,20 @@ public class InvitationService : IInvitationService
     {
         var invitation = await LoadAcceptableInvitationAsync(i => i.Token == token);
 
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == invitation.UserId && u.IsActive)
-            ?? throw new NotFoundException("User not found");
+        var person = await _context.People.FirstOrDefaultAsync(p => p.Id == invitation.UserId && p.IsActive)
+            ?? throw new NotFoundException("Person not found");
 
-        if (user.HasCompletedSignup)
+        var existingAccount = await _context.UserAccounts.FirstOrDefaultAsync(a => a.PersonId == person.Id);
+        if (existingAccount is { HasCompletedSignup: true })
             throw new AppException(Constants.ErrorCodes.UserAlreadyExists,
                 "This account already has a password - log in and accept the invitation from there.", 409);
 
-        user.FirstName = request.FirstName.Trim();
-        user.LastName = request.LastName.Trim();
-        if (request.Phone != null) user.Phone = request.Phone.Trim();
+        person.FirstName = request.FirstName.Trim();
+        person.LastName = request.LastName.Trim();
+        if (request.Phone != null) person.Phone = request.Phone.Trim();
         if (request.Address != null)
         {
-            user.Address = new Address
+            person.Address = new Address
             {
                 Street = request.Address.Street,
                 City = request.Address.City,
@@ -329,13 +340,34 @@ public class InvitationService : IInvitationService
                 Country = request.Address.Country
             };
         }
-        user.PasswordHash = _passwordService.HashPassword(request.Password);
-        user.HasCompletedSignup = true;
-        // Receiving and clicking the tokenized invite link is itself proof of email
-        // ownership - equivalent trust to an OTP, so this skips a separate OTP round-trip.
-        user.EmailVerified = true;
-        user.EmailVerifiedAt = DateTime.UtcNow;
-        user.UpdatedAt = DateTime.UtcNow;
+        person.UpdatedAt = DateTime.UtcNow;
+
+        if (existingAccount == null)
+        {
+            var account = new UserAccount
+            {
+                Id = Guid.NewGuid(),
+                PersonId = person.Id,
+                PasswordHash = _passwordService.HashPassword(request.Password),
+                HasCompletedSignup = true,
+                // Receiving and clicking the tokenized invite link is itself proof of email
+                // ownership - equivalent trust to an OTP, so this skips a separate OTP round-trip.
+                EmailVerified = true,
+                EmailVerifiedAt = DateTime.UtcNow,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            await _context.UserAccounts.AddAsync(account);
+        }
+        else
+        {
+            existingAccount.PasswordHash = _passwordService.HashPassword(request.Password);
+            existingAccount.HasCompletedSignup = true;
+            existingAccount.EmailVerified = true;
+            existingAccount.EmailVerifiedAt = DateTime.UtcNow;
+            existingAccount.UpdatedAt = DateTime.UtcNow;
+        }
 
         // Deliberately does NOT accept the invitation - password setup and accepting
         // membership are separate decisions. The person logs in next and gets an explicit
@@ -350,7 +382,9 @@ public class InvitationService : IInvitationService
             .FirstOrDefaultAsync(i => i.Id == invitationId)
             ?? throw new NotFoundException("Invitation not found");
 
-        if (invitation.UserId != callerUserId)
+        var callerAccount = await _context.UserAccounts.FirstOrDefaultAsync(a => a.Id == callerUserId)
+            ?? throw new ForbiddenException("This invitation is for a different account.");
+        if (invitation.UserId != callerAccount.PersonId)
             throw new ForbiddenException("This invitation is for a different account.");
 
         await MarkDeclinedAsync(invitation);
@@ -371,7 +405,12 @@ public class InvitationService : IInvitationService
 
         // Nothing is ever granted before accept, so declining never has anything to undo.
         invitation.Status = "Declined";
-        AddAudit("InvitationDeclined", "Invitation", invitation.Id, invitation.ScopeId, invitation.UserId, "Pending", "Declined");
+        // invitation.UserId is a Person.Id; AuditLog.UserId is a FK to UserAccount, so this
+        // needs the account, not the person - a token-based decline may have no account yet
+        // (e.g. a brand-new invitee declining before ever setting a password), in which case
+        // the audit row is left unattributed rather than violating the FK.
+        var account = await _context.UserAccounts.FirstOrDefaultAsync(a => a.PersonId == invitation.UserId);
+        AddAudit("InvitationDeclined", "Invitation", invitation.Id, invitation.ScopeId, account?.Id, "Pending", "Declined");
         await _context.SaveChangesAsync();
     }
 
@@ -404,14 +443,18 @@ public class InvitationService : IInvitationService
     /// </summary>
     private async Task GrantAndMarkAcceptedAsync(Invitation invitation)
     {
-        await _grantService.GrantAsync(invitation.UserId, invitation.RoleId, invitation.ScopeType, invitation.ScopeId, invitation.InvitedBy);
+        var account = await _context.UserAccounts.FirstOrDefaultAsync(a => a.PersonId == invitation.UserId)
+            ?? throw new AppException(Constants.ErrorCodes.ValidationFailed,
+                "This person has not completed account setup yet.", 409);
+
+        await _grantService.GrantAsync(account.Id, invitation.RoleId, invitation.ScopeType, invitation.ScopeId, invitation.InvitedBy);
 
         invitation.Status = "Accepted";
         // Same FK constraint as CreateScopedInvitationAsync's AddAudit call - workspaceId is
         // a real FK to Workspaces, only safe to pass when the scope actually is a workspace.
         AddAudit("InvitationAccepted", "Invitation", invitation.Id,
             invitation.ScopeType == Constants.ScopeTypes.Workspace ? invitation.ScopeId : null,
-            invitation.UserId, null, invitation.ScopeType);
+            account.Id, null, invitation.ScopeType);
         await _context.SaveChangesAsync();
     }
 
@@ -456,7 +499,7 @@ public class InvitationService : IInvitationService
         }
     }
 
-    private void AddAudit(string action, string resourceType, Guid resourceId, Guid? workspaceId, Guid userId, string? oldValue, string? newValue)
+    private void AddAudit(string action, string resourceType, Guid resourceId, Guid? workspaceId, Guid? userId, string? oldValue, string? newValue)
     {
         _context.AuditLogs.Add(new AuditLog
         {
