@@ -195,4 +195,59 @@ public class JobAccessScopingTests : WorkspaceIntegrationTestBase
         var result = await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobBId, ClientId, "Client");
         Assert.NotNull(result.Access);
     }
+
+    [Fact]
+    public async Task GetParticipants_DirectOnly_ExcludesAdmin()
+    {
+        // Direct list is the "who's assigned" view - Admin has zero Job-scope rows, so
+        // shouldn't appear even though they can open every job.
+        await SeedJobsAsync();
+
+        var participants = await _jobService.GetParticipantsAsync(WorkspaceId, AdminId, _jobAId);
+
+        var surveyor = Assert.Single(participants);
+        Assert.Equal(SurveyorId, surveyor.UserId);
+    }
+
+    [Fact]
+    public async Task GetEffectiveParticipants_IncludesDirectAndBlanketAccess()
+    {
+        // Effective list = direct Job-scope grants + anyone with job.view_all from an
+        // ancestor scope (Admin, via their Workspace-scope role) - everyone who can actually
+        // open the job, not just who was explicitly assigned.
+        await SeedJobsAsync();
+
+        var participants = await _jobService.GetEffectiveParticipantsAsync(WorkspaceId, AdminId, _jobAId);
+
+        Assert.Equal(2, participants.Count);
+        Assert.Contains(participants, p => p.UserId == SurveyorId && p.ScopeType == Constants.ScopeTypes.Job);
+        Assert.Contains(participants, p => p.UserId == AdminId && p.ScopeType == Constants.ScopeTypes.Workspace);
+    }
+
+    [Fact]
+    public async Task GetEffectiveParticipants_JobWithNoDirectGrants_StillShowsAdmin()
+    {
+        // Job B has no explicit participants at all - Admin's blanket access must still show,
+        // proving the implicit branch doesn't depend on a direct grant existing first.
+        await SeedJobsAsync();
+
+        var participants = await _jobService.GetEffectiveParticipantsAsync(WorkspaceId, AdminId, _jobBId);
+
+        var admin = Assert.Single(participants);
+        Assert.Equal(AdminId, admin.UserId);
+        Assert.Equal(Constants.ScopeTypes.Workspace, admin.ScopeType);
+    }
+
+    [Fact]
+    public async Task GetEffectiveParticipants_ClientHasNoViewAll_NotIncludedTwice()
+    {
+        // Client (job-scope only, no view_all anywhere) shows up exactly once - as their
+        // direct Job-scope grant, not duplicated via any implicit path.
+        await SeedJobsAsync();
+        await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobAId, ClientId, "Client");
+
+        var participants = await _jobService.GetEffectiveParticipantsAsync(WorkspaceId, AdminId, _jobAId);
+
+        Assert.Single(participants, p => p.UserId == ClientId);
+    }
 }

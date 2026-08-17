@@ -40,7 +40,16 @@ public interface IJobService
     Task<Invitation> InviteParticipantByEmailAsync(Guid workspaceId, Guid callerUserId, Guid jobId, string role, string email, string? firstName, string? lastName, string? phone, AddressDto? address);
 
     Task RemoveParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId, string role);
+
+    /// <summary>Direct participants only - explicit Job-scope grants (Surveyor/Client/Finance assigned to this specific job). What the "manage participants" UI needs.</summary>
     Task<List<UserAccess>> GetParticipantsAsync(Guid workspaceId, Guid callerUserId, Guid jobId);
+
+    /// <summary>
+    /// Direct participants PLUS anyone with blanket job.view_all access from an ancestor scope
+    /// (Admin, today) - everyone who can actually open this job, not just who was explicitly
+    /// assigned to it. See ScopedAccessService.GetUsersWithAccessAsync.
+    /// </summary>
+    Task<List<UserAccess>> GetEffectiveParticipantsAsync(Guid workspaceId, Guid callerUserId, Guid jobId);
 
     Task AddLandAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid landId);
     Task RemoveLandAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid landId);
@@ -294,6 +303,14 @@ public class JobService : IJobService
             .Where(ua => ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == jobId && ua.IsActive)
             .OrderBy(ua => ua.AssignedAt)
             .ToListAsync();
+    }
+
+    public async Task<List<UserAccess>> GetEffectiveParticipantsAsync(Guid workspaceId, Guid callerUserId, Guid jobId)
+    {
+        await FindJobAsync(workspaceId, jobId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
+
+        return await _access.GetUsersWithAccessAsync(Constants.ScopeTypes.Job, jobId, "job");
     }
 
     public async Task AddLandAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid landId)

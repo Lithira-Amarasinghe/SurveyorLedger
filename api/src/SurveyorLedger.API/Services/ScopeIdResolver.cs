@@ -40,4 +40,7 @@ public class ScopeIdResolver : IScopeIdResolver
             parentScopeType, childScopeType);
         return Task.FromResult(new List<Guid>());
     }
+
+    public string? GetParentScopeType(string scopeType) =>
+        _byChildType.TryGetValue(scopeType, out var provider) ? provider.ParentScopeType : null;
 }

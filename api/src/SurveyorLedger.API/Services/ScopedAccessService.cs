@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SurveyorLedger.Core;
 using SurveyorLedger.Core.Exceptions;
 using SurveyorLedger.Data;
+using SurveyorLedger.Data.Entities;
 
 namespace SurveyorLedger.API.Services;
 
@@ -75,17 +76,30 @@ public interface IScopedAccessService
     /// <summary>Resolves a caller's UserAccount.Id (the JWT subject) to the Person.Id behind it - needed
     /// wherever an actor field (CreatedBy, RecordedBy, UploadedBy, ...) means Person, not UserAccount.</summary>
     Task<Guid> ResolvePersonIdAsync(Guid userAccountId);
+
+    /// <summary>
+    /// Everyone who can actually reach <paramref name="scopeId"/>: direct grants at that exact
+    /// scope, plus anyone holding a *.view_all permission for <paramref name="resource"/> at
+    /// any ancestor scope above it (e.g. Admin's job.view_all at Workspace covers every Job
+    /// underneath without a per-job row). Walks the full ancestor chain via IScopeIdResolver -
+    /// hierarchy-agnostic, so a level added above Workspace later is covered with zero changes
+    /// here, and a new *.view_all permission on any role is picked up automatically since the
+    /// check queries RolePermissions directly rather than a hardcoded role/action.
+    /// </summary>
+    Task<List<UserAccess>> GetUsersWithAccessAsync(string scopeType, Guid scopeId, string resource);
 }
 
 public class ScopedAccessService : IScopedAccessService
 {
     private readonly ApplicationDbContext _context;
     private readonly ICasbinService _casbinService;
+    private readonly IScopeIdResolver _scopeIdResolver;
 
-    public ScopedAccessService(ApplicationDbContext context, ICasbinService casbinService)
+    public ScopedAccessService(ApplicationDbContext context, ICasbinService casbinService, IScopeIdResolver scopeIdResolver)
     {
         _context = context;
         _casbinService = casbinService;
+        _scopeIdResolver = scopeIdResolver;
     }
 
     public async Task EnsureAllowedAsync(Guid userId, string resource, string action, Guid workspaceId)
@@ -203,20 +217,79 @@ public class ScopedAccessService : IScopedAccessService
         if (hasThisScope)
             return true;
 
-        // Ancestor walk - one branch per hierarchy level. Job's parent is Workspace; a level
-        // above Workspace (Organization) has no entity yet, so it stops here for now.
-        if (scopeType == Constants.ScopeTypes.Job)
+        // Ancestor walk via IScopeIdResolver - hierarchy-agnostic, so a level added above
+        // Workspace later (Organization) is covered by registering one more IScopeLinkProvider,
+        // not another branch here.
+        foreach (var (ancestorType, ancestorId) in await GetAncestorScopesAsync(scopeType, scopeId))
         {
-            var workspaceId = await _context.Jobs
-                .Where(j => j.Id == scopeId)
-                .Select(j => j.WorkspaceId)
-                .FirstOrDefaultAsync();
-
-            return await _context.UserAccesses
-                .AnyAsync(ua => ua.UserId == userId && ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId);
+            var hasAncestorScope = await _context.UserAccesses
+                .AnyAsync(ua => ua.UserId == userId && ua.IsActive && ua.ScopeType == ancestorType && ua.ScopeId == ancestorId);
+            if (hasAncestorScope)
+                return true;
         }
 
         return false;
+    }
+
+    /// <summary>Walks from (scopeType, scopeId) to the top of the hierarchy via IScopeIdResolver, returning each ancestor (type, id) in order, nearest first.</summary>
+    private async Task<List<(string ScopeType, Guid ScopeId)>> GetAncestorScopesAsync(string scopeType, Guid scopeId)
+    {
+        var ancestors = new List<(string, Guid)>();
+        var currentType = scopeType;
+        var currentId = scopeId;
+
+        while (true)
+        {
+            var parentType = _scopeIdResolver.GetParentScopeType(currentType);
+            if (parentType == null)
+                break;
+
+            var parentId = await _scopeIdResolver.GetParentIdAsync(currentType, currentId);
+            if (parentId == null)
+                break;
+
+            ancestors.Add((parentType, parentId.Value));
+            currentType = parentType;
+            currentId = parentId.Value;
+        }
+
+        return ancestors;
+    }
+
+    public async Task<List<UserAccess>> GetUsersWithAccessAsync(string scopeType, Guid scopeId, string resource)
+    {
+        var direct = await _context.UserAccesses
+            .Include(ua => ua.Role)
+            .Include(ua => ua.User).ThenInclude(a => a.Person)
+            .Where(ua => ua.ScopeType == scopeType && ua.ScopeId == scopeId && ua.IsActive)
+            .ToListAsync();
+
+        var ancestors = await GetAncestorScopesAsync(scopeType, scopeId);
+        if (ancestors.Count == 0)
+            return direct;
+
+        // Which roles hold blanket ("*.view_all") access to this resource - queried straight
+        // off RolePermissions, not any hardcoded role name, so a new role granted job.view_all
+        // later (or any resource's view_all) is picked up with zero code change here.
+        var viewAllRoleIds = await _context.RolePermissions
+            .Where(rp => rp.Permission.Resource == resource && rp.Permission.Action == "view_all")
+            .Select(rp => rp.RoleId)
+            .ToListAsync();
+        if (viewAllRoleIds.Count == 0)
+            return direct;
+
+        var implicitAccess = new List<UserAccess>();
+        foreach (var (ancestorType, ancestorId) in ancestors)
+        {
+            var rows = await _context.UserAccesses
+                .Include(ua => ua.Role)
+                .Include(ua => ua.User).ThenInclude(a => a.Person)
+                .Where(ua => ua.ScopeType == ancestorType && ua.ScopeId == ancestorId && ua.IsActive && viewAllRoleIds.Contains(ua.RoleId))
+                .ToListAsync();
+            implicitAccess.AddRange(rows);
+        }
+
+        return direct.Concat(implicitAccess).ToList();
     }
 
     /// <summary>
