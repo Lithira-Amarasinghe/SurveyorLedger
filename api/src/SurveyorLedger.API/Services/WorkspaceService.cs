@@ -286,6 +286,11 @@ public class WorkspaceService : IWorkspaceService
     public Task<List<string>> GetEligibleRoleNamesAsync(string scopeType) =>
         _context.RoleScopes
             .Where(rs => rs.ScopeType == scopeType)
+            // WorkspaceMember exists in RoleScopes only so the access-chaining engine can grant it
+            // as a baseline ancestor role (see AssignmentPolicy "FullChain") - it's never something
+            // an admin picks directly, and UpdateMemberRoleRequest/InvitationRequest already reject
+            // it server-side. Exclude it here so the picker doesn't offer a choice that would 400.
+            .Where(rs => rs.Role.Name != "WorkspaceMember")
             .Select(rs => rs.Role.Name)
             .OrderBy(n => n)
             .ToListAsync();
