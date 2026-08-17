@@ -198,7 +198,7 @@ public class JobService : IJobService
     public async Task<ParticipantAddResult> AddParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId, string role)
     {
         var job = await FindJobAsync(workspaceId, jobId);
-        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "manage_participants");
 
         var jobRole = await ResolveJobRoleAsync(role);
 
@@ -227,7 +227,7 @@ public class JobService : IJobService
     public async Task<Invitation> InviteParticipantByEmailAsync(Guid workspaceId, Guid callerUserId, Guid jobId, string role, string email, string? firstName, string? lastName, string? phone, AddressDto? address)
     {
         var job = await FindJobAsync(workspaceId, jobId);
-        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "manage_participants");
 
         var jobRole = await ResolveJobRoleAsync(role);
 
@@ -248,7 +248,7 @@ public class JobService : IJobService
     public async Task RemoveParticipantAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid targetUserId, string role)
     {
         await FindJobAsync(workspaceId, jobId);
-        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "manage_participants");
 
         var jobRole = await _context.Roles.FirstOrDefaultAsync(r => r.Name == role && r.IsSystem)
             ?? throw new AppException(Constants.ErrorCodes.ValidationFailed, "Unknown role.", 400);

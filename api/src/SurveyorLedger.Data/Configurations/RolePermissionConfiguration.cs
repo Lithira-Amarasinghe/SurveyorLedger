@@ -44,9 +44,12 @@ public class RolePermissionConfiguration : IEntityTypeConfiguration<RolePermissi
             Grant(new Guid("00000000-0000-0000-0000-000000000222"), RoleConfiguration.AdminRoleId, PermissionConfiguration.EditJobId),
             Grant(new Guid("00000000-0000-0000-0000-000000000223"), RoleConfiguration.AdminRoleId, PermissionConfiguration.DeleteJobId),
             // Job - Surveyor: view/edit only - job creation is an Admin decision, not
-            // something a Surveyor can do on their own.
+            // something a Surveyor can do on their own. Deliberately no manage_participants:
+            // a Surveyor staffed on a job can update it, but adding/removing who else is on
+            // it is a membership decision, reserved for Admin (see ManageJobParticipantsId).
             Grant(new Guid("00000000-0000-0000-0000-000000000228"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.ViewJobId),
             Grant(new Guid("00000000-0000-0000-0000-000000000230"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.EditJobId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000285"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ManageJobParticipantsId),
             // Job - Client: view only (further scoped to their own jobs in JobService, not Casbin)
             Grant(new Guid("00000000-0000-0000-0000-000000000231"), RoleConfiguration.ClientRoleId, PermissionConfiguration.ViewJobId),
             // Client contacts - Admin/Surveyor: view+create (whoever can field the

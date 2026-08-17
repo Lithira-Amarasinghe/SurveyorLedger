@@ -22,6 +22,7 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
     public static readonly Guid CreateClientId = new("00000000-0000-0000-0000-000000000114");
     public static readonly Guid ViewAllJobId = new("00000000-0000-0000-0000-000000000115");
     public static readonly Guid ViewAllLandId = new("00000000-0000-0000-0000-000000000116");
+    public static readonly Guid ManageJobParticipantsId = new("00000000-0000-0000-0000-000000000138");
     public static readonly Guid ViewQuotationId = new("00000000-0000-0000-0000-000000000121");
     public static readonly Guid CreateQuotationId = new("00000000-0000-0000-0000-000000000122");
     public static readonly Guid EditQuotationId = new("00000000-0000-0000-0000-000000000123");
@@ -65,8 +66,13 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
             new Permission { Id = DeleteLandId, Name = "land.delete", Description = "Delete land records.", Resource = "land", Action = "delete", Scope = null, CreatedAt = seededAt },
             new Permission { Id = ViewJobId, Name = "job.view", Description = "View jobs.", Resource = "job", Action = "view", Scope = null, CreatedAt = seededAt },
             new Permission { Id = CreateJobId, Name = "job.create", Description = "Create jobs.", Resource = "job", Action = "create", Scope = null, CreatedAt = seededAt },
-            new Permission { Id = EditJobId, Name = "job.edit", Description = "Edit jobs, participants, and land links.", Resource = "job", Action = "edit", Scope = null, CreatedAt = seededAt },
+            // "edit" covers the job's own fields and land links only - who's assigned to
+            // the job is a separate, narrower permission (see ManageJobParticipantsId) so a
+            // Surveyor who can edit a job they're staffed on can't also add/remove other
+            // people from it.
+            new Permission { Id = EditJobId, Name = "job.edit", Description = "Edit jobs and land links.", Resource = "job", Action = "edit", Scope = null, CreatedAt = seededAt },
             new Permission { Id = DeleteJobId, Name = "job.delete", Description = "Delete jobs.", Resource = "job", Action = "delete", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = ManageJobParticipantsId, Name = "job.manage_participants", Description = "Add, invite, and remove people assigned to a job.", Resource = "job", Action = "manage_participants", Scope = null, CreatedAt = seededAt },
             new Permission { Id = ViewClientId, Name = "client.view", Description = "Search/view client contact records.", Resource = "client", Action = "view", Scope = null, CreatedAt = seededAt },
             new Permission { Id = CreateClientId, Name = "client.create", Description = "Create a bare client contact record.", Resource = "client", Action = "create", Scope = null, CreatedAt = seededAt },
             new Permission { Id = ViewAllJobId, Name = "job.view_all", Description = "View every job in the workspace, not just assigned ones.", Resource = "job", Action = "view_all", Scope = null, CreatedAt = seededAt },

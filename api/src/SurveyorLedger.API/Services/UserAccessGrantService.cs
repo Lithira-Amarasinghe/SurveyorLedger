@@ -51,7 +51,10 @@ public class UserAccessGrantService : IUserAccessGrantService
             .Include(r => r.Policy)
             .FirstAsync(r => r.Id == roleId);
 
-        var existing = await _context.UserAccesses
+        // IgnoreQueryFilters: ApplicationDbContext filters UserAccess to IsActive by default -
+        // a previously-revoked row for this exact (user, role, scope) must still be found here
+        // so it gets reactivated instead of colliding with a fresh duplicate insert.
+        var existing = await _context.UserAccesses.IgnoreQueryFilters()
             .Include(ua => ua.User)
             .Include(ua => ua.Role)
             .FirstOrDefaultAsync(ua => ua.UserId == userId && ua.ScopeType == scopeType && ua.ScopeId == scopeId && ua.RoleId == roleId);
@@ -138,7 +141,9 @@ public class UserAccessGrantService : IUserAccessGrantService
                     break;
                 }
 
-                // Check if user already has ANY role at the ancestor scope
+                // Check if user already has ANY active role at the ancestor scope - if so,
+                // they've already earned baseline presence there and this policy shouldn't
+                // add or touch anything.
                 var hasAnyRoleAtAncestor = await _context.UserAccesses
                     .Where(ua => ua.UserId == userId && ua.ScopeType == ancestorScopeType &&
                                  ua.ScopeId == parentScopeId && ua.IsActive)
@@ -146,14 +151,26 @@ public class UserAccessGrantService : IUserAccessGrantService
 
                 if (!hasAnyRoleAtAncestor)
                 {
-                    // Grant the ancestor role
-                    var ancestorRoleEntity = await _context.Roles
-                        .Include(r => r.Policy)
-                        .FirstOrDefaultAsync(r => r.Id == ancestorRoleId);
+                    // Reactivate a prior chain-granted row if one exists (e.g. revoked, then
+                    // re-granted) rather than inserting a duplicate that would collide with
+                    // history and leave two rows chasing the same (user, role, scope).
+                    // IgnoreQueryFilters: ApplicationDbContext filters UserAccess to IsActive
+                    // by default - the one row we need to find here is exactly the inactive one.
+                    var existingAncestorAccess = await _context.UserAccesses.IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(ua => ua.UserId == userId && ua.RoleId == ancestorRoleId &&
+                            ua.ScopeType == ancestorScopeType && ua.ScopeId == parentScopeId);
 
-                    if (ancestorRoleEntity != null)
+                    if (existingAncestorAccess != null)
                     {
-                        var ancestorAccess = new UserAccess
+                        existingAncestorAccess.IsActive = true;
+                        existingAncestorAccess.IsChainGranted = true;
+                        existingAncestorAccess.AssignedBy = assignedBy;
+                        existingAncestorAccess.AssignedAt = DateTime.UtcNow;
+                        existingAncestorAccess.UpdatedAt = DateTime.UtcNow;
+                    }
+                    else
+                    {
+                        existingAncestorAccess = new UserAccess
                         {
                             Id = Guid.NewGuid(),
                             UserId = userId,
@@ -163,10 +180,16 @@ public class UserAccessGrantService : IUserAccessGrantService
                             AssignedAt = DateTime.UtcNow,
                             AssignedBy = assignedBy,
                             IsActive = true,
+                            IsChainGranted = true,
                             CreatedAt = DateTime.UtcNow,
                             UpdatedAt = DateTime.UtcNow
                         };
-                        await _context.UserAccesses.AddAsync(ancestorAccess);
+                        await _context.UserAccesses.AddAsync(existingAncestorAccess);
+                    }
+
+                    var ancestorRoleEntity = await _context.Roles.FirstOrDefaultAsync(r => r.Id == ancestorRoleId);
+                    if (ancestorRoleEntity != null)
+                    {
                         await SyncCasbinAsync(() => _casbinService.AddRoleForUserAsync(
                             userId.ToString(), ancestorRoleEntity.Name, parentScopeId.ToString()));
                     }
@@ -190,12 +213,10 @@ public class UserAccessGrantService : IUserAccessGrantService
     public async Task RevokeAsync(Guid userId, string scopeType, Guid scopeId, Guid? roleId = null)
     {
         var accesses = await _context.UserAccesses
-            .Include(ua => ua.Role)
+            .Include(ua => ua.Role).ThenInclude(r => r.Policy)
             .Where(ua => ua.UserId == userId && ua.IsActive && ua.ScopeType == scopeType && ua.ScopeId == scopeId
                 && (roleId == null || ua.RoleId == roleId))
             .ToListAsync();
-
-        bool isFullRemovalAtScope = roleId == null;
 
         foreach (var access in accesses)
         {
@@ -206,69 +227,144 @@ public class UserAccessGrantService : IUserAccessGrantService
 
         await _context.SaveChangesAsync();
 
-        // Cascade revoke: if this was a full removal at the scope, revoke all roles at child scopes
-        // that were only granted via the chaining mechanism (not directly assigned).
-        if (isFullRemovalAtScope)
-            await CascadeRevokeChildScopesAsync(userId, scopeType, scopeId);
+        // Cascade UP, not down: revoking a role that chain-granted an ancestor role (e.g.
+        // Surveyor at Job auto-granting WorkspaceMember at Workspace) should also drop that
+        // ancestor role, but only if nothing else still needs it. Runs per revoked role since
+        // each can chain to a different ancestor.
+        foreach (var access in accesses)
+            await CascadeRevokeAncestorsAsync(userId, scopeType, scopeId, access.Role);
     }
 
-    private async Task CascadeRevokeChildScopesAsync(Guid userId, string parentScopeType, Guid parentScopeId)
+    /// <summary>
+    /// Walks the just-revoked role's own policy ancestors upward, undoing exactly what
+    /// GrantAncestorRolesAsync would have done for it. Stops the moment it finds an ancestor
+    /// row that either isn't chain-granted (the user earned it independently - never touch
+    /// it) or is still required by some other active grant elsewhere in the tree.
+    /// </summary>
+    private async Task CascadeRevokeAncestorsAsync(Guid userId, string revokedScopeType, Guid revokedScopeId, Role revokedRole)
     {
         try
         {
-            // Find the child scope type(s) for this parent
-            var childScopes = await _context.ScopeParentTypes
-                .Where(spt => spt.ParentScopeType == parentScopeType)
-                .ToListAsync();
+            var policy = revokedRole.Policy;
+            if (policy == null)
+                return;
 
-            foreach (var childScopeMapping in childScopes)
+            var policyDoc = JsonSerializer.Deserialize<JsonElement>(policy.RulesJson);
+            if (!policyDoc.TryGetProperty("ancestors", out var ancestorsArray) || ancestorsArray.ValueKind != JsonValueKind.Array)
+                return;
+
+            string currentScopeType = revokedScopeType;
+            Guid currentScopeId = revokedScopeId;
+
+            foreach (var ancestorRule in ancestorsArray.EnumerateArray())
             {
-                var childScopeType = childScopeMapping.ScopeType;
+                if (!ancestorRule.TryGetProperty("scopeType", out var ancestorScopeTypeEl) ||
+                    !ancestorRule.TryGetProperty("grantRoleId", out var ancestorRoleIdEl))
+                    continue;
 
-                // Get all child scope IDs under this parent
-                var childScopeIds = await _scopeIdResolver.GetChildIdsAsync(parentScopeType, childScopeType, parentScopeId);
+                var ancestorScopeType = ancestorScopeTypeEl.GetString();
+                if (ancestorScopeType == null || !Guid.TryParse(ancestorRoleIdEl.GetString(), out var ancestorRoleId))
+                    continue;
 
-                foreach (var childScopeId in childScopeIds)
-                {
-                    // Check if user has any DIRECT (non-chained) role grants at this child scope.
-                    // A direct grant is one where the role's policy doesn't include this parent in its ancestors,
-                    // or where the user was explicitly assigned to this scope.
-                    // For now, use heuristic: roles granted via FullChain policy are considered chained.
-                    var directRoleIds = new HashSet<Guid>();
-                    var chainedRoleIds = new HashSet<Guid>();
+                var parentScopeId = await _scopeIdResolver.GetParentIdAsync(currentScopeType, currentScopeId);
+                if (parentScopeId == null)
+                    break;
 
-                    var activeRolesAtChild = await _context.UserAccesses
-                        .Include(ua => ua.Role)
-                        .Where(ua => ua.UserId == userId && ua.ScopeType == childScopeType &&
-                                     ua.ScopeId == childScopeId && ua.IsActive)
-                        .ToListAsync();
+                var ancestorAccess = await _context.UserAccesses
+                    .FirstOrDefaultAsync(ua => ua.UserId == userId && ua.ScopeType == ancestorScopeType &&
+                        ua.ScopeId == parentScopeId && ua.RoleId == ancestorRoleId && ua.IsActive);
 
-                    foreach (var access in activeRolesAtChild)
-                    {
-                        var policy = access.Role.Policy;
-                        if (policy != null && policy.Name == "FullChain")
-                            chainedRoleIds.Add(access.RoleId);
-                        else
-                            directRoleIds.Add(access.RoleId);
-                    }
+                // Nothing active there, or the user holds it for a reason other than this
+                // chain (direct grant/invite) - never auto-remove something we didn't grant.
+                if (ancestorAccess == null || !ancestorAccess.IsChainGranted)
+                    break;
 
-                    // Only revoke chained roles; leave direct assignments alone
-                    if (chainedRoleIds.Any())
-                    {
-                        foreach (var chainedRoleId in chainedRoleIds)
-                        {
-                            await RevokeAsync(userId, childScopeType, childScopeId, chainedRoleId);
-                        }
-                    }
-                }
+                if (await AnyOtherActiveGrantStillChainsToAsync(userId, ancestorScopeType, parentScopeId.Value, ancestorRoleId, currentScopeType, currentScopeId))
+                    break;
+
+                // Nothing else needs it - revoke, and let this continue cascading further up
+                // (e.g. Workspace -> future Organization) via the recursive RevokeAsync call.
+                await RevokeAsync(userId, ancestorScopeType, parentScopeId.Value, ancestorRoleId);
+
+                currentScopeType = ancestorScopeType;
+                currentScopeId = parentScopeId.Value;
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error cascading revoke for user {UserId} at {ScopeType}:{ScopeId}",
-                userId, parentScopeType, parentScopeId);
+            _logger.LogError(ex, "Error cascading ancestor revoke for user {UserId} from {ScopeType}:{ScopeId}",
+                userId, revokedScopeType, revokedScopeId);
             throw;
         }
+    }
+
+    /// <summary>
+    /// True if the user holds any other active role, anywhere under <paramref name="ancestorScopeId"/>,
+    /// whose policy also chains into (<paramref name="ancestorScopeType"/>, <paramref name="ancestorRoleId"/>) -
+    /// i.e. someone else still has a reason for this ancestor access to exist. Child scope
+    /// types are discovered from ScopeParentType (data-driven, same as the grant path), so
+    /// this needs no change when a new scope level is added.
+    /// </summary>
+    private async Task<bool> AnyOtherActiveGrantStillChainsToAsync(
+        Guid userId, string ancestorScopeType, Guid ancestorScopeId, Guid ancestorRoleId,
+        string excludeScopeType, Guid excludeScopeId)
+    {
+        var childScopeTypes = await _context.ScopeParentTypes
+            .Where(spt => spt.ParentScopeType == ancestorScopeType)
+            .Select(spt => spt.ScopeType)
+            .ToListAsync();
+
+        foreach (var childScopeType in childScopeTypes)
+        {
+            var childScopeIds = await _scopeIdResolver.GetChildIdsAsync(ancestorScopeType, childScopeType, ancestorScopeId);
+
+            foreach (var childScopeId in childScopeIds)
+            {
+                if (childScopeType == excludeScopeType && childScopeId == excludeScopeId)
+                    continue; // the scope we're revoking from doesn't count as "still needing" it
+
+                var activeRoles = await _context.UserAccesses
+                    .Include(ua => ua.Role).ThenInclude(r => r.Policy)
+                    .Where(ua => ua.UserId == userId && ua.ScopeType == childScopeType &&
+                                 ua.ScopeId == childScopeId && ua.IsActive)
+                    .ToListAsync();
+
+                if (activeRoles.Any(ua => RoleChainsTo(ua.Role, ancestorScopeType, ancestorRoleId)))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool RoleChainsTo(Role role, string ancestorScopeType, Guid ancestorRoleId)
+    {
+        if (role.Policy == null)
+            return false;
+
+        JsonElement doc;
+        try
+        {
+            doc = JsonSerializer.Deserialize<JsonElement>(role.Policy.RulesJson);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        if (!doc.TryGetProperty("ancestors", out var ancestors) || ancestors.ValueKind != JsonValueKind.Array)
+            return false;
+
+        foreach (var rule in ancestors.EnumerateArray())
+        {
+            if (rule.TryGetProperty("scopeType", out var scopeTypeEl) &&
+                rule.TryGetProperty("grantRoleId", out var roleIdEl) &&
+                scopeTypeEl.GetString() == ancestorScopeType &&
+                Guid.TryParse(roleIdEl.GetString(), out var roleId) && roleId == ancestorRoleId)
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>

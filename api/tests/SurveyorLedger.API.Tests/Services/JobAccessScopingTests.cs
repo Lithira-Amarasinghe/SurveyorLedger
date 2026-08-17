@@ -138,4 +138,40 @@ public class JobAccessScopingTests : WorkspaceIntegrationTestBase
         Assert.NotNull(result.Invitation);
         Assert.Equal(Constants.ScopeTypes.Job, result.Invitation!.ScopeType);
     }
+
+    [Fact]
+    public async Task Surveyor_CannotAddParticipant_EvenOnTheirOwnAssignedJob()
+    {
+        // job.edit lets a Surveyor update the job itself, but managing who's assigned to it
+        // is a separate permission (job.manage_participants) that only Admin holds - staffed
+        // work access must not imply people-management access.
+        await SeedJobsAsync();
+        var outsiderId = await CreateUserAccountAsync("Outsider", "Person", "outsider2@test.local");
+
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => _jobService.AddParticipantAsync(WorkspaceId, SurveyorId, _jobAId, outsiderId, "Client"));
+    }
+
+    [Fact]
+    public async Task Surveyor_CannotRemoveParticipant_EvenOnTheirOwnAssignedJob()
+    {
+        await SeedJobsAsync();
+
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => _jobService.RemoveParticipantAsync(WorkspaceId, SurveyorId, _jobAId, SurveyorId, "Surveyor"));
+    }
+
+    [Fact]
+    public async Task Admin_CanAddParticipant()
+    {
+        // Confirms the permission was actually granted to Admin, not just withheld from
+        // Surveyor - a mis-seeded RolePermission row would fail this even though the two
+        // tests above would still pass. ClientId already holds workspace-level access (see
+        // WorkspaceIntegrationTestBase seed), so this hits the instant-grant path rather
+        // than falling back to an invite.
+        await SeedJobsAsync();
+
+        var result = await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobBId, ClientId, "Client");
+        Assert.NotNull(result.Access);
+    }
 }
