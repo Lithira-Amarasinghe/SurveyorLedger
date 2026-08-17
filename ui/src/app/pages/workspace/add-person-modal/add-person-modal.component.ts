@@ -76,7 +76,7 @@ export class AddPersonModalComponent implements OnInit {
   street = '';
   city = '';
   role = 'Member';
-  eligibleRoles = signal<string[]>(['Admin', 'Surveyor', 'Member']);
+  eligibleRoles = signal<string[]>(['Admin', 'Surveyor', 'Member', 'WorkspaceMember']);
   loading = signal(false);
   error = signal('');
 

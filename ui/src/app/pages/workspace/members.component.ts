@@ -170,7 +170,7 @@ export class MembersComponent implements OnInit {
   error = signal('');
   modalOpen = signal(false);
   confirming = signal<Set<string>>(new Set());
-  eligibleRoles = signal<string[]>(['Admin', 'Surveyor', 'Member']);
+  eligibleRoles = signal<string[]>(['Admin', 'Surveyor', 'Member', 'WorkspaceMember']);
 
   constructor(
     private workspaceService: WorkspaceService,

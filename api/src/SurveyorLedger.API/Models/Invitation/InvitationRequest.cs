@@ -16,7 +16,7 @@ public class InvitationRequest
     public required string Email { get; set; }
 
     [Required(ErrorMessage = "Role is required.")]
-    [RegularExpression("^(Admin|Surveyor|Member)$", ErrorMessage = "Role must be Admin, Surveyor, or Member.")]
+    [RegularExpression("^(Admin|Surveyor|Member|WorkspaceMember)$", ErrorMessage = "Role must be Admin, Surveyor, Member, or WorkspaceMember.")]
     public required string Role { get; set; }
 
     [StringLength(100, MinimumLength = 1)]
