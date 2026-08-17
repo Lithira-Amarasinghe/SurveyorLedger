@@ -285,15 +285,44 @@ public class InvitationService : IInvitationService
         return invitations;
     }
 
+    /// <summary>
+    /// Finds a pending-ish invitation under this workspace and checks the caller is allowed to
+    /// manage it - either a plain Workspace-scope invite (workspace.manage_members) or a
+    /// plain Job-scope invite for a job under this workspace (job.manage_participants on that
+    /// job). A chained invite (primary Workspace, DescendantScopeType=Job) is a Workspace-scope
+    /// invitation for this purpose - it's found and gated the first way.
+    /// </summary>
+    private async Task<Invitation> ResolveManageableInvitationAsync(Guid workspaceId, Guid invitationId, Guid callerUserId, string action)
+    {
+        var invitation = await _context.Invitations.FirstOrDefaultAsync(i => i.Id == invitationId)
+            ?? throw new NotFoundException("Invitation not found");
+
+        if (invitation.ScopeType == Constants.ScopeTypes.Workspace && invitation.ScopeId == workspaceId)
+        {
+            var allowed = await _casbinService.EnforceAsync(callerUserId.ToString(), "workspace", "manage_members", workspaceId.ToString());
+            if (!allowed)
+                throw new ForbiddenException($"You do not have permission to {action} invitations for this workspace.");
+            return invitation;
+        }
+
+        if (invitation.ScopeType == Constants.ScopeTypes.Job)
+        {
+            var jobWorkspaceId = await _context.Jobs.Where(j => j.Id == invitation.ScopeId).Select(j => (Guid?)j.WorkspaceId).FirstOrDefaultAsync();
+            if (jobWorkspaceId == workspaceId)
+            {
+                var allowed = await _access.CanAccessJobAsync(callerUserId, workspaceId, invitation.ScopeId, "manage_participants");
+                if (!allowed)
+                    throw new ForbiddenException($"You do not have permission to {action} invitations for this job.");
+                return invitation;
+            }
+        }
+
+        throw new NotFoundException("Invitation not found");
+    }
+
     public async Task RevokeInvitationAsync(Guid workspaceId, Guid invitationId, Guid callerUserId)
     {
-        var allowed = await _casbinService.EnforceAsync(callerUserId.ToString(), "workspace", "manage_members", workspaceId.ToString());
-        if (!allowed)
-            throw new ForbiddenException("You do not have permission to revoke invitations for this workspace.");
-
-        var invitation = await _context.Invitations
-            .FirstOrDefaultAsync(i => i.Id == invitationId && i.ScopeType == Constants.ScopeTypes.Workspace && i.ScopeId == workspaceId)
-            ?? throw new NotFoundException("Invitation not found");
+        var invitation = await ResolveManageableInvitationAsync(workspaceId, invitationId, callerUserId, "revoke");
 
         invitation.Status = "Revoked";
         AddAudit("InvitationRevoked", "Invitation", invitation.Id, workspaceId, callerUserId, "Pending", "Revoked");
@@ -302,13 +331,7 @@ public class InvitationService : IInvitationService
 
     public async Task ResendInvitationAsync(Guid workspaceId, Guid invitationId, Guid callerUserId)
     {
-        var allowed = await _casbinService.EnforceAsync(callerUserId.ToString(), "workspace", "manage_members", workspaceId.ToString());
-        if (!allowed)
-            throw new ForbiddenException("You do not have permission to resend invitations for this workspace.");
-
-        var invitation = await _context.Invitations
-            .FirstOrDefaultAsync(i => i.Id == invitationId && i.ScopeType == Constants.ScopeTypes.Workspace && i.ScopeId == workspaceId)
-            ?? throw new NotFoundException("Invitation not found");
+        var invitation = await ResolveManageableInvitationAsync(workspaceId, invitationId, callerUserId, "resend");
 
         var workspace = await _context.Workspaces.FirstAsync(w => w.Id == workspaceId);
 

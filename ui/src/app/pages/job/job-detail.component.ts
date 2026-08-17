@@ -12,6 +12,7 @@ import { Milestone, MilestoneService } from '../../core/milestone.service';
 import { Document, DocumentService } from '../../core/document.service';
 import { DocumentRequest, DocumentRequestService } from '../../core/document-request.service';
 import { CurrentWorkspaceService } from '../../core/current-workspace.service';
+import { InvitationService } from '../../core/invitation.service';
 import { Invoice, InvoiceService, Quotation, QuotationService } from '../../core/billing.service';
 import { AddJobPersonModalComponent } from './add-job-person-modal/add-job-person-modal.component';
 import { AddLandWidgetComponent } from './add-land-widget/add-land-widget.component';
@@ -132,7 +133,20 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
             @for (inv of pendingInvitations(); track inv.invitationId) {
               <div class="flex items-center justify-between px-md py-sm rounded bg-neutral-50">
                 <span class="text-sm text-neutral-500">{{ inv.email }}</span>
-                <span class="text-xs px-sm py-xs rounded bg-amber-100 text-amber-700">{{ inv.role }} · Pending</span>
+                <span class="flex items-center gap-sm">
+                  <span class="text-xs px-sm py-xs rounded bg-amber-100 text-amber-700">{{ inv.role }} · Pending</span>
+                  @if (job()?.canManageParticipants) {
+                    @if (confirmingRevokeInvite() === inv.invitationId) {
+                      <span class="text-xs">Sure?
+                        <button type="button" class="text-primary-500 font-medium" (click)="doRevokeInvite(inv)">Yes</button>
+                        <button type="button" class="text-neutral-500" (click)="confirmingRevokeInvite.set(null)">No</button>
+                      </span>
+                    } @else {
+                      <button type="button" class="text-xs text-neutral-600 hover:text-neutral-900" (click)="resendInvite(inv)">Resend</button>
+                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="confirmingRevokeInvite.set(inv.invitationId)">Revoke</button>
+                    }
+                  }
+                </span>
               </div>
             }
           </div>
@@ -649,6 +663,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   confirmingRemoveRole = signal<{ userId: string; role: string } | null>(null);
   confirmingRemoveLand = signal<Land | null>(null);
   confirmingRemoveMilestone = signal<Milestone | null>(null);
+  confirmingRevokeInvite = signal<string | null>(null);
 
   addressLine = addressLine;
   expandedLandId = signal<string | null>(null);
@@ -668,6 +683,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     private quotationService: QuotationService,
     private currentWorkspace: CurrentWorkspaceService,
     private authService: AuthService,
+    private invitationService: InvitationService,
     private route: ActivatedRoute
   ) {}
 
@@ -824,6 +840,24 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
 
   private refreshPendingInvitations(): void {
     this.jobService.getPendingInvitations(this.workspaceId, this.jobId).subscribe(inv => this.pendingInvitations.set(inv));
+  }
+
+  resendInvite(inv: JobInvitation): void {
+    this.invitationService.resend(this.workspaceId, inv.invitationId).subscribe({
+      next: () => this.personMessage.set(`Invitation resent to ${inv.email}.`),
+      error: (err) => this.error.set(err.error?.message ?? 'Could not resend invitation.')
+    });
+  }
+
+  doRevokeInvite(inv: JobInvitation): void {
+    this.confirmingRevokeInvite.set(null);
+    this.invitationService.revoke(this.workspaceId, inv.invitationId).subscribe({
+      next: () => {
+        this.pendingInvitations.update(list => list.filter(i => i.invitationId !== inv.invitationId));
+        this.personMessage.set('Invitation revoked.');
+      },
+      error: (err) => this.error.set(err.error?.message ?? 'Could not revoke invitation.')
+    });
   }
 
   onPersonAdded({ person, role }: PersonWithRole): void {
