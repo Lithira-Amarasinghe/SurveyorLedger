@@ -13,9 +13,13 @@ public record WorkspaceWithAccess(Workspace Workspace, string Tier, List<string>
 /// <summary>Another scope this member holds access to beyond the workspace itself - e.g. a specific job.</summary>
 public record MemberScopeGrant(string ScopeType, Guid ScopeId, string Label, string Role);
 
+/// <summary>Blanket (view_all) access this member's role grants over an entire scope type -
+/// e.g. Admin's job.view_all gives "Admin" role, "Job" scope, ["view","edit","manage_participants"] actions.</summary>
+public record MemberFullAccessGrant(string ScopeType, string RoleName, List<string> Actions);
+
 public record MemberInfo(
     Guid UserId, string Email, string FirstName, string LastName, List<string> Roles, DateTime AssignedAt, bool IsOwner,
-    List<string> FullAccessScopeTypes, List<MemberScopeGrant> AdditionalScopes);
+    List<MemberFullAccessGrant> FullAccessGrants, List<MemberScopeGrant> AdditionalScopes);
 
 public record PermissionInfo(string Name, string Resource, string Action, string Description);
 
@@ -198,14 +202,28 @@ public class WorkspaceService : IWorkspaceService
         // are actually seeded, not hardcoded to "Job" - a future organization.view_all
         // grant falls out of this the same way with zero code change here.
         var roleIds = accesses.Select(a => a.RoleId).Distinct().ToList();
+        var roleNames = await _context.Roles.Where(r => roleIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, r => r.Name);
         var viewAllByRole = await _context.RolePermissions
             .Include(rp => rp.Permission)
             .Where(rp => roleIds.Contains(rp.RoleId) && rp.Permission.Action == "view_all")
             .Select(rp => new { rp.RoleId, rp.Permission.Resource })
             .ToListAsync();
+        // For each (role, resource) with blanket access, also surface every other action that
+        // role holds on the same resource - "Admin (view, edit, manage_participants)" tells the
+        // reader what the blanket access actually lets them do, not just that it exists.
+        var resourcesWithFullAccess = viewAllByRole.Select(x => x.Resource).Distinct().ToList();
+        var actionsByRoleResource = await _context.RolePermissions
+            .Include(rp => rp.Permission)
+            .Where(rp => roleIds.Contains(rp.RoleId) && resourcesWithFullAccess.Contains(rp.Permission.Resource) && rp.Permission.Action != "view_all")
+            .Select(rp => new { rp.RoleId, rp.Permission.Resource, rp.Permission.Action })
+            .ToListAsync();
         var fullAccessByRole = viewAllByRole
             .GroupBy(x => x.RoleId)
-            .ToDictionary(g => g.Key, g => g.Select(x => Capitalize(x.Resource)).ToList());
+            .ToDictionary(g => g.Key, g => g.Select(x => new MemberFullAccessGrant(
+                Capitalize(x.Resource),
+                roleNames.GetValueOrDefault(g.Key, "Unknown"),
+                actionsByRoleResource.Where(a => a.RoleId == g.Key && a.Resource == x.Resource).Select(a => a.Action).OrderBy(a => a).ToList()
+            )).ToList());
 
         // Job-scope grants under THIS workspace's jobs only - scoped by job, not by who's
         // already a workspace member, so a job-only participant (no Workspace-scope row at
@@ -238,13 +256,24 @@ public class WorkspaceService : IWorkspaceService
         var jobRoleIds = jobScopes.Select(s => s.RoleId).Distinct().Except(roleIds).ToList();
         if (jobRoleIds.Count > 0)
         {
+            var jobRoleNames = await _context.Roles.Where(r => jobRoleIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, r => r.Name);
             var extraViewAll = await _context.RolePermissions
                 .Include(rp => rp.Permission)
                 .Where(rp => jobRoleIds.Contains(rp.RoleId) && rp.Permission.Action == "view_all")
                 .Select(rp => new { rp.RoleId, rp.Permission.Resource })
                 .ToListAsync();
+            var extraResources = extraViewAll.Select(x => x.Resource).Distinct().ToList();
+            var extraActions = await _context.RolePermissions
+                .Include(rp => rp.Permission)
+                .Where(rp => jobRoleIds.Contains(rp.RoleId) && extraResources.Contains(rp.Permission.Resource) && rp.Permission.Action != "view_all")
+                .Select(rp => new { rp.RoleId, rp.Permission.Resource, rp.Permission.Action })
+                .ToListAsync();
             foreach (var group in extraViewAll.GroupBy(x => x.RoleId))
-                fullAccessByRole[group.Key] = group.Select(x => Capitalize(x.Resource)).ToList();
+                fullAccessByRole[group.Key] = group.Select(x => new MemberFullAccessGrant(
+                    Capitalize(x.Resource),
+                    jobRoleNames.GetValueOrDefault(group.Key, "Unknown"),
+                    extraActions.Where(a => a.RoleId == group.Key && a.Resource == x.Resource).Select(a => a.Action).OrderBy(a => a).ToList()
+                )).ToList();
         }
 
         var workspaceMembers = accesses
@@ -255,7 +284,7 @@ public class WorkspaceService : IWorkspaceService
                 return new MemberInfo(
                     first.UserId, first.User.Person.Email!, first.User.Person.FirstName, first.User.Person.LastName,
                     g.Select(ua => ua.Role.Name).ToList(), first.AssignedAt, first.UserId == workspace.OwnerId,
-                    g.SelectMany(ua => fullAccessByRole.GetValueOrDefault(ua.RoleId, new List<string>())).Distinct().ToList(),
+                    g.SelectMany(ua => fullAccessByRole.GetValueOrDefault(ua.RoleId, new List<MemberFullAccessGrant>())).ToList(),
                     jobScopesByUser.GetValueOrDefault(first.UserId, new List<MemberScopeGrant>()));
             })
             .ToDictionary(m => m.UserId);
@@ -274,7 +303,7 @@ public class WorkspaceService : IWorkspaceService
                 return new MemberInfo(
                     first.UserId, first.User.Person.Email!, first.User.Person.FirstName, first.User.Person.LastName,
                     new List<string>(), first.AssignedAt, false,
-                    g.SelectMany(s => fullAccessByRole.GetValueOrDefault(s.RoleId, new List<string>())).Distinct().ToList(),
+                    g.SelectMany(s => fullAccessByRole.GetValueOrDefault(s.RoleId, new List<MemberFullAccessGrant>())).ToList(),
                     jobScopesByUser.GetValueOrDefault(first.UserId, new List<MemberScopeGrant>()));
             });
 

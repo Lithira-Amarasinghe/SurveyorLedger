@@ -9,6 +9,14 @@ public class MemberScopeGrantResponse
     public required string Role { get; set; }
 }
 
+/// <summary>Blanket access this member's role grants over an entire scope type, and what it lets them do.</summary>
+public class MemberFullAccessGrantResponse
+{
+    public required string ScopeType { get; set; }
+    public required string RoleName { get; set; }
+    public required List<string> Actions { get; set; }
+}
+
 public class MemberResponse
 {
     public Guid UserId { get; set; }
@@ -19,8 +27,8 @@ public class MemberResponse
     public DateTime AssignedAt { get; set; }
     public bool IsOwner { get; set; }
 
-    /// <summary>Scope types this member's role has blanket access to (e.g. "Job" for Admin).</summary>
-    public List<string> FullAccessScopeTypes { get; set; } = new();
+    /// <summary>Blanket (view_all) access this member's role(s) grant, with the actions each allows.</summary>
+    public List<MemberFullAccessGrantResponse> FullAccessGrants { get; set; } = new();
 
     /// <summary>Explicit extra scope grants this member holds (e.g. specific job assignments).</summary>
     public List<MemberScopeGrantResponse> AdditionalScopes { get; set; } = new();

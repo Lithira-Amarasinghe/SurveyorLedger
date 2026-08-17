@@ -1,12 +1,14 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
-import { WorkspaceService, Member } from '../../core/workspace.service';
+import { WorkspaceService, Member, MemberFullAccessGrant, MemberScopeGrant } from '../../core/workspace.service';
 import { InvitationService, Invitation } from '../../core/invitation.service';
 import { AuthService } from '../../core/auth.service';
 import { CurrentWorkspaceService } from '../../core/current-workspace.service';
 import { AddPersonModalComponent } from './add-person-modal/add-person-modal.component';
+
+type AccessFilter = 'all' | 'direct' | 'child';
 
 interface MemberRow {
   key: string;
@@ -18,10 +20,12 @@ interface MemberRow {
   isOwner: boolean;
   isSelf: boolean;
   emailFailed: boolean;
-  /** True when the member's role grants blanket access to every job in the workspace. */
-  hasAllJobAccess: boolean;
-  /** Individual jobs this member is explicitly assigned to. */
-  jobLabels: string[];
+  /** Blanket access this member's role(s) grant, e.g. Admin's job.view_all - with actions. */
+  fullAccessGrants: MemberFullAccessGrant[];
+  /** Individual jobs this member is explicitly assigned to, each with its own role. */
+  jobGrants: MemberScopeGrant[];
+  /** True when this member has an explicit Workspace-scope row (a "direct" member). */
+  isDirect: boolean;
 }
 
 @Component({
@@ -36,6 +40,24 @@ interface MemberRow {
           <button class="btn-primary" (click)="modalOpen.set(true)">Add member</button>
         }
       </div>
+
+      @if (!loading() && !error()) {
+        <div class="flex gap-xs mb-md">
+          @for (f of accessFilters; track f.value) {
+            <button
+              type="button"
+              class="text-xs px-md py-xs rounded"
+              [class.bg-primary-500]="accessFilter() === f.value"
+              [class.text-white]="accessFilter() === f.value"
+              [class.bg-neutral-100]="accessFilter() !== f.value"
+              [class.text-neutral-600]="accessFilter() !== f.value"
+              (click)="accessFilter.set(f.value)"
+            >
+              {{ f.label }}
+            </button>
+          }
+        </div>
+      }
 
       @if (loading()) {
         <p class="text-sm text-neutral-500">Loading…</p>
@@ -57,8 +79,8 @@ interface MemberRow {
               </tr>
             </thead>
             <tbody>
-              @for (row of rows(); track row.key) {
-                <tr class="border-t border-neutral-200">
+              @for (row of filteredRows(); track row.key) {
+                <tr class="border-t border-neutral-200" [class.cursor-pointer]="row.jobGrants.length > 0" (click)="row.jobGrants.length > 0 && toggleExpand(row.key)">
                   <td class="px-lg py-sm text-neutral-900">
                     {{ row.displayName }}
                     @if (row.invitationStatus === 'Declined') {
@@ -74,7 +96,7 @@ interface MemberRow {
                       <span class="block text-xs text-primary-500">Email delivery failed</span>
                     }
                   </td>
-                  <td class="px-lg py-sm">
+                  <td class="px-lg py-sm" (click)="$event.stopPropagation()">
                     <span class="flex flex-wrap items-center gap-xs">
                       @for (r of row.roles; track r) {
                         <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">
@@ -113,20 +135,24 @@ interface MemberRow {
                   <td class="px-lg py-sm">
                     @if (row.isPending) {
                       <span class="text-xs text-neutral-500">—</span>
-                    } @else if (row.hasAllJobAccess) {
-                      <span class="text-xs px-sm py-xs rounded bg-primary-50 text-primary-600">All jobs · via role</span>
-                    } @else if (row.jobLabels.length > 0) {
+                    } @else {
                       <span class="flex flex-wrap gap-xs">
-                        @for (label of row.jobLabels; track label) {
-                          <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ label }}</span>
+                        @for (grant of row.fullAccessGrants; track grant.scopeType) {
+                          <span class="text-xs px-sm py-xs rounded bg-primary-50 text-primary-600">
+                            All {{ grant.scopeType.toLowerCase() }}s · {{ grant.roleName }}{{ grant.actions.length > 0 ? ' (' + grant.actions.join(', ') + ')' : '' }}
+                          </span>
+                        }
+                        @for (job of row.jobGrants; track job.scopeId) {
+                          <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ job.label }} ({{ job.role }})</span>
+                        }
+                        @if (row.fullAccessGrants.length === 0 && row.jobGrants.length === 0) {
+                          <span class="text-xs text-neutral-500">No job access</span>
                         }
                       </span>
-                    } @else {
-                      <span class="text-xs text-neutral-500">No job access</span>
                     }
                   </td>
                   <td class="px-lg py-sm text-neutral-600">{{ row.dateLabel }}</td>
-                  <td class="px-lg py-sm text-right whitespace-nowrap">
+                  <td class="px-lg py-sm text-right whitespace-nowrap" (click)="$event.stopPropagation()">
                     @if (row.isOwner) {
                       <!-- no actions -->
                     } @else if (row.isPending) {
@@ -159,6 +185,18 @@ interface MemberRow {
                     }
                   </td>
                 </tr>
+                @if (expandedKey() === row.key && row.jobGrants.length > 0) {
+                  <tr class="border-t border-neutral-100 bg-neutral-50">
+                    <td colspan="5" class="px-lg py-sm">
+                      <div class="text-xs text-neutral-500 font-medium mb-xs">Jobs</div>
+                      <div class="flex flex-col gap-xs">
+                        @for (job of row.jobGrants; track job.scopeId) {
+                          <div class="text-xs text-neutral-700">{{ job.label }} — {{ job.role }}</div>
+                        }
+                      </div>
+                    </td>
+                  </tr>
+                }
               }
             </tbody>
           </table>
@@ -182,6 +220,21 @@ export class MembersComponent implements OnInit {
   successMessage = signal('');
   eligibleRoles = signal<string[]>(['Admin', 'Surveyor', 'Member', 'WorkspaceMember']);
 
+  accessFilter = signal<AccessFilter>('all');
+  accessFilters: { value: AccessFilter; label: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'direct', label: 'Direct' },
+    { value: 'child', label: 'Child' }
+  ];
+  expandedKey = signal<string | null>(null);
+  filteredRows = computed(() => {
+    const filter = this.accessFilter();
+    const rows = this.rows();
+    if (filter === 'all') return rows;
+    if (filter === 'direct') return rows.filter(r => r.isDirect || r.isPending);
+    return rows.filter(r => !r.isDirect && !r.isPending);
+  });
+
   constructor(
     private workspaceService: WorkspaceService,
     private invitationService: InvitationService,
@@ -202,6 +255,10 @@ export class MembersComponent implements OnInit {
 
   addableRoles(row: MemberRow): string[] {
     return this.eligibleRoles().filter(r => !row.roles.includes(r));
+  }
+
+  toggleExpand(key: string): void {
+    this.expandedKey.update(current => (current === key ? null : key));
   }
 
   fetch(): void {
@@ -241,8 +298,11 @@ export class MembersComponent implements OnInit {
         emailFailed: false,
         // Computed server-side so this page and the job screens can't disagree about
         // who can see what - see WorkspaceService.GetMembersAsync.
-        hasAllJobAccess: (m.fullAccessScopeTypes ?? []).includes('Job'),
-        jobLabels: (m.additionalScopes ?? []).filter(s => s.scopeType === 'Job').map(s => s.label)
+        fullAccessGrants: m.fullAccessGrants ?? [],
+        jobGrants: (m.additionalScopes ?? []).filter(s => s.scopeType === 'Job'),
+        // Direct = holds an explicit Workspace-scope row. A "Job only" member (roles.length
+        // === 0) has no such row - their access is entirely via a job-scope grant (Child).
+        isDirect: m.roles.length > 0
       }));
 
     const pendingRows: MemberRow[] = invitations.map(i => ({
@@ -256,8 +316,9 @@ export class MembersComponent implements OnInit {
       isSelf: false,
       emailFailed: i.emailFailed,
       // A pending invitee holds no UserAccess yet, so they have no job access to show.
-      hasAllJobAccess: false,
-      jobLabels: []
+      fullAccessGrants: [],
+      jobGrants: [],
+      isDirect: true
     }));
 
     return [...memberRows, ...pendingRows];

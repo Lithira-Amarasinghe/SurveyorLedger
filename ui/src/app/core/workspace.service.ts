@@ -22,6 +22,13 @@ export interface MemberScopeGrant {
   role: string;
 }
 
+/** Blanket access a member's role grants over an entire scope type, and what it lets them do. */
+export interface MemberFullAccessGrant {
+  scopeType: string;
+  roleName: string;
+  actions: string[];
+}
+
 export interface Member {
   userId: string;
   email: string;
@@ -30,8 +37,8 @@ export interface Member {
   roles: string[];
   assignedAt: string;
   isOwner: boolean;
-  /** Scope types this member's role grants blanket access to (e.g. "Job" for Admin). */
-  fullAccessScopeTypes: string[];
+  /** Blanket (view_all) access this member's role(s) grant, with the actions each allows. */
+  fullAccessGrants: MemberFullAccessGrant[];
   /** Explicit per-scope grants, e.g. individual job assignments. */
   additionalScopes: MemberScopeGrant[];
 }
