@@ -202,12 +202,12 @@ public class UserAccessGrantServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RevokeAsync_LastChainSource_CascadesRevokeAncestor()
+    public async Task RevokeAsync_LastJobRemoved_WorkspaceMemberStaysSticky()
     {
-        // Arrange: Grant Surveyor at Job (grants WorkspaceMember at Workspace via chain)
+        // Arrange: Grant Surveyor at Job (auto-grants WorkspaceMember at Workspace via chain)
         await _service.GrantAsync(_userId, _surveyorRoleId, Constants.ScopeTypes.Job, _jobId, _assignedBy);
 
-        // Act: Revoke the Surveyor role at Job - the only thing chaining into WorkspaceMember
+        // Act: Revoke the Surveyor role at Job - the only job this user was ever assigned to
         await _service.RevokeAsync(_userId, Constants.ScopeTypes.Job, _jobId, _surveyorRoleId);
 
         // Assert: Surveyor revoked at Job (IgnoreQueryFilters - UserAccess has a global
@@ -218,38 +218,9 @@ public class UserAccessGrantServiceTests : IAsyncLifetime
         Assert.NotNull(jobAccess);
         Assert.False(jobAccess.IsActive);
 
-        // Assert: WorkspaceMember cascade-revoked at Workspace - nothing else needs it anymore
-        var workspaceAccess = await _context.UserAccesses.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(ua => ua.UserId == _userId && ua.ScopeType == Constants.ScopeTypes.Workspace &&
-                                       ua.ScopeId == _workspaceId && ua.RoleId == _workspaceMemberRoleId);
-        Assert.NotNull(workspaceAccess);
-        Assert.False(workspaceAccess.IsActive);
-    }
-
-    [Fact]
-    public async Task RevokeAsync_OtherJobStillChainsToSameAncestor_NoCascade()
-    {
-        // Arrange: user is Surveyor on two jobs in the same workspace - both chain into the
-        // same WorkspaceMember row.
-        var jobId2 = Guid.NewGuid();
-        await _context.Jobs.AddAsync(new Job
-        {
-            Id = jobId2, WorkspaceId = _workspaceId, JobNumber = "JOB002", Title = "Second Job",
-            CreatedBy = _assignedBy, IsActive = true
-        });
-        await _context.SaveChangesAsync();
-        _scopeIdResolverMock.Setup(x => x.GetParentIdAsync(Constants.ScopeTypes.Job, jobId2)).ReturnsAsync(_workspaceId);
-        _scopeIdResolverMock
-            .Setup(x => x.GetChildIdsAsync(Constants.ScopeTypes.Workspace, Constants.ScopeTypes.Job, _workspaceId))
-            .ReturnsAsync(new List<Guid> { _jobId, jobId2 });
-
-        await _service.GrantAsync(_userId, _surveyorRoleId, Constants.ScopeTypes.Job, _jobId, _assignedBy);
-        await _service.GrantAsync(_userId, _surveyorRoleId, Constants.ScopeTypes.Job, jobId2, _assignedBy);
-
-        // Act: revoke Surveyor from the first job only
-        await _service.RevokeAsync(_userId, Constants.ScopeTypes.Job, _jobId, _surveyorRoleId);
-
-        // Assert: WorkspaceMember stays active - the second job's Surveyor grant still needs it
+        // Assert: WorkspaceMember stays active - auto-granted baseline access is sticky once
+        // given, not tied to the specific job that first triggered it. An admin who wants it
+        // gone removes it explicitly (WorkspaceService.RemoveMemberAsync or AddMemberRoleAsync).
         var workspaceAccess = await _context.UserAccesses
             .FirstOrDefaultAsync(ua => ua.UserId == _userId && ua.ScopeType == Constants.ScopeTypes.Workspace &&
                                        ua.ScopeId == _workspaceId && ua.RoleId == _workspaceMemberRoleId);
@@ -258,7 +229,7 @@ public class UserAccessGrantServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RevokeAsync_DirectlyGrantedAncestorRole_NeverCascaded()
+    public async Task RevokeAsync_DirectlyGrantedAncestorRole_NeverTouched()
     {
         // Arrange: user directly holds WorkspaceMember at Workspace (not chain-granted -
         // e.g. an admin picked it explicitly), then separately gets Surveyor at Job which
@@ -278,7 +249,8 @@ public class UserAccessGrantServiceTests : IAsyncLifetime
         // Act: revoke Surveyor at Job entirely
         await _service.RevokeAsync(_userId, Constants.ScopeTypes.Job, _jobId, _surveyorRoleId);
 
-        // Assert: WorkspaceMember is untouched - it was never chain-granted, so cascade never owns it
+        // Assert: WorkspaceMember is untouched - RevokeAsync never touches any scope other
+        // than the one it was called on.
         var workspaceAccess = await _context.UserAccesses
             .FirstOrDefaultAsync(ua => ua.UserId == _userId && ua.ScopeType == Constants.ScopeTypes.Workspace &&
                                        ua.ScopeId == _workspaceId && ua.RoleId == _workspaceMemberRoleId);
@@ -290,21 +262,26 @@ public class UserAccessGrantServiceTests : IAsyncLifetime
     [Fact]
     public async Task GrantAsync_Reactivate_ChainsAncestorAgain()
     {
-        // Arrange: Grant Surveyor, then revoke, leaving chained WorkspaceMember inactive
+        // Arrange: WorkspaceMember exists but inactive (e.g. an admin explicitly removed it
+        // earlier via WorkspaceService), simulated directly since RevokeAsync no longer
+        // touches ancestor scopes.
+        var inactiveWorkspaceMember = new UserAccess
+        {
+            Id = Guid.NewGuid(), UserId = _userId, RoleId = _workspaceMemberRoleId,
+            ScopeType = Constants.ScopeTypes.Workspace, ScopeId = _workspaceId,
+            AssignedAt = DateTime.UtcNow, AssignedBy = _assignedBy, IsActive = false,
+            IsChainGranted = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        };
+        _context.UserAccesses.Add(inactiveWorkspaceMember);
+        await _context.SaveChangesAsync();
+
+        // Act: Grant Surveyor at Job - must reactivate the existing inactive row, not insert
+        // a duplicate (ApplicationDbContext's global IsActive filter would otherwise hide it
+        // from the lookup query and cause a second row to be created).
         await _service.GrantAsync(_userId, _surveyorRoleId, Constants.ScopeTypes.Job, _jobId, _assignedBy);
-        await _service.RevokeAsync(_userId, Constants.ScopeTypes.Job, _jobId, _surveyorRoleId);
 
-        var workspaceAccess = await _context.UserAccesses.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(ua => ua.UserId == _userId && ua.ScopeType == Constants.ScopeTypes.Workspace &&
-                                       ua.ScopeId == _workspaceId && ua.RoleId == _workspaceMemberRoleId);
-        Assert.NotNull(workspaceAccess);
-        Assert.False(workspaceAccess.IsActive);
-
-        // Act: Re-grant Surveyor - must reactivate the existing row, not insert a duplicate
-        await _service.GrantAsync(_userId, _surveyorRoleId, Constants.ScopeTypes.Job, _jobId, _assignedBy);
-
-        // Assert: WorkspaceMember reactivated (ancestor chain re-established), exactly one row
-        var workspaceAccesses = await _context.UserAccesses
+        // Assert: WorkspaceMember reactivated, exactly one row for (user, role, scope)
+        var workspaceAccesses = await _context.UserAccesses.IgnoreQueryFilters()
             .Where(ua => ua.UserId == _userId && ua.ScopeType == Constants.ScopeTypes.Workspace &&
                          ua.ScopeId == _workspaceId && ua.RoleId == _workspaceMemberRoleId)
             .ToListAsync();
