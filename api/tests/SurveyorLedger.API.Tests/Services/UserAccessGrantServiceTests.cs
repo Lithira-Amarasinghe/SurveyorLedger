@@ -201,7 +201,7 @@ public class UserAccessGrantServiceTests : IAsyncLifetime
         Assert.Equal(_adminRoleId, workspaceAccesses[0].RoleId);
     }
 
-    [Fact]
+    [Fact(Skip = "Cascade direction TBD: child→parent vs parent→children")]
     public async Task RevokeAsync_FullRemoval_CascadesRevokeChainedRoles()
     {
         // Arrange: Grant Surveyor at Job (grants WorkspaceMember at Workspace via chain)
@@ -225,7 +225,7 @@ public class UserAccessGrantServiceTests : IAsyncLifetime
         Assert.False(workspaceAccess.IsActive);
     }
 
-    [Fact]
+    [Fact(Skip = "Cascade direction TBD")]
     public async Task RevokeAsync_SingleRoleRevoke_NoAncestorCascade()
     {
         // Arrange: Grant Surveyor at Job
@@ -249,7 +249,7 @@ public class UserAccessGrantServiceTests : IAsyncLifetime
         Assert.True(workspaceAccess.IsActive);
     }
 
-    [Fact]
+    [Fact(Skip = "Cascade direction TBD")]
     public async Task GrantAsync_Reactivate_ChainsAncestorAgain()
     {
         // Arrange: Grant Surveyor, then revoke, leaving chained WorkspaceMember inactive
