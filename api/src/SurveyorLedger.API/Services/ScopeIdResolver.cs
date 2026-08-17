@@ -1,61 +1,43 @@
-using Microsoft.EntityFrameworkCore;
-using SurveyorLedger.Core;
-using SurveyorLedger.Data;
-
 namespace SurveyorLedger.API.Services;
 
+/// <summary>
+/// Pure dispatcher: holds no scope-type-specific logic itself, only routes to whichever
+/// registered <see cref="IScopeLinkProvider"/> matches the scope types asked for. Adding a
+/// new scope level means registering a new provider (see JobWorkspaceScopeLinkProvider) -
+/// this class never needs to change.
+/// </summary>
 public class ScopeIdResolver : IScopeIdResolver
 {
-    private readonly ApplicationDbContext _context;
+    private readonly IReadOnlyDictionary<string, IScopeLinkProvider> _byChildType;
+    private readonly ILookup<string, IScopeLinkProvider> _byParentType;
     private readonly ILogger<ScopeIdResolver> _logger;
 
-    public ScopeIdResolver(ApplicationDbContext context, ILogger<ScopeIdResolver> logger)
+    public ScopeIdResolver(IEnumerable<IScopeLinkProvider> providers, ILogger<ScopeIdResolver> logger)
     {
-        _context = context;
+        var providerList = providers.ToList();
+        _byChildType = providerList.ToDictionary(p => p.ChildScopeType);
+        _byParentType = providerList.ToLookup(p => p.ParentScopeType);
         _logger = logger;
     }
 
-    public async Task<Guid?> GetParentIdAsync(string scopeType, Guid scopeId)
+    public Task<Guid?> GetParentIdAsync(string scopeType, Guid scopeId)
     {
-        if (scopeType == Constants.ScopeTypes.Job)
-        {
-            var job = await _context.Jobs
-                .AsNoTracking()
-                .Where(j => j.Id == scopeId)
-                .Select(j => (Guid?)j.WorkspaceId)
-                .FirstOrDefaultAsync();
-            return job;
-        }
+        if (_byChildType.TryGetValue(scopeType, out var provider))
+            return provider.GetParentIdAsync(scopeId);
 
-        if (scopeType == Constants.ScopeTypes.Workspace)
-        {
-            // Workspace has no parent (yet). Organization scope can be added later.
-            return null;
-        }
-
-        _logger.LogWarning("GetParentIdAsync called with unknown scope type: {ScopeType}", scopeType);
-        return null;
+        // Not every scope type has a parent (e.g. Workspace, until an Organization level
+        // exists) - that's a legitimate "top of the hierarchy" answer, not a warning.
+        return Task.FromResult<Guid?>(null);
     }
 
-    public async Task<List<Guid>> GetChildIdsAsync(string parentScopeType, string childScopeType, Guid parentScopeId)
+    public Task<List<Guid>> GetChildIdsAsync(string parentScopeType, string childScopeType, Guid parentScopeId)
     {
-        if (parentScopeType == Constants.ScopeTypes.Workspace && childScopeType == Constants.ScopeTypes.Job)
-        {
-            return await _context.Jobs
-                .AsNoTracking()
-                .Where(j => j.WorkspaceId == parentScopeId)
-                .Select(j => j.Id)
-                .ToListAsync();
-        }
+        var provider = _byParentType[parentScopeType].FirstOrDefault(p => p.ChildScopeType == childScopeType);
+        if (provider != null)
+            return provider.GetChildIdsAsync(parentScopeId);
 
-        if (parentScopeType == Constants.ScopeTypes.Job)
-        {
-            // Job has no children yet (Milestones, Documents don't have their own role grants).
-            return [];
-        }
-
-        _logger.LogWarning("GetChildIdsAsync called with unknown scope pair: {ParentScopeType} -> {ChildScopeType}",
+        _logger.LogWarning("No IScopeLinkProvider registered for {ParentScopeType} -> {ChildScopeType}",
             parentScopeType, childScopeType);
-        return [];
+        return Task.FromResult(new List<Guid>());
     }
 }

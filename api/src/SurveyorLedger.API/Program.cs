@@ -121,7 +121,11 @@ builder.Services.AddScoped<IExpenseService, ExpenseService>();
 builder.Services.AddScoped<IStaffPaymentService, StaffPaymentService>();
 
 // Register scope ID resolver for walking the scope hierarchy (used by UserAccessGrantService
-// to look up parent/child scope IDs during access chaining).
+// to look up parent/child scope IDs during access chaining). ScopeIdResolver itself holds no
+// per-scope-type logic - it dispatches to whichever IScopeLinkProvider below matches. Adding a
+// new scope level (e.g. Organization above Workspace) means registering one more provider here,
+// not editing ScopeIdResolver.
+builder.Services.AddScoped<IScopeLinkProvider, JobWorkspaceScopeLinkProvider>();
 builder.Services.AddScoped<IScopeIdResolver, ScopeIdResolver>();
 
 // Register the shared UserAccess grant/revoke service (workspace-scope and job-scope
