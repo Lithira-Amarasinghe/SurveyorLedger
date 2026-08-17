@@ -84,6 +84,15 @@ namespace SurveyorLedger.API.Controllers
             return Ok(ApiResponse<List<JobParticipantResponse>>.Ok(participants.Select(ToResponse).ToList()));
         }
 
+        /// <summary>Direct participants plus anyone with blanket job.view_all access from an ancestor scope (e.g. Admin) - read-only, tagged AccessType so the UI can tell the two apart.</summary>
+        [HttpGet("{id}/effective-participants")]
+        public async Task<ActionResult<ApiResponse<List<JobParticipantResponse>>>> GetEffectiveParticipants(Guid workspaceId, Guid id)
+        {
+            var callerId = CallerId();
+            var participants = await _jobService.GetEffectiveParticipantsAsync(workspaceId, callerId, id);
+            return Ok(ApiResponse<List<JobParticipantResponse>>.Ok(participants.Select(ToEffectiveResponse).ToList()));
+        }
+
         [HttpPost("{id}/participants/{userId}")]
         public async Task<ActionResult<ApiResponse<AddParticipantResponse>>> AddParticipant(Guid workspaceId, Guid id, Guid userId, [FromBody] AddParticipantRequest request)
         {
@@ -158,6 +167,13 @@ namespace SurveyorLedger.API.Controllers
             Role = p.Role.Name,
             AssignedAt = p.AssignedAt
         };
+
+        private static JobParticipantResponse ToEffectiveResponse(UserAccess p)
+        {
+            var response = ToResponse(p);
+            response.AccessType = p.ScopeType == SurveyorLedger.Core.Constants.ScopeTypes.Job ? "Direct" : "WorkspaceWide";
+            return response;
+        }
 
         private static AddParticipantResponse ToResponse(ParticipantAddResult result) => result.Access != null
             ? new AddParticipantResponse { Status = "added", Participant = ToResponse(result.Access) }

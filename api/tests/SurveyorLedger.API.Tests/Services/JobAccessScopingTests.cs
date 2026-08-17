@@ -197,6 +197,20 @@ public class JobAccessScopingTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
+    public async Task EffectiveParticipants_TagsDirectAndWorkspaceWideCorrectly()
+    {
+        await SeedJobsAsync();
+
+        var effective = await _jobService.GetEffectiveParticipantsAsync(WorkspaceId, AdminId, _jobAId);
+
+        var surveyorRow = Assert.Single(effective, p => p.UserId == SurveyorId);
+        Assert.Equal(Constants.ScopeTypes.Job, surveyorRow.ScopeType);
+
+        var adminRow = Assert.Single(effective, p => p.UserId == AdminId);
+        Assert.Equal(Constants.ScopeTypes.Workspace, adminRow.ScopeType);
+    }
+
+    [Fact]
     public async Task CanAccessJobAsync_Admin_CanManageParticipantsTrue()
     {
         await SeedJobsAsync();

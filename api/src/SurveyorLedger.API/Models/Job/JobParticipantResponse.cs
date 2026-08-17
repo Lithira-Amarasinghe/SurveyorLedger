@@ -13,6 +13,11 @@ public class JobParticipantResponse
     public string? Email { get; set; }
     public required string Role { get; set; }
     public DateTime AssignedAt { get; set; }
+
+    /// <summary>"Direct" - an explicit grant at this job. "WorkspaceWide" - reaches this job via
+    /// a *.view_all permission at an ancestor scope (e.g. Admin), not a per-job grant. Only ever
+    /// non-null on the effective-participants endpoint; GetParticipants (direct-only) leaves it null.</summary>
+    public string? AccessType { get; set; }
 }
 
 /// <summary>
