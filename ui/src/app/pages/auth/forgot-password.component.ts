@@ -5,9 +5,8 @@ import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
 
 /**
- * Two-step reset: request a code, then set a new password with it. Step one always reports
- * success regardless of whether the email exists - the API won't confirm which addresses
- * are registered, and the UI must not leak it either.
+ * Two-step reset: request a code, then set a new password with it. Step one shows
+ * "account not found" if the email has no registered account with a password.
  */
 @Component({
   selector: 'app-forgot-password',

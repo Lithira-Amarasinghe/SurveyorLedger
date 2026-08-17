@@ -558,9 +558,9 @@ public class AuthService : IAuthService
     /// Request a password reset code. Reuses the same EmailVerification/OTP mechanism as
     /// registration, scoped by TokenType=PasswordReset so the codes can never cross flows.
     /// Only issued for an account that already has a password - a not-yet-accepted invitee
-    /// has nothing to "reset" and should use the invite-accept flow instead. Silently
-    /// no-ops for an unknown email or a password-less account, same anti-enumeration
-    /// pattern as ResendOtpAsync.
+    /// has nothing to "reset" and should use the invite-accept flow instead. Throws
+    /// AppException if the email doesn't match a real, password-having account, so the
+    /// UI can display "account not found" instead of silent success.
     /// </summary>
     public async Task RequestPasswordResetAsync(string email)
     {
@@ -571,7 +571,8 @@ public class AuthService : IAuthService
         if (account == null || account.PasswordHash == null)
         {
             _logger.LogInformation("Password reset requested for {Email} - no eligible account", email);
-            return;
+            throw new AppException(Constants.ErrorCodes.UserNotFound,
+                "No account found for this email. Please check and try again, or sign up if you don't have an account.");
         }
 
         var otpExpiryMinutes = GetOtpExpiryMinutes();

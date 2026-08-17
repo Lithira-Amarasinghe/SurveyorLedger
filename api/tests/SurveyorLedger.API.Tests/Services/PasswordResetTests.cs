@@ -10,9 +10,9 @@ using Xunit;
 namespace SurveyorLedger.API.Tests.Services;
 
 /// <summary>
-/// Covers the password reset flow added this session: reuses the EmailVerification/OTP
-/// mechanism (scoped by TokenType) rather than a new table, and never reveals whether an
-/// email is registered.
+/// Covers the password reset flow: reuses the EmailVerification/OTP mechanism (scoped by
+/// TokenType) rather than a new table. Shows "account not found" if the email has no
+/// password-having account, guiding users toward signup or invite-accept.
 /// </summary>
 public class PasswordResetTests : WorkspaceIntegrationTestBase
 {
@@ -72,27 +72,28 @@ public class PasswordResetTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
-    public async Task RequestReset_ForUnknownEmail_SilentlyNoOps()
+    public async Task RequestReset_ForUnknownEmail_Throws()
     {
         _authService = GetService<IAuthService>();
 
-        await _authService.RequestPasswordResetAsync("nobody@test.local");
+        var ex = await Assert.ThrowsAsync<AppException>(
+            () => _authService.RequestPasswordResetAsync("nobody@test.local"));
 
-        var any = await Context.EmailVerifications.AnyAsync(e => e.Email == "nobody@test.local");
-        Assert.False(any);
+        Assert.Equal(Constants.ErrorCodes.UserNotFound, ex.Code);
     }
 
     [Fact]
-    public async Task RequestReset_ForAccountWithNoPassword_SilentlyNoOps()
+    public async Task RequestReset_ForAccountWithNoPassword_Throws()
     {
         // A Client added but never accepted their invite has no password yet - reset must
-        // not leak that the email exists, and there's nothing to reset anyway.
+        // fail with "account not found" rather than silently no-op. This guides users to
+        // use the invite-accept flow instead for password-less accounts.
         _authService = GetService<IAuthService>();
 
-        await _authService.RequestPasswordResetAsync("client@test.local");
+        var ex = await Assert.ThrowsAsync<AppException>(
+            () => _authService.RequestPasswordResetAsync("client@test.local"));
 
-        var any = await Context.EmailVerifications.AnyAsync(e => e.Email == "client@test.local");
-        Assert.False(any);
+        Assert.Equal(Constants.ErrorCodes.UserNotFound, ex.Code);
     }
 
     [Fact]
