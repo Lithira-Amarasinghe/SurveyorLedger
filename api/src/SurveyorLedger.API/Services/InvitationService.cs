@@ -26,7 +26,8 @@ public interface IInvitationService
     /// </summary>
     Task<Invitation> CreateScopedInvitationAsync(
         string scopeType, Guid scopeId, Guid roleId, string displayName, Guid invitedByUserId,
-        string email, string? firstName, string? lastName, string? phone, AddressDto? address);
+        string email, string? firstName, string? lastName, string? phone, AddressDto? address,
+        string? descendantScopeType = null, Guid? descendantScopeId = null, Guid? descendantRoleId = null);
 
     Task<List<Invitation>> GetPendingInvitationsAsync(Guid workspaceId, Guid callerUserId);
     Task RevokeInvitationAsync(Guid workspaceId, Guid invitationId, Guid callerUserId);
@@ -118,7 +119,8 @@ public class InvitationService : IInvitationService
 
     public async Task<Invitation> CreateScopedInvitationAsync(
         string scopeType, Guid scopeId, Guid roleId, string displayName, Guid invitedByUserId,
-        string email, string? firstName, string? lastName, string? phone, AddressDto? address)
+        string email, string? firstName, string? lastName, string? phone, AddressDto? address,
+        string? descendantScopeType = null, Guid? descendantScopeId = null, Guid? descendantRoleId = null)
     {
         var role = await _context.Roles.FirstOrDefaultAsync(r => r.Id == roleId)
             ?? throw new AppException(Constants.ErrorCodes.ValidationFailed, "Role not found", 400);
@@ -169,10 +171,15 @@ public class InvitationService : IInvitationService
             await _context.People.AddAsync(targetPerson);
         }
 
-        // A new invite for the same person/scope supersedes any existing pending one.
+        // A new invite for the same person/scope supersedes any existing pending one - but
+        // keyed on the FULL grant (including descendant), not just the primary scope. Two
+        // different job invites for the same never-accepted person both resolve to the same
+        // primary (Workspace, WorkspaceMember) once chaining moved the invite up a level; only
+        // the descendant (the specific job) tells them apart, so both must survive side by side.
         var existingPending = await _context.Invitations
             .Where(i => i.UserId == targetPerson.Id && i.ScopeType == scopeType &&
-                i.ScopeId == scopeId && i.Status == "Pending")
+                i.ScopeId == scopeId && i.Status == "Pending" &&
+                i.DescendantScopeType == descendantScopeType && i.DescendantScopeId == descendantScopeId)
             .ToListAsync();
         foreach (var stale in existingPending)
             stale.Status = "Revoked";
@@ -185,6 +192,9 @@ public class InvitationService : IInvitationService
             ScopeType = scopeType,
             ScopeId = scopeId,
             RoleId = role.Id,
+            DescendantScopeType = descendantScopeType,
+            DescendantScopeId = descendantScopeId,
+            DescendantRoleId = descendantRoleId,
             Token = Guid.NewGuid().ToString("N"),
             InvitedBy = invitedByUserId,
             ExpiresAt = DateTime.UtcNow.AddDays(7),
@@ -453,6 +463,16 @@ public class InvitationService : IInvitationService
                 "This person has not completed account setup yet.", 409);
 
         await _grantService.GrantAsync(account.Id, invitation.RoleId, invitation.ScopeType, invitation.ScopeId, invitation.InvitedBy);
+
+        // The invitation's own primary grant may have been lifted to a higher scope than what
+        // was actually intended (see CreateScopedInvitationAsync's descendant fields) - grant
+        // the original, more specific role too. Its own ancestor walk fills in any level in
+        // between that the primary grant skipped, and no-ops on levels already granted.
+        if (invitation.DescendantScopeType != null && invitation.DescendantScopeId != null && invitation.DescendantRoleId != null)
+        {
+            await _grantService.GrantAsync(account.Id, invitation.DescendantRoleId.Value,
+                invitation.DescendantScopeType, invitation.DescendantScopeId.Value, invitation.InvitedBy);
+        }
 
         invitation.Status = "Accepted";
         // Same FK constraint as CreateScopedInvitationAsync's AddAudit call - workspaceId is

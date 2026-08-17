@@ -215,7 +215,11 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
         var firstAttempt = await jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId, "Surveyor");
         Assert.Null(firstAttempt.Access);
         Assert.NotNull(firstAttempt.Invitation);
-        Assert.Equal(Constants.ScopeTypes.Job, firstAttempt.Invitation!.ScopeType);
+        // Surveyor chains to WorkspaceMember, so the job-triggered invite is created at
+        // Workspace scope (the highest level actually granted), with the job as its descendant.
+        Assert.Equal(Constants.ScopeTypes.Workspace, firstAttempt.Invitation!.ScopeType);
+        Assert.Equal(Constants.ScopeTypes.Job, firstAttempt.Invitation.DescendantScopeType);
+        Assert.Equal(job.Id, firstAttempt.Invitation.DescendantScopeId);
 
         // Setting a password isn't enough either - still no workspace-scope access until
         // the workspace invite itself is accepted.
@@ -241,11 +245,12 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
-    public async Task DeclinedInvitee_StillGetsAJobScopeInvite_NotAnInstantGrant()
+    public async Task DeclinedInvitee_StillGetsAWorkspaceInvite_NotAnInstantGrant()
     {
         // Declining only marks the workspace invite Declined - it doesn't deactivate the
         // account. No consent coverage exists, so job assignment still falls back to a
-        // fresh job-scope invite rather than throwing or granting instantly.
+        // fresh invite (Workspace scope, Job descendant - Surveyor chains) rather than
+        // throwing or granting instantly.
         _invitationService = GetService<IInvitationService>();
         var jobService = GetService<IJobService>();
 
@@ -265,7 +270,46 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
         var result = await jobService.AddParticipantAsync(WorkspaceId, AdminId, job.Id, invitation.UserId, "Surveyor");
         Assert.Null(result.Access);
         Assert.NotNull(result.Invitation);
-        Assert.Equal(Constants.ScopeTypes.Job, result.Invitation!.ScopeType);
+        Assert.Equal(Constants.ScopeTypes.Workspace, result.Invitation!.ScopeType);
+        Assert.Equal(Constants.ScopeTypes.Job, result.Invitation.DescendantScopeType);
+    }
+
+    [Fact]
+    public async Task AcceptingJobTriggeredInvite_GrantsBothJobRoleAndWorkspaceMember()
+    {
+        // End-to-end proof: a brand-new person invited via a Job assignment (Surveyor, which
+        // chains) ends up, after accepting, with BOTH the specific Job-scope role they were
+        // actually assigned AND the Workspace-scope WorkspaceMember baseline - in one accept.
+        _invitationService = GetService<IInvitationService>();
+        var jobService = GetService<IJobService>();
+
+        var job = await jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Survey job" });
+        var result = await jobService.InviteParticipantByEmailAsync(
+            WorkspaceId, AdminId, job.Id, "Surveyor", "brandnew.surveyor@test.local", "Brand", "New", null, null);
+
+        Assert.Equal(Constants.ScopeTypes.Workspace, result.ScopeType);
+        Assert.Equal(WorkspaceId, result.ScopeId);
+        Assert.Equal(Constants.ScopeTypes.Job, result.DescendantScopeType);
+        Assert.Equal(job.Id, result.DescendantScopeId);
+
+        await _invitationService.CompleteInvitationAsync(result.Token, new CompleteInvitationRequest
+        {
+            Password = "SomePassword123!",
+            ConfirmPassword = "SomePassword123!",
+            FirstName = "Brand",
+            LastName = "New"
+        });
+        var accountId = await GetAccountIdAsync(result.UserId) ?? throw new Exception("Account should exist after completing invitation.");
+
+        await _invitationService.AcceptInvitationAsync(result.Id, accountId);
+
+        var jobAccess = await Context.UserAccesses.AnyAsync(ua =>
+            ua.UserId == accountId && ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == job.Id && ua.IsActive);
+        Assert.True(jobAccess, "Expected the descendant Job-scope Surveyor grant to exist after accept.");
+
+        var workspaceAccess = await Context.UserAccesses.AnyAsync(ua =>
+            ua.UserId == accountId && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == WorkspaceId && ua.IsActive);
+        Assert.True(workspaceAccess, "Expected the chained WorkspaceMember grant to exist after accept.");
     }
 
     [Fact]

@@ -125,18 +125,39 @@ public class JobAccessScopingTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
-    public async Task AddParticipant_WithNoWorkspaceMembership_CreatesJobScopeInviteInstead()
+    public async Task AddParticipant_WithNoWorkspaceMembership_CreatesWorkspaceInviteWithJobDescendant()
     {
         // No consent coverage (not a workspace member, no existing job grant) means
-        // AddParticipantAsync falls back to a job-scope invite rather than an instant
-        // grant or a rejection - same rule as InvitationFlowTests' pending/declined cases.
+        // AddParticipantAsync falls back to an invite rather than an instant grant or a
+        // rejection. Surveyor chains to WorkspaceMember, so the invite itself is created at
+        // the highest level that will actually be granted (Workspace) - the specific job
+        // assignment rides along as the invitation's descendant grant.
         await SeedJobsAsync();
         var outsiderId = await CreateUserAccountAsync("Outsider", "Person", "outsider@test.local");
 
         var result = await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobBId, outsiderId, "Surveyor");
         Assert.Null(result.Access);
         Assert.NotNull(result.Invitation);
+        Assert.Equal(Constants.ScopeTypes.Workspace, result.Invitation!.ScopeType);
+        Assert.Equal(WorkspaceId, result.Invitation.ScopeId);
+        Assert.Equal(Constants.ScopeTypes.Job, result.Invitation.DescendantScopeType);
+        Assert.Equal(_jobBId, result.Invitation.DescendantScopeId);
+    }
+
+    [Fact]
+    public async Task AddParticipant_ClientRole_NoAncestor_StillInvitesAtJobScope()
+    {
+        // Client (SingleScope policy) has no ancestor to chain to - Job stays the only level
+        // that matters, no descendant needed. Regression guard: the new ancestor-lookup logic
+        // must not change behavior for roles that were never meant to chain.
+        await SeedJobsAsync();
+        var outsiderId = await CreateUserAccountAsync("Outsider", "Client", "outsiderclient@test.local");
+
+        var result = await _jobService.AddParticipantAsync(WorkspaceId, AdminId, _jobBId, outsiderId, "Client");
+        Assert.Null(result.Access);
+        Assert.NotNull(result.Invitation);
         Assert.Equal(Constants.ScopeTypes.Job, result.Invitation!.ScopeType);
+        Assert.Null(result.Invitation.DescendantScopeType);
     }
 
     [Fact]

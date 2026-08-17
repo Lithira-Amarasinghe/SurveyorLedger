@@ -217,9 +217,11 @@ public class JobService : IJobService
             return new ParticipantAddResult(access, null);
         }
 
+        var invite = await ResolveInvitationTargetAsync(workspaceId, jobId, jobRole, job);
         var invitation = await _invitationService.CreateScopedInvitationAsync(
-            Constants.ScopeTypes.Job, jobId, jobRole.Id, JobDisplayName(job), callerUserId,
-            targetPerson.Email!, targetPerson.FirstName, targetPerson.LastName, targetPerson.Phone, null);
+            invite.ScopeType, invite.ScopeId, invite.RoleId, invite.DisplayName, callerUserId,
+            targetPerson.Email!, targetPerson.FirstName, targetPerson.LastName, targetPerson.Phone, null,
+            invite.DescendantScopeType, invite.DescendantScopeId, invite.DescendantRoleId);
         return new ParticipantAddResult(null, invitation);
     }
 
@@ -231,9 +233,34 @@ public class JobService : IJobService
 
         var jobRole = await ResolveJobRoleAsync(role);
 
+        var invite = await ResolveInvitationTargetAsync(workspaceId, jobId, jobRole, job);
         return await _invitationService.CreateScopedInvitationAsync(
-            Constants.ScopeTypes.Job, jobId, jobRole.Id, JobDisplayName(job), callerUserId,
-            email, firstName, lastName, phone, address);
+            invite.ScopeType, invite.ScopeId, invite.RoleId, invite.DisplayName, callerUserId,
+            email, firstName, lastName, phone, address,
+            invite.DescendantScopeType, invite.DescendantScopeId, invite.DescendantRoleId);
+    }
+
+    /// <summary>
+    /// A new person invited via a job role that chains (e.g. Surveyor) is invited at the
+    /// highest level that will actually be granted - Workspace, today - not the Job that
+    /// merely triggered it. Job scope only stays the invite target for roles with no ancestor
+    /// (Client, Finance - SingleScope policy), where Job is already the only level that matters.
+    /// </summary>
+    private async Task<(string ScopeType, Guid ScopeId, Guid RoleId, string DisplayName,
+        string? DescendantScopeType, Guid? DescendantScopeId, Guid? DescendantRoleId)>
+        ResolveInvitationTargetAsync(Guid workspaceId, Guid jobId, Role jobRole, Job job)
+    {
+        var topAncestor = await _grantService.ResolveTopAncestorAsync(Constants.ScopeTypes.Job, jobId, jobRole.Id);
+        if (topAncestor == null)
+            return (Constants.ScopeTypes.Job, jobId, jobRole.Id, JobDisplayName(job), null, null, null);
+
+        var workspaceName = await _context.Workspaces
+            .Where(w => w.Id == workspaceId)
+            .Select(w => w.Name)
+            .FirstAsync();
+
+        return (topAncestor.Value.ScopeType, topAncestor.Value.ScopeId, topAncestor.Value.RoleId, workspaceName,
+            Constants.ScopeTypes.Job, jobId, jobRole.Id);
     }
 
     private async Task<Role> ResolveJobRoleAsync(string role) =>

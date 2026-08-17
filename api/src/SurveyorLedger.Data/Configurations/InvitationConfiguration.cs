@@ -13,6 +13,7 @@ public class InvitationConfiguration : IEntityTypeConfiguration<Invitation>
         builder.Property(x => x.ScopeType).HasMaxLength(50).IsRequired();
         builder.Property(x => x.Token).HasMaxLength(64).IsRequired();
         builder.Property(x => x.Status).HasMaxLength(20).HasDefaultValue("Pending");
+        builder.Property(x => x.DescendantScopeType).HasMaxLength(50);
         builder.Property(x => x.EmailFailed).HasDefaultValue(false);
         builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
 

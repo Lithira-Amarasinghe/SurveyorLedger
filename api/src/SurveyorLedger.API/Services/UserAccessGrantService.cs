@@ -27,6 +27,15 @@ public interface IUserAccessGrantService
     /// scope active. When omitted, every active role at this scope is revoked (full removal).
     /// </summary>
     Task RevokeAsync(Guid userId, string scopeType, Guid scopeId, Guid? roleId = null);
+
+    /// <summary>
+    /// Walks <paramref name="roleId"/>'s assignment-policy ancestor chain all the way to the
+    /// top and returns that highest scope/role, or null if the role has no ancestors (e.g.
+    /// Client/Finance - SingleScope policy). Used by invitation flows: a brand-new person
+    /// being invited via a role that chains should be invited at the highest level that will
+    /// actually be granted, not the lower scope that merely triggered it - see JobService.
+    /// </summary>
+    Task<(string ScopeType, Guid ScopeId, Guid RoleId)?> ResolveTopAncestorAsync(string scopeType, Guid scopeId, Guid roleId);
 }
 
 public class UserAccessGrantService : IUserAccessGrantService
@@ -104,6 +113,52 @@ public class UserAccessGrantService : IUserAccessGrantService
             await GrantAncestorRolesAsync(userId, scopeType, scopeId, role, assignedBy);
 
         return existing;
+    }
+
+    public async Task<(string ScopeType, Guid ScopeId, Guid RoleId)?> ResolveTopAncestorAsync(string scopeType, Guid scopeId, Guid roleId)
+    {
+        var role = await _context.Roles.Include(r => r.Policy).FirstOrDefaultAsync(r => r.Id == roleId);
+        var policy = role?.Policy;
+        if (policy == null)
+            return null;
+
+        JsonElement policyDoc;
+        try
+        {
+            policyDoc = JsonSerializer.Deserialize<JsonElement>(policy.RulesJson);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        if (!policyDoc.TryGetProperty("ancestors", out var ancestorsArray) || ancestorsArray.ValueKind != JsonValueKind.Array)
+            return null;
+
+        string currentScopeType = scopeType;
+        Guid currentScopeId = scopeId;
+        (string ScopeType, Guid ScopeId, Guid RoleId)? top = null;
+
+        foreach (var ancestorRule in ancestorsArray.EnumerateArray())
+        {
+            if (!ancestorRule.TryGetProperty("scopeType", out var ancestorScopeTypeEl) ||
+                !ancestorRule.TryGetProperty("grantRoleId", out var ancestorRoleIdEl))
+                continue;
+
+            var ancestorScopeType = ancestorScopeTypeEl.GetString();
+            if (ancestorScopeType == null || !Guid.TryParse(ancestorRoleIdEl.GetString(), out var ancestorRoleId))
+                continue;
+
+            var parentScopeId = await _scopeIdResolver.GetParentIdAsync(currentScopeType, currentScopeId);
+            if (parentScopeId == null)
+                break;
+
+            top = (ancestorScopeType, parentScopeId.Value, ancestorRoleId);
+            currentScopeType = ancestorScopeType;
+            currentScopeId = parentScopeId.Value;
+        }
+
+        return top;
     }
 
     private async Task GrantAncestorRolesAsync(Guid userId, string scopeType, Guid scopeId, Role grantedRole, Guid assignedBy)

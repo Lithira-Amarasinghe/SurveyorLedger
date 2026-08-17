@@ -21,6 +21,18 @@ public class Invitation
     public bool EmailFailed { get; set; }
     public DateTime CreatedAt { get; set; }
 
+    /// <summary>
+    /// When a new person is invited via a role that chains to an ancestor scope (e.g. Surveyor
+    /// at Job, which auto-grants WorkspaceMember at Workspace), the invitation itself is created
+    /// at that highest level - ScopeType/ScopeId/RoleId above are the Workspace-level grant, and
+    /// these three carry the original, more specific grant (Job/Surveyor) that rides along on
+    /// acceptance. Null when the role has no ancestor (e.g. Client, Finance) - the invitation is
+    /// already at the only level that matters.
+    /// </summary>
+    public string? DescendantScopeType { get; set; }
+    public Guid? DescendantScopeId { get; set; }
+    public Guid? DescendantRoleId { get; set; }
+
     public Person User { get; set; }
     public Role Role { get; set; }
     public UserAccount InvitedByUser { get; set; }
