@@ -24,7 +24,7 @@ export interface MyInvitation {
   expiresAt: string;
   createdAt: string;
   hasLogin: boolean;
-  /** Set only for a job-scoped invite - joining one job, not the whole workspace. */
+  /** Set whenever this invite also includes a specific job assignment - either a plain job-scope invite, or a workspace-level invite whose role chains down to one job. */
   jobLabel?: string;
 }
 
@@ -35,7 +35,7 @@ export interface InvitationPreview {
   role: string;
   expired: boolean;
   hasLogin: boolean;
-  /** Set only for a job-scoped invite - joining one job, not the whole workspace. */
+  /** Set whenever this invite also includes a specific job assignment - either a plain job-scope invite, or a workspace-level invite whose role chains down to one job. */
   jobLabel?: string;
 }
 
