@@ -94,12 +94,14 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                     @for (role of g.roles; track role) {
                       <span class="text-xs pl-sm pr-xs py-xs rounded bg-neutral-100 text-neutral-600 flex items-center gap-xs">
                         {{ role }}
-                        <button type="button" class="text-neutral-400 hover:text-primary-500" title="Remove this role" (click)="removeParticipant({ userId: g.userId, role })">
-                          ×
-                        </button>
+                        @if (job()?.canManageParticipants) {
+                          <button type="button" class="text-neutral-400 hover:text-primary-500" title="Remove this role" (click)="removeParticipant({ userId: g.userId, role })">
+                            ×
+                          </button>
+                        }
                       </span>
                     }
-                    @if (jobRoleOptions(g.roles).length > 0) {
+                    @if (job()?.canManageParticipants && jobRoleOptions(g.roles).length > 0) {
                       <select class="input-field w-28 py-xs text-xs" [ngModel]="''" (ngModelChange)="addRoleToParticipant(g.userId, $event)">
                         <option value="" disabled selected>+ role</option>
                         @for (r of jobRoleOptions(g.roles); track r) {
@@ -112,10 +114,12 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
               }
             </div>
           }
-          @if (personMessage()) {
-            <p class="text-xs text-primary-600 mb-sm">{{ personMessage() }}</p>
+          @if (job()?.canManageParticipants) {
+            @if (personMessage()) {
+              <p class="text-xs text-primary-600 mb-sm">{{ personMessage() }}</p>
+            }
+            <app-add-person-widget #personWidget [workspaceId]="workspaceId" (added)="onPersonAdded($event)" (invited)="onPersonInvited($event)" />
           }
-          <app-add-person-widget #personWidget [workspaceId]="workspaceId" (added)="onPersonAdded($event)" (invited)="onPersonInvited($event)" />
         </div>
 
         <div class="card">

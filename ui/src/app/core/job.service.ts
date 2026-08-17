@@ -15,6 +15,7 @@ export interface Job {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  canManageParticipants: boolean;
 }
 
 export interface JobParticipant {
