@@ -80,7 +80,15 @@ interface MemberRow {
                         <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">
                           {{ r }}
                           @if (isAdmin() && !row.isPending && !row.isOwner && row.roles.length > 1) {
-                            <button class="text-neutral-400 hover:text-primary-500 ml-xs" (click)="removeRole(row, r)">&times;</button>
+                            @if (confirmingRemoveRole()?.key === row.key && confirmingRemoveRole()?.role === r) {
+                              <span class="text-neutral-500 ml-xs text-xs">
+                                <button class="text-primary-500 font-medium" (click)="doRemoveRole(row, r)">yes</button>
+                                <span class="mx-xs">/</span>
+                                <button class="text-neutral-500" (click)="confirmingRemoveRole.set(null)">no</button>
+                              </span>
+                            } @else {
+                              <button class="text-neutral-400 hover:text-primary-500 ml-xs" (click)="confirmingRemoveRole.set({ key: row.key, role: r })">&times;</button>
+                            }
                           }
                         </span>
                       }
@@ -170,6 +178,8 @@ export class MembersComponent implements OnInit {
   error = signal('');
   modalOpen = signal(false);
   confirming = signal<Set<string>>(new Set());
+  confirmingRemoveRole = signal<{ key: string; role: string } | null>(null);
+  successMessage = signal('');
   eligibleRoles = signal<string[]>(['Admin', 'Surveyor', 'Member', 'WorkspaceMember']);
 
   constructor(
@@ -271,6 +281,7 @@ export class MembersComponent implements OnInit {
     this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, roles: [...r.roles, role] } : r));
 
     this.workspaceService.addMemberRole(this.workspaceId, row.key, role).subscribe({
+      next: () => this.successMessage.set('Role added.'),
       error: (err) => {
         this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, roles: previousRoles } : r));
         this.error.set(err.error?.message ?? 'Could not add role.');
@@ -278,12 +289,14 @@ export class MembersComponent implements OnInit {
     });
   }
 
-  removeRole(row: MemberRow, role: string): void {
+  doRemoveRole(row: MemberRow, role: string): void {
     if (row.roles.length <= 1) return;
+    this.confirmingRemoveRole.set(null);
     const previousRoles = row.roles;
     this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, roles: r.roles.filter(x => x !== role) } : r));
 
     this.workspaceService.removeMemberRole(this.workspaceId, row.key, role).subscribe({
+      next: () => this.successMessage.set('Role removed.'),
       error: (err) => {
         this.rows.update(rows => rows.map(r => r.key === row.key ? { ...r, roles: previousRoles } : r));
         this.error.set(err.error?.message ?? 'Could not remove role.');

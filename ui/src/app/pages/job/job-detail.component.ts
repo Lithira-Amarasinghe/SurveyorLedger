@@ -104,7 +104,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                     <span class="text-xs pl-sm pr-xs py-xs rounded bg-neutral-100 text-neutral-600 flex items-center gap-xs">
                       {{ role }}
                       @if (job()?.canManageParticipants) {
-                        <button type="button" class="text-neutral-400 hover:text-primary-500" title="Remove this role" (click)="removeParticipant({ userId: row.userId, role })">
+                        <button type="button" class="text-neutral-400 hover:text-primary-500" title="Remove this role" (click)="confirmingRemoveRole.set({ userId: row.userId, role })">
                           ×
                         </button>
                       }
@@ -180,7 +180,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                         <span class="text-xs text-neutral-500 block">{{ l.size }} {{ l.sizeUnit }}</span>
                       }
                     </div>
-                    <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="removeLand(l); $event.stopPropagation()">
+                    <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="confirmingRemoveLand.set(l); $event.stopPropagation()">
                       Remove
                     </button>
                   </div>
@@ -228,7 +228,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                           <option [value]="s">{{ s }}</option>
                         }
                       </select>
-                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="removeMilestone(m)">
+                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="confirmingRemoveMilestone.set(m)">
                         Remove
                       </button>
                     }
@@ -504,6 +504,45 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
       </div>
     }
 
+    @if (confirmingRemoveRole(); as item) {
+      <div class="fixed inset-0 z-50 bg-neutral-900/40 flex items-center justify-center px-lg">
+        <div class="card w-full max-w-sm">
+          <h2 class="text-base font-semibold text-neutral-900">Remove role?</h2>
+          <p class="text-sm text-neutral-600 mt-xs">This role will be removed and cannot be undone.</p>
+          <div class="flex gap-sm mt-lg">
+            <button type="button" class="btn-secondary flex-1 text-xs" (click)="confirmingRemoveRole.set(null)">Cancel</button>
+            <button type="button" class="btn-primary flex-1 text-xs" (click)="doRemoveParticipant(item)">Remove</button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (confirmingRemoveLand(); as land) {
+      <div class="fixed inset-0 z-50 bg-neutral-900/40 flex items-center justify-center px-lg">
+        <div class="card w-full max-w-sm">
+          <h2 class="text-base font-semibold text-neutral-900">Remove land?</h2>
+          <p class="text-sm text-neutral-600 mt-xs">This land will be unlinked from the job.</p>
+          <div class="flex gap-sm mt-lg">
+            <button type="button" class="btn-secondary flex-1 text-xs" (click)="confirmingRemoveLand.set(null)">Cancel</button>
+            <button type="button" class="btn-primary flex-1 text-xs" (click)="doRemoveLand(land)">Remove</button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (confirmingRemoveMilestone(); as milestone) {
+      <div class="fixed inset-0 z-50 bg-neutral-900/40 flex items-center justify-center px-lg">
+        <div class="card w-full max-w-sm">
+          <h2 class="text-base font-semibold text-neutral-900">Remove milestone?</h2>
+          <p class="text-sm text-neutral-600 mt-xs">This milestone will be deleted and cannot be undone.</p>
+          <div class="flex gap-sm mt-lg">
+            <button type="button" class="btn-secondary flex-1 text-xs" (click)="confirmingRemoveMilestone.set(null)">Cancel</button>
+            <button type="button" class="btn-primary flex-1 text-xs" (click)="doRemoveMilestone(milestone)">Remove</button>
+          </div>
+        </div>
+      </div>
+    }
+
     @if (confirmingLeave()) {
       <div class="fixed inset-0 z-50 bg-neutral-900/40 flex items-center justify-center px-lg">
         <div class="card w-full max-w-sm">
@@ -605,6 +644,11 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   statuses = STATUSES;
   titleDraft = '';
   descriptionDraft = '';
+  personMessage = signal('');
+
+  confirmingRemoveRole = signal<{ userId: string; role: string } | null>(null);
+  confirmingRemoveLand = signal<Land | null>(null);
+  confirmingRemoveMilestone = signal<Milestone | null>(null);
 
   addressLine = addressLine;
   expandedLandId = signal<string | null>(null);
@@ -813,13 +857,15 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     });
   }
 
-  removeParticipant(p: { userId: string; role: string }): void {
+  doRemoveParticipant(p: { userId: string; role: string }): void {
+    this.confirmingRemoveRole.set(null);
     this.jobService.removeParticipant(this.workspaceId, this.jobId, p.userId, p.role).subscribe({
       next: () => {
         this.participants.update(list => list.filter(x => !(x.userId === p.userId && x.role === p.role)));
         this.effectiveParticipants.update(list => list.filter(x => !(x.userId === p.userId && x.role === p.role && x.accessType === 'Direct')));
+        this.personMessage.set('Role removed.');
       },
-      error: (err) => this.error.set(err.error?.message ?? 'Could not remove participant.')
+      error: (err) => this.error.set(err.error?.message ?? 'Could not remove role.')
     });
   }
 
@@ -844,9 +890,13 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     });
   }
 
-  removeLand(land: Land): void {
+  doRemoveLand(land: Land): void {
+    this.confirmingRemoveLand.set(null);
     this.jobService.removeLand(this.workspaceId, this.jobId, land.landId).subscribe({
-      next: () => this.lands.update(list => list.filter(l => l.landId !== land.landId)),
+      next: () => {
+        this.lands.update(list => list.filter(l => l.landId !== land.landId));
+        this.personMessage.set('Land unlinked.');
+      },
       error: (err) => this.error.set(err.error?.message ?? 'Could not remove land.')
     });
   }
@@ -899,9 +949,13 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     });
   }
 
-  removeMilestone(milestone: Milestone): void {
+  doRemoveMilestone(milestone: Milestone): void {
+    this.confirmingRemoveMilestone.set(null);
     this.milestoneService.delete(this.workspaceId, this.jobId, milestone.milestoneId).subscribe({
-      next: () => this.milestones.update(list => list.filter(m => m.milestoneId !== milestone.milestoneId)),
+      next: () => {
+        this.milestones.update(list => list.filter(m => m.milestoneId !== milestone.milestoneId));
+        this.personMessage.set('Milestone removed.');
+      },
       error: (err) => this.error.set(err.error?.message ?? 'Could not remove milestone.')
     });
   }
