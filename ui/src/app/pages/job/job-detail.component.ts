@@ -4,16 +4,16 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { Observable, Subject, forkJoin } from 'rxjs';
-import { Job, JobParticipant, JobService } from '../../core/job.service';
+import { Job, JobInvitation, JobParticipant, JobService } from '../../core/job.service';
 import { Land, addressLine } from '../../core/land.service';
 import { AuthService } from '../../core/auth.service';
-import { InviteByEmail, PersonWithRole } from './add-person-widget/add-person-widget.component';
+import { InviteByEmail, PersonWithRole } from './add-job-person-modal/add-job-person-modal.component';
 import { Milestone, MilestoneService } from '../../core/milestone.service';
 import { Document, DocumentService } from '../../core/document.service';
 import { DocumentRequest, DocumentRequestService } from '../../core/document-request.service';
 import { CurrentWorkspaceService } from '../../core/current-workspace.service';
 import { Invoice, InvoiceService, Quotation, QuotationService } from '../../core/billing.service';
-import { AddPersonWidgetComponent } from './add-person-widget/add-person-widget.component';
+import { AddJobPersonModalComponent } from './add-job-person-modal/add-job-person-modal.component';
 import { AddLandWidgetComponent } from './add-land-widget/add-land-widget.component';
 import { LandDetailPanelComponent } from '../land/land-detail-panel/land-detail-panel.component';
 import { DocumentUploadWidgetComponent } from './document-upload-widget/document-upload-widget.component';
@@ -31,7 +31,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
     FormsModule,
     RouterLink,
     DragDropModule,
-    AddPersonWidgetComponent,
+    AddJobPersonModalComponent,
     AddLandWidgetComponent,
     LandDetailPanelComponent,
     DocumentUploadWidgetComponent,
@@ -84,57 +84,73 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
         </div>
 
         <div class="card">
-          <h2 class="text-sm font-semibold text-neutral-900 mb-md">People</h2>
-          @if (groupedParticipants().length > 0) {
-            <div class="space-y-xs mb-md">
-              @for (g of groupedParticipants(); track g.userId) {
-                <div class="flex items-center justify-between px-md py-sm rounded bg-neutral-50">
-                  <div class="flex items-center flex-wrap gap-xs">
-                    <span class="text-sm text-neutral-900">{{ g.firstName }} {{ g.lastName }}</span>
-                    @for (role of g.roles; track role) {
-                      <span class="text-xs pl-sm pr-xs py-xs rounded bg-neutral-100 text-neutral-600 flex items-center gap-xs">
-                        {{ role }}
-                        @if (job()?.canManageParticipants) {
-                          <button type="button" class="text-neutral-400 hover:text-primary-500" title="Remove this role" (click)="removeParticipant({ userId: g.userId, role })">
-                            ×
-                          </button>
-                        }
-                      </span>
-                    }
-                    @if (job()?.canManageParticipants && jobRoleOptions(g.roles).length > 0) {
-                      <select class="input-field w-28 py-xs text-xs" [ngModel]="''" (ngModelChange)="addRoleToParticipant(g.userId, $event)">
-                        <option value="" disabled selected>+ role</option>
-                        @for (r of jobRoleOptions(g.roles); track r) {
-                          <option [value]="r">{{ r }}</option>
-                        }
-                      </select>
-                    }
-                  </div>
-                </div>
-              }
-            </div>
-          }
-          @if (job()?.canManageParticipants) {
-            @if (personMessage()) {
-              <p class="text-xs text-primary-600 mb-sm">{{ personMessage() }}</p>
+          <div class="flex items-center justify-between mb-md">
+            <h2 class="text-sm font-semibold text-neutral-900">People</h2>
+            @if (job()?.canManageParticipants) {
+              <button type="button" class="btn-primary text-xs" (click)="addPersonModalOpen.set(true)">Add person</button>
             }
-            <app-add-person-widget #personWidget [workspaceId]="workspaceId" (added)="onPersonAdded($event)" (invited)="onPersonInvited($event)" />
-          }
-        </div>
+          </div>
 
-        <div class="card">
-          <h3 class="text-sm font-medium text-neutral-900 mb-sm">Who can access this job</h3>
+          @if (jobPeopleRows().length === 0 && pendingInvitations().length === 0) {
+            <p class="text-xs text-neutral-500">No one has access to this job yet.</p>
+          }
+
           <div class="space-y-xs">
-            @for (p of effectiveParticipants(); track p.userId + p.role) {
-              <div class="flex items-center justify-between text-sm">
-                <span>{{ p.firstName }} {{ p.lastName }} · {{ p.role }}</span>
-                <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">
-                  {{ p.accessType === 'WorkspaceWide' ? 'Full workspace access' : 'Assigned to this job' }}
-                </span>
+            @for (row of jobPeopleRows(); track row.userId) {
+              <div class="flex items-center justify-between px-md py-sm rounded bg-neutral-50">
+                <div class="flex items-center flex-wrap gap-xs">
+                  <span class="text-sm text-neutral-900">{{ row.firstName }} {{ row.lastName }}</span>
+                  @for (role of row.directRoles; track role) {
+                    <span class="text-xs pl-sm pr-xs py-xs rounded bg-neutral-100 text-neutral-600 flex items-center gap-xs">
+                      {{ role }}
+                      @if (job()?.canManageParticipants) {
+                        <button type="button" class="text-neutral-400 hover:text-primary-500" title="Remove this role" (click)="removeParticipant({ userId: row.userId, role })">
+                          ×
+                        </button>
+                      }
+                    </span>
+                  }
+                  @for (role of row.workspaceWideRoles; track role) {
+                    <span
+                      class="text-xs pl-sm pr-xs py-xs rounded bg-primary-50 text-primary-600"
+                      [title]="'Holds ' + role + ' at the workspace level - can open every job, not tied to this one specifically'"
+                    >
+                      Workspace-wide via {{ role }}
+                    </span>
+                  }
+                  @if (job()?.canManageParticipants && jobRoleOptions(row.directRoles).length > 0) {
+                    <select class="input-field w-28 py-xs text-xs" [ngModel]="''" (ngModelChange)="addRoleToParticipant(row.userId, $event)">
+                      <option value="" disabled selected>+ role</option>
+                      @for (r of jobRoleOptions(row.directRoles); track r) {
+                        <option [value]="r">{{ r }}</option>
+                      }
+                    </select>
+                  }
+                </div>
+              </div>
+            }
+            @for (inv of pendingInvitations(); track inv.invitationId) {
+              <div class="flex items-center justify-between px-md py-sm rounded bg-neutral-50">
+                <span class="text-sm text-neutral-500">{{ inv.email }}</span>
+                <span class="text-xs px-sm py-xs rounded bg-amber-100 text-amber-700">{{ inv.role }} · Pending</span>
               </div>
             }
           </div>
+
+          @if (personMessage()) {
+            <p class="text-xs text-primary-600 mt-sm">{{ personMessage() }}</p>
+          }
         </div>
+
+        @if (addPersonModalOpen()) {
+          <app-add-job-person-modal
+            #personModal
+            [workspaceId]="workspaceId"
+            (cancel)="addPersonModalOpen.set(false)"
+            (added)="onPersonAdded($event)"
+            (invited)="onPersonInvited($event)"
+          />
+        }
 
         <div class="card">
           <h2 class="text-sm font-semibold text-neutral-900 mb-md">Land</h2>
@@ -506,25 +522,35 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
   `
 })
 export class JobDetailComponent implements OnInit, HasUnsavedChanges {
-  @ViewChild('personWidget') personWidget?: AddPersonWidgetComponent;
+  @ViewChild('personModal') personModal?: AddJobPersonModalComponent;
 
   workspaceId = '';
   jobId = '';
   job = signal<Job | null>(null);
   participants = signal<JobParticipant[]>([]);
   effectiveParticipants = signal<JobParticipant[]>([]);
+  pendingInvitations = signal<JobInvitation[]>([]);
+  addPersonModalOpen = signal(false);
   /** One entry per person, for pickers that target a person rather than a specific role-grant. */
   uniqueParticipants = computed(() => {
     const seen = new Set<string>();
     return this.participants().filter(p => (seen.has(p.userId) ? false : (seen.add(p.userId), true)));
   });
-  /** One row per person with all their job roles collected, for the People card. */
-  groupedParticipants = computed(() => {
-    const byUser = new Map<string, { userId: string; firstName: string; lastName: string; roles: string[] }>();
-    for (const p of this.participants()) {
-      const g = byUser.get(p.userId);
-      if (g) g.roles.push(p.role);
-      else byUser.set(p.userId, { userId: p.userId, firstName: p.firstName, lastName: p.lastName, roles: [p.role] });
+  /**
+   * One row per person, merging their direct job roles (removable, per-role) and any
+   * workspace-wide access (read-only badge, e.g. Admin) - the same person can hold both if
+   * they were also explicitly assigned to this job on top of their blanket access.
+   */
+  jobPeopleRows = computed(() => {
+    const byUser = new Map<string, { userId: string; firstName: string; lastName: string; directRoles: string[]; workspaceWideRoles: string[] }>();
+    for (const p of this.effectiveParticipants()) {
+      let row = byUser.get(p.userId);
+      if (!row) {
+        row = { userId: p.userId, firstName: p.firstName, lastName: p.lastName, directRoles: [], workspaceWideRoles: [] };
+        byUser.set(p.userId, row);
+      }
+      if (p.accessType === 'WorkspaceWide') row.workspaceWideRoles.push(p.role);
+      else row.directRoles.push(p.role);
     }
     return [...byUser.values()];
   });
@@ -633,6 +659,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
       job: this.jobService.getById(this.workspaceId, this.jobId),
       participants: this.jobService.getParticipants(this.workspaceId, this.jobId),
       effectiveParticipants: this.jobService.getEffectiveParticipants(this.workspaceId, this.jobId),
+      pendingInvitations: this.jobService.getPendingInvitations(this.workspaceId, this.jobId),
       lands: this.jobService.getLands(this.workspaceId, this.jobId),
       milestones: this.milestoneService.list(this.workspaceId, this.jobId),
       documents: this.documentService.list(this.workspaceId, this.jobId),
@@ -640,12 +667,13 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
       invoices: this.invoiceService.search(this.workspaceId),
       quotations: this.quotationService.search(this.workspaceId)
     }).subscribe({
-      next: ({ job, participants, effectiveParticipants, lands, milestones, documents, documentRequests, invoices, quotations }) => {
+      next: ({ job, participants, effectiveParticipants, pendingInvitations, lands, milestones, documents, documentRequests, invoices, quotations }) => {
         this.job.set(job);
         this.titleDraft = job.title;
         this.descriptionDraft = job.description ?? '';
         this.participants.set(participants);
         this.effectiveParticipants.set(effectiveParticipants);
+        this.pendingInvitations.set(pendingInvitations);
         this.lands.set(lands);
         this.milestones.set(milestones);
         this.documents.set(documents);
@@ -747,34 +775,50 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
 
   personMessage = signal('');
 
+  private refreshParticipants(): void {
+    this.jobService.getParticipants(this.workspaceId, this.jobId).subscribe(p => this.participants.set(p));
+    this.jobService.getEffectiveParticipants(this.workspaceId, this.jobId).subscribe(p => this.effectiveParticipants.set(p));
+  }
+
+  private refreshPendingInvitations(): void {
+    this.jobService.getPendingInvitations(this.workspaceId, this.jobId).subscribe(inv => this.pendingInvitations.set(inv));
+  }
+
   onPersonAdded({ person, role }: PersonWithRole): void {
     this.jobService.addParticipant(this.workspaceId, this.jobId, person.userId, role).subscribe({
       next: (result) => {
-        this.personWidget?.markAdded();
+        this.personModal?.markAdded();
+        this.addPersonModalOpen.set(false);
         if (result.status === 'invited') {
           this.personMessage.set(`Invitation sent to ${person.name} - pending acceptance.`);
+          this.refreshPendingInvitations();
         } else {
           this.personMessage.set('');
-          this.jobService.getParticipants(this.workspaceId, this.jobId).subscribe(participants => this.participants.set(participants));
+          this.refreshParticipants();
         }
       },
-      error: (err) => this.personWidget?.markFailed(err.error?.message ?? 'Could not add person.')
+      error: (err) => this.personModal?.markFailed(err.error?.message ?? 'Could not add person.')
     });
   }
 
   onPersonInvited({ email, firstName, lastName, phone, role }: InviteByEmail): void {
     this.jobService.inviteParticipant(this.workspaceId, this.jobId, role, email, firstName, lastName, phone).subscribe({
       next: () => {
-        this.personWidget?.markAdded();
+        this.personModal?.markAdded();
+        this.addPersonModalOpen.set(false);
         this.personMessage.set(`Invitation sent to ${email} - pending acceptance.`);
+        this.refreshPendingInvitations();
       },
-      error: (err) => this.personWidget?.markFailed(err.error?.message ?? 'Could not send invitation.')
+      error: (err) => this.personModal?.markFailed(err.error?.message ?? 'Could not send invitation.')
     });
   }
 
   removeParticipant(p: { userId: string; role: string }): void {
     this.jobService.removeParticipant(this.workspaceId, this.jobId, p.userId, p.role).subscribe({
-      next: () => this.participants.update(list => list.filter(x => !(x.userId === p.userId && x.role === p.role))),
+      next: () => {
+        this.participants.update(list => list.filter(x => !(x.userId === p.userId && x.role === p.role)));
+        this.effectiveParticipants.update(list => list.filter(x => !(x.userId === p.userId && x.role === p.role && x.accessType === 'Direct')));
+      },
       error: (err) => this.error.set(err.error?.message ?? 'Could not remove participant.')
     });
   }
@@ -788,7 +832,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   addRoleToParticipant(userId: string, role: string): void {
     if (!role) return;
     this.jobService.addParticipant(this.workspaceId, this.jobId, userId, role).subscribe({
-      next: () => this.jobService.getParticipants(this.workspaceId, this.jobId).subscribe(participants => this.participants.set(participants)),
+      next: () => this.refreshParticipants(),
       error: (err) => this.error.set(err.error?.message ?? 'Could not add role.')
     });
   }

@@ -30,6 +30,14 @@ public interface IInvitationService
         string? descendantScopeType = null, Guid? descendantScopeId = null, Guid? descendantRoleId = null);
 
     Task<List<Invitation>> GetPendingInvitationsAsync(Guid workspaceId, Guid callerUserId);
+
+    /// <summary>
+    /// Pending invitations that resolve to this specific job - either a plain Job-scope invite
+    /// (Client/Finance) or a Workspace-scope invite whose role chains down to this job via
+    /// DescendantScopeId (Surveyor). Backs the job page's people table, so a pending invite
+    /// shows there the same way an accepted grant does.
+    /// </summary>
+    Task<List<Invitation>> GetPendingInvitationsForJobAsync(Guid workspaceId, Guid callerUserId, Guid jobId);
     Task RevokeInvitationAsync(Guid workspaceId, Guid invitationId, Guid callerUserId);
     Task ResendInvitationAsync(Guid workspaceId, Guid invitationId, Guid callerUserId);
     Task<Invitation> GetByTokenAsync(string token);
@@ -65,6 +73,7 @@ public class InvitationService : IInvitationService
     private readonly ApplicationDbContext _context;
     private readonly ICasbinService _casbinService;
     private readonly IUserAccessGrantService _grantService;
+    private readonly IScopedAccessService _access;
     private readonly IEmailService _emailService;
     private readonly IPasswordService _passwordService;
     private readonly IConfiguration _config;
@@ -74,6 +83,7 @@ public class InvitationService : IInvitationService
         ApplicationDbContext context,
         ICasbinService casbinService,
         IUserAccessGrantService grantService,
+        IScopedAccessService access,
         IEmailService emailService,
         IPasswordService passwordService,
         IConfiguration config,
@@ -82,6 +92,7 @@ public class InvitationService : IInvitationService
         _context = context;
         _casbinService = casbinService;
         _grantService = grantService;
+        _access = access;
         _emailService = emailService;
         _passwordService = passwordService;
         _config = config;
@@ -215,6 +226,22 @@ public class InvitationService : IInvitationService
 
         _logger.LogInformation("Invitation created for {Email} to {ScopeType} {ScopeId} by {UserId}", email, scopeType, scopeId, invitedByUserId);
         return invitation;
+    }
+
+    public async Task<List<Invitation>> GetPendingInvitationsForJobAsync(Guid workspaceId, Guid callerUserId, Guid jobId)
+    {
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
+
+        var invitations = await _context.Invitations
+            .Include(i => i.Role)
+            .Where(i => i.Status == "Pending" &&
+                ((i.ScopeType == Constants.ScopeTypes.Job && i.ScopeId == jobId) ||
+                 (i.DescendantScopeType == Constants.ScopeTypes.Job && i.DescendantScopeId == jobId)))
+            .OrderByDescending(i => i.CreatedAt)
+            .ToListAsync();
+
+        await ExpireStaleAsync(invitations);
+        return invitations.Where(i => i.Status == "Pending").ToList();
     }
 
     public async Task<List<Invitation>> GetPendingInvitationsAsync(Guid workspaceId, Guid callerUserId)
@@ -418,14 +445,21 @@ public class InvitationService : IInvitationService
         if (invitation.Status != "Pending")
             throw new AppException(Constants.ErrorCodes.InvitationExpired, "This invitation is no longer pending.", 410);
 
-        // Nothing is ever granted before accept, so declining never has anything to undo.
+        // Nothing is ever granted before accept, so declining never has anything to undo -
+        // that holds regardless of scope depth (plain Job invite, chained Workspace+Job
+        // invite, or any future level above Workspace), since only Accept ever grants.
         invitation.Status = "Declined";
         // invitation.UserId is a Person.Id; AuditLog.UserId is a FK to UserAccount, so this
         // needs the account, not the person - a token-based decline may have no account yet
         // (e.g. a brand-new invitee declining before ever setting a password), in which case
         // the audit row is left unattributed rather than violating the FK.
         var account = await _context.UserAccounts.FirstOrDefaultAsync(a => a.PersonId == invitation.UserId);
-        AddAudit("InvitationDeclined", "Invitation", invitation.Id, invitation.ScopeId, account?.Id, "Pending", "Declined");
+        // AddAudit's workspaceId param is a real FK to Workspaces - a Job-scope invite's
+        // ScopeId is a job, not a workspace, so passing it unconditionally violates the FK.
+        // Same rule CreateScopedInvitationAsync already follows for the same reason.
+        AddAudit("InvitationDeclined", "Invitation", invitation.Id,
+            invitation.ScopeType == Constants.ScopeTypes.Workspace ? invitation.ScopeId : null,
+            account?.Id, "Pending", "Declined");
         await _context.SaveChangesAsync();
     }
 

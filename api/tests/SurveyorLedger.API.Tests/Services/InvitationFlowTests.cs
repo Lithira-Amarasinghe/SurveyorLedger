@@ -197,6 +197,76 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
+    public async Task DeclineByToken_PlainJobScopeInvite_DoesNotViolateAuditWorkspaceFk()
+    {
+        // Regression: MarkDeclinedAsync used to pass invitation.ScopeId unconditionally as the
+        // audit row's WorkspaceId FK. For a plain Job-scope invite (Client - no chaining),
+        // ScopeId is a Job id, not a Workspace id, so this violated the FK and threw before
+        // the fix - declining any non-chaining job invite was broken.
+        _invitationService = GetService<IInvitationService>();
+        var jobService = GetService<IJobService>();
+
+        var job = await jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Survey job" });
+        var invitation = await jobService.InviteParticipantByEmailAsync(
+            WorkspaceId, AdminId, job.Id, "Client", "declineclient@test.local", "Decline", "Client", null, null);
+
+        Assert.Equal(Constants.ScopeTypes.Job, invitation.ScopeType);
+
+        await _invitationService.DeclineByTokenAsync(invitation.Token);
+
+        var reloaded = await Context.Invitations.FirstAsync(i => i.Id == invitation.Id);
+        Assert.Equal("Declined", reloaded.Status);
+    }
+
+    [Fact]
+    public async Task DeclineByToken_ChainedJobTriggeredInvite_Works()
+    {
+        // Same coverage for the chained case (Workspace-scope invite with a Job descendant) -
+        // declining never grants anything either way, at any depth, since only Accept does.
+        _invitationService = GetService<IInvitationService>();
+        var jobService = GetService<IJobService>();
+
+        var job = await jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Survey job" });
+        var invitation = await jobService.InviteParticipantByEmailAsync(
+            WorkspaceId, AdminId, job.Id, "Surveyor", "declinesurveyor@test.local", "Decline", "Surveyor", null, null);
+
+        Assert.Equal(Constants.ScopeTypes.Workspace, invitation.ScopeType);
+        Assert.Equal(Constants.ScopeTypes.Job, invitation.DescendantScopeType);
+
+        await _invitationService.DeclineByTokenAsync(invitation.Token);
+
+        var reloaded = await Context.Invitations.FirstAsync(i => i.Id == invitation.Id);
+        Assert.Equal("Declined", reloaded.Status);
+
+        var anyAccess = await Context.UserAccesses.AnyAsync(ua => ua.UserId == invitation.UserId);
+        Assert.False(anyAccess, "Declining must never grant anything, at any scope depth.");
+    }
+
+    [Fact]
+    public async Task GetPendingInvitationsForJobAsync_ReturnsBothPlainAndChainedInvites()
+    {
+        _invitationService = GetService<IInvitationService>();
+        var jobService = GetService<IJobService>();
+
+        var jobA = await jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Job A" });
+        var jobB = await jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Job B" });
+
+        // Client invite on Job A - plain Job-scope invite.
+        await jobService.InviteParticipantByEmailAsync(WorkspaceId, AdminId, jobA.Id, "Client", "pendingclient@test.local", "Pending", "Client", null, null);
+        // Surveyor invite on Job A - chained Workspace-scope invite with Job A as descendant.
+        await jobService.InviteParticipantByEmailAsync(WorkspaceId, AdminId, jobA.Id, "Surveyor", "pendingsurveyor@test.local", "Pending", "Surveyor", null, null);
+        // Unrelated invite on Job B - must not show up for Job A.
+        await jobService.InviteParticipantByEmailAsync(WorkspaceId, AdminId, jobB.Id, "Client", "otherjob@test.local", "Other", "Job", null, null);
+
+        var pending = await _invitationService.GetPendingInvitationsForJobAsync(WorkspaceId, AdminId, jobA.Id);
+
+        Assert.Equal(2, pending.Count);
+        Assert.Contains(pending, i => i.Email == "pendingclient@test.local");
+        Assert.Contains(pending, i => i.Email == "pendingsurveyor@test.local");
+        Assert.DoesNotContain(pending, i => i.Email == "otherjob@test.local");
+    }
+
+    [Fact]
     public async Task PendingInvitee_GetsAJobScopeInviteInstead_UntilTheyAccept()
     {
         // A person who has been invited but hasn't accepted holds no UserAccess of any

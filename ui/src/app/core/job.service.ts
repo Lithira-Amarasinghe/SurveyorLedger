@@ -104,6 +104,13 @@ export class JobService {
       .pipe(map(res => res.data));
   }
 
+  /** People invited to this job (directly, or via a chained workspace invite) who haven't accepted yet. */
+  getPendingInvitations(workspaceId: string, jobId: string): Observable<JobInvitation[]> {
+    return this.http
+      .get<ApiResponse<JobInvitation[]>>(`${this.base(workspaceId)}/${jobId}/pending-invitations`)
+      .pipe(map(res => res.data));
+  }
+
   /**
    * role is the job-scoped grant to create - "Surveyor" or "Client", independent of the
    * person's workspace role. Instant if the target already has consent coverage for this

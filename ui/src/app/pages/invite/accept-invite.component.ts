@@ -22,9 +22,10 @@ import { AuthService } from '../../core/auth.service';
         } @else if (preview(); as p) {
 
           <h1 class="text-lg font-semibold text-neutral-900">Join {{ p.workspaceName }}</h1>
-          <p class="text-sm text-neutral-600 mt-xs">You've been invited as <strong>{{ p.role }}</strong>.</p>
           @if (p.jobLabel) {
-            <p class="text-xs text-neutral-500 mt-xs">For the job {{ p.jobLabel }} only - not full workspace access.</p>
+            <p class="text-sm text-neutral-600 mt-xs">You've been invited to work on <strong>{{ p.jobLabel }}</strong>.</p>
+          } @else {
+            <p class="text-sm text-neutral-600 mt-xs">You've been invited as <strong>{{ p.role }}</strong>.</p>
           }
 
           @if (mismatchEmail()) {

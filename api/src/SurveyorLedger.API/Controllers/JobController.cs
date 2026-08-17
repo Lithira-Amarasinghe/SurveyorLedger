@@ -17,12 +17,14 @@ namespace SurveyorLedger.API.Controllers
     {
         private readonly IJobService _jobService;
         private readonly IScopedAccessService _access;
+        private readonly IInvitationService _invitationService;
         private readonly ILogger<JobController> _logger;
 
-        public JobController(IJobService jobService, IScopedAccessService access, ILogger<JobController> logger)
+        public JobController(IJobService jobService, IScopedAccessService access, IInvitationService invitationService, ILogger<JobController> logger)
         {
             _jobService = jobService;
             _access = access;
+            _invitationService = invitationService;
             _logger = logger;
         }
 
@@ -91,6 +93,15 @@ namespace SurveyorLedger.API.Controllers
             var callerId = CallerId();
             var participants = await _jobService.GetEffectiveParticipantsAsync(workspaceId, callerId, id);
             return Ok(ApiResponse<List<JobParticipantResponse>>.Ok(participants.Select(ToEffectiveResponse).ToList()));
+        }
+
+        /// <summary>Pending invitations that resolve to this job (plain job invite, or a chained workspace invite carrying this job as descendant) - lets the job's people table show a row for someone invited but not yet accepted.</summary>
+        [HttpGet("{id}/pending-invitations")]
+        public async Task<ActionResult<ApiResponse<List<InvitationResponse>>>> GetPendingInvitations(Guid workspaceId, Guid id)
+        {
+            var callerId = CallerId();
+            var invitations = await _invitationService.GetPendingInvitationsForJobAsync(workspaceId, callerId, id);
+            return Ok(ApiResponse<List<InvitationResponse>>.Ok(invitations.Select(ToResponse).ToList()));
         }
 
         [HttpPost("{id}/participants/{userId}")]
