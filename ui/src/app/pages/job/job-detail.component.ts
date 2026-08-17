@@ -123,6 +123,20 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
         </div>
 
         <div class="card">
+          <h3 class="text-sm font-medium text-neutral-900 mb-sm">Who can access this job</h3>
+          <div class="space-y-xs">
+            @for (p of effectiveParticipants(); track p.userId + p.role) {
+              <div class="flex items-center justify-between text-sm">
+                <span>{{ p.firstName }} {{ p.lastName }} · {{ p.role }}</span>
+                <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">
+                  {{ p.accessType === 'WorkspaceWide' ? 'Full workspace access' : 'Assigned to this job' }}
+                </span>
+              </div>
+            }
+          </div>
+        </div>
+
+        <div class="card">
           <h2 class="text-sm font-semibold text-neutral-900 mb-md">Land</h2>
           @if (lands().length > 0) {
             <div class="space-y-xs mb-md">
@@ -498,6 +512,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   jobId = '';
   job = signal<Job | null>(null);
   participants = signal<JobParticipant[]>([]);
+  effectiveParticipants = signal<JobParticipant[]>([]);
   /** One entry per person, for pickers that target a person rather than a specific role-grant. */
   uniqueParticipants = computed(() => {
     const seen = new Set<string>();
@@ -617,6 +632,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     forkJoin({
       job: this.jobService.getById(this.workspaceId, this.jobId),
       participants: this.jobService.getParticipants(this.workspaceId, this.jobId),
+      effectiveParticipants: this.jobService.getEffectiveParticipants(this.workspaceId, this.jobId),
       lands: this.jobService.getLands(this.workspaceId, this.jobId),
       milestones: this.milestoneService.list(this.workspaceId, this.jobId),
       documents: this.documentService.list(this.workspaceId, this.jobId),
@@ -624,11 +640,12 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
       invoices: this.invoiceService.search(this.workspaceId),
       quotations: this.quotationService.search(this.workspaceId)
     }).subscribe({
-      next: ({ job, participants, lands, milestones, documents, documentRequests, invoices, quotations }) => {
+      next: ({ job, participants, effectiveParticipants, lands, milestones, documents, documentRequests, invoices, quotations }) => {
         this.job.set(job);
         this.titleDraft = job.title;
         this.descriptionDraft = job.description ?? '';
         this.participants.set(participants);
+        this.effectiveParticipants.set(effectiveParticipants);
         this.lands.set(lands);
         this.milestones.set(milestones);
         this.documents.set(documents);

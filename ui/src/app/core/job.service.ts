@@ -26,6 +26,7 @@ export interface JobParticipant {
   email: string | null;
   role: string;
   assignedAt: string;
+  accessType?: 'Direct' | 'WorkspaceWide';
 }
 
 export interface JobInvitation {
@@ -94,6 +95,13 @@ export class JobService {
 
   getParticipants(workspaceId: string, jobId: string): Observable<JobParticipant[]> {
     return this.http.get<ApiResponse<JobParticipant[]>>(`${this.base(workspaceId)}/${jobId}/participants`).pipe(map(res => res.data));
+  }
+
+  /** Direct participants plus anyone with blanket job access from a higher scope (e.g. Admin) - read-only, no add/remove here. */
+  getEffectiveParticipants(workspaceId: string, jobId: string): Observable<JobParticipant[]> {
+    return this.http
+      .get<ApiResponse<JobParticipant[]>>(`${this.base(workspaceId)}/${jobId}/effective-participants`)
+      .pipe(map(res => res.data));
   }
 
   /**
