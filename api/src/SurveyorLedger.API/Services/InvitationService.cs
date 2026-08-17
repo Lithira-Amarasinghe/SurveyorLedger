@@ -103,8 +103,13 @@ public class InvitationService : IInvitationService
         var workspace = await _context.Workspaces.FirstOrDefaultAsync(w => w.Id == workspaceId && w.IsActive)
             ?? throw new NotFoundException("Workspace not found");
 
-        var role = await _context.Roles.FirstOrDefaultAsync(r => r.Name == request.Role && r.IsSystem)
-            ?? throw new AppException(Constants.ErrorCodes.ValidationFailed, $"Role '{request.Role}' not found", 400);
+        // Scope-checked against RoleScopes (mirrors WorkspaceService.AddMemberRoleAsync /
+        // JobService.ResolveJobRoleAsync) - not just "does a role with this name exist".
+        var role = await _context.Roles
+            .Where(r => r.Name == request.Role && r.IsSystem)
+            .Where(r => r.RoleScopes.Any(rs => rs.ScopeType == Constants.ScopeTypes.Workspace))
+            .FirstOrDefaultAsync()
+            ?? throw new AppException(Constants.ErrorCodes.ValidationFailed, $"'{request.Role}' is not a valid workspace role.", 400);
 
         return await CreateScopedInvitationAsync(
             Constants.ScopeTypes.Workspace, workspaceId, role.Id, workspace.Name, invitedByUserId,

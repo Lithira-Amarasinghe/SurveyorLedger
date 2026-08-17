@@ -15,8 +15,11 @@ public class InvitationRequest
     [EmailAddress(ErrorMessage = "A valid email is required.")]
     public required string Email { get; set; }
 
+    // Which role names are actually valid here is a backend decision, driven by the
+    // RoleScopes table (see InvitationService.CreateInvitationAsync) - not a hardcoded list
+    // here that has to be kept in sync by hand every time a role's scope changes.
     [Required(ErrorMessage = "Role is required.")]
-    [RegularExpression("^(Admin|Surveyor|Member|WorkspaceMember)$", ErrorMessage = "Role must be Admin, Surveyor, Member, or WorkspaceMember.")]
+    [StringLength(50, MinimumLength = 1)]
     public required string Role { get; set; }
 
     [StringLength(100, MinimumLength = 1)]

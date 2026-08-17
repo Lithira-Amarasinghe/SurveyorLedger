@@ -241,7 +241,7 @@ public class JobService : IJobService
             .Where(r => r.Name == role && r.IsSystem)
             .Where(r => r.RoleScopes.Any(rs => rs.ScopeType == Constants.ScopeTypes.Job))
             .FirstOrDefaultAsync()
-            ?? throw new AppException(Constants.ErrorCodes.ValidationFailed, "Job role must be Surveyor or Client.", 400);
+            ?? throw new AppException(Constants.ErrorCodes.ValidationFailed, $"'{role}' is not a valid job role.", 400);
 
     private static string JobDisplayName(Job job) => $"{job.JobNumber} · {job.Title}";
 

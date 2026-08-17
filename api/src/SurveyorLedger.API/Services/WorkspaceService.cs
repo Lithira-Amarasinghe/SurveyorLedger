@@ -327,8 +327,15 @@ public class WorkspaceService : IWorkspaceService
         if (!isMember)
             throw new NotFoundException("Member not found");
 
-        var role = await _context.Roles.FirstOrDefaultAsync(r => r.Name == roleName && r.IsSystem)
-            ?? throw new InvalidOperationException($"Role '{roleName}' not found");
+        // Scope-checked against RoleScopes, the single source of truth for which roles are
+        // valid at which scope - not just "does a role with this name exist" (mirrors
+        // JobService.ResolveJobRoleAsync). A role that exists but isn't scoped to Workspace
+        // (e.g. Client, which is Job-only) is rejected here even if it slipped past the DTO.
+        var role = await _context.Roles
+            .Where(r => r.Name == roleName && r.IsSystem)
+            .Where(r => r.RoleScopes.Any(rs => rs.ScopeType == Constants.ScopeTypes.Workspace))
+            .FirstOrDefaultAsync()
+            ?? throw new AppException(Constants.ErrorCodes.ValidationFailed, $"'{roleName}' is not a valid workspace role.", 400);
 
         var access = await _grantService.GrantAsync(targetUserId, role.Id, Constants.ScopeTypes.Workspace, workspaceId, callerUserId);
         AddAudit("MemberRoleAdded", "UserAccess", access.Id, workspaceId, callerUserId, null, role.Name);
