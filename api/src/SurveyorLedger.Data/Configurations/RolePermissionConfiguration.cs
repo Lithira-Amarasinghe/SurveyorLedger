@@ -97,6 +97,9 @@ public class RolePermissionConfiguration : IEntityTypeConfiguration<RolePermissi
             Grant(new Guid("00000000-0000-0000-0000-000000000284"), RoleConfiguration.FinanceRoleId, PermissionConfiguration.ViewJobId),
             Grant(new Guid("00000000-0000-0000-0000-000000000282"), RoleConfiguration.FinanceRoleId, PermissionConfiguration.ViewQuotationId),
             Grant(new Guid("00000000-0000-0000-0000-000000000283"), RoleConfiguration.FinanceRoleId, PermissionConfiguration.ViewInvoiceId),
+            // WorkspaceMember: least-privilege membership granted automatically when a role
+            // requires workspace-level presence. View workspace only, nothing else.
+            Grant(new Guid("00000000-0000-0000-0000-000000000802"), RoleConfiguration.WorkspaceMemberRoleId, PermissionConfiguration.ViewWorkspaceId),
             // Expense - Admin: full CRUD. Surveyor: view/create/edit (field staff record
             // their own costs), no delete. Client: nothing (financial data).
             Grant(new Guid("00000000-0000-0000-0000-000000000269"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewExpenseId),
