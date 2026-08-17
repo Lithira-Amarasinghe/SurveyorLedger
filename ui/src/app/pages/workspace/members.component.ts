@@ -135,20 +135,14 @@ interface MemberRow {
                   <td class="px-lg py-sm">
                     @if (row.isPending) {
                       <span class="text-xs text-neutral-500">—</span>
-                    } @else {
+                    } @else if (row.jobGrants.length > 0) {
                       <span class="flex flex-wrap gap-xs">
-                        @for (grant of row.fullAccessGrants; track grant.scopeType) {
-                          <span class="text-xs px-sm py-xs rounded bg-primary-50 text-primary-600">
-                            All {{ grant.scopeType.toLowerCase() }}s · {{ grant.roleName }}{{ grant.actions.length > 0 ? ' (' + grant.actions.join(', ') + ')' : '' }}
-                          </span>
-                        }
                         @for (job of row.jobGrants; track job.scopeId) {
                           <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ job.label }} ({{ job.role }})</span>
                         }
-                        @if (row.fullAccessGrants.length === 0 && row.jobGrants.length === 0) {
-                          <span class="text-xs text-neutral-500">No job access</span>
-                        }
                       </span>
+                    } @else {
+                      <span class="text-xs text-neutral-500">—</span>
                     }
                   </td>
                   <td class="px-lg py-sm text-neutral-600">{{ row.dateLabel }}</td>
