@@ -817,8 +817,6 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     });
   }
 
-  personMessage = signal('');
-
   private refreshParticipants(): void {
     this.jobService.getParticipants(this.workspaceId, this.jobId).subscribe(p => this.participants.set(p));
     this.jobService.getEffectiveParticipants(this.workspaceId, this.jobId).subscribe(p => this.effectiveParticipants.set(p));
