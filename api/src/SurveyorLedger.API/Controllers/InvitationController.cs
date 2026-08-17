@@ -71,7 +71,16 @@ namespace SurveyorLedger.API.Controllers
                 .ToDictionaryAsync(w => w.Id, w => w.Name);
 
             // Job-scope invites: ScopeId is a job, resolve Job -> its real Workspace + a label.
-            var jobScopeIds = invitations.Where(i => i.ScopeType == Constants.ScopeTypes.Job).Select(i => i.ScopeId).Distinct().ToList();
+            // Also pulls in any DescendantScopeId - a Workspace-scope invite whose role chains
+            // (e.g. Surveyor) carries the actual job assignment there, not in ScopeId.
+            var jobScopeIds = invitations
+                .Where(i => i.ScopeType == Constants.ScopeTypes.Job)
+                .Select(i => i.ScopeId)
+                .Concat(invitations
+                    .Where(i => i.DescendantScopeType == Constants.ScopeTypes.Job && i.DescendantScopeId.HasValue)
+                    .Select(i => i.DescendantScopeId!.Value))
+                .Distinct()
+                .ToList();
             var jobs = await _context.Jobs
                 .Where(j => jobScopeIds.Contains(j.Id))
                 .ToDictionaryAsync(j => j.Id, j => j);
@@ -92,6 +101,11 @@ namespace SurveyorLedger.API.Controllers
                 if (i.ScopeType == Constants.ScopeTypes.Workspace)
                 {
                     workspaceName = workspaceNames.GetValueOrDefault(i.ScopeId, "Unknown workspace");
+                    if (i.DescendantScopeType == Constants.ScopeTypes.Job && i.DescendantScopeId.HasValue)
+                    {
+                        var descendantJob = jobs.GetValueOrDefault(i.DescendantScopeId.Value);
+                        jobLabel = descendantJob != null ? $"{descendantJob.JobNumber} · {descendantJob.Title}" : null;
+                    }
                 }
                 else
                 {
@@ -185,11 +199,15 @@ namespace SurveyorLedger.API.Controllers
             invitation = await WithRoleAsync(invitation);
             var (workspaceId, _, _) = await ResolveScopeAsync(invitation);
 
+            Guid? jobId = invitation.ScopeType == Constants.ScopeTypes.Job
+                ? invitation.ScopeId
+                : (invitation.DescendantScopeType == Constants.ScopeTypes.Job ? invitation.DescendantScopeId : null);
+
             return Ok(ApiResponse<AcceptInvitationResponse>.Ok(new AcceptInvitationResponse
             {
                 WorkspaceId = workspaceId,
                 Role = invitation.Role.Name,
-                JobId = invitation.ScopeType == Constants.ScopeTypes.Job ? invitation.ScopeId : null
+                JobId = jobId
             }));
         }
 
@@ -219,7 +237,13 @@ namespace SurveyorLedger.API.Controllers
             if (invitation.ScopeType == Constants.ScopeTypes.Workspace)
             {
                 var ws = await _context.Workspaces.FirstOrDefaultAsync(w => w.Id == invitation.ScopeId);
-                return (invitation.ScopeId, ws?.Name ?? "Unknown workspace", null);
+                string? jobLabel = null;
+                if (invitation.DescendantScopeType == Constants.ScopeTypes.Job && invitation.DescendantScopeId.HasValue)
+                {
+                    var descendantJob = await _context.Jobs.FirstOrDefaultAsync(j => j.Id == invitation.DescendantScopeId.Value);
+                    jobLabel = descendantJob != null ? $"{descendantJob.JobNumber} · {descendantJob.Title}" : null;
+                }
+                return (invitation.ScopeId, ws?.Name ?? "Unknown workspace", jobLabel);
             }
 
             var job = await _context.Jobs.FirstOrDefaultAsync(j => j.Id == invitation.ScopeId);

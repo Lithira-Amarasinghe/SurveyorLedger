@@ -313,6 +313,29 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
+    public async Task JobTriggeredInvite_CarriesDescendantFieldsForControllerToResolveJobLabel()
+    {
+        // InvitationController.ListMyInvitations/ResolveScopeAsync build the invitee-facing
+        // "workspace + job" display purely from DescendantScopeType/DescendantScopeId - this
+        // documents that the fields those methods depend on are actually set correctly on a
+        // job-triggered invite. The controller itself has no DI seam to unit test directly.
+        _invitationService = GetService<IInvitationService>();
+        var jobService = GetService<IJobService>();
+
+        var job = await jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Survey job" });
+        var result = await jobService.InviteParticipantByEmailAsync(
+            WorkspaceId, AdminId, job.Id, "Surveyor", "labeltest@test.local", "Label", "Test", null, null);
+
+        Assert.Equal(Constants.ScopeTypes.Workspace, result.ScopeType);
+        Assert.Equal(Constants.ScopeTypes.Job, result.DescendantScopeType);
+        Assert.Equal(job.Id, result.DescendantScopeId);
+
+        var descendantJob = await Context.Jobs.FirstOrDefaultAsync(j => j.Id == result.DescendantScopeId);
+        Assert.NotNull(descendantJob);
+        Assert.Equal(job.Id, descendantJob!.Id);
+    }
+
+    [Fact]
     public async Task GetMyInvitations_ReturnsInvitationsForThatUserOnly()
     {
         _invitationService = GetService<IInvitationService>();
