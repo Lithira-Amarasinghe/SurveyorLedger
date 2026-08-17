@@ -10,4 +10,5 @@ public class JobResponse
     public Guid CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public bool CanManageParticipants { get; set; }
 }

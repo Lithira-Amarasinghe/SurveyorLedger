@@ -16,11 +16,13 @@ namespace SurveyorLedger.API.Controllers
     public class JobController : ControllerBase
     {
         private readonly IJobService _jobService;
+        private readonly IScopedAccessService _access;
         private readonly ILogger<JobController> _logger;
 
-        public JobController(IJobService jobService, ILogger<JobController> logger)
+        public JobController(IJobService jobService, IScopedAccessService access, ILogger<JobController> logger)
         {
             _jobService = jobService;
+            _access = access;
             _logger = logger;
         }
 
@@ -45,7 +47,9 @@ namespace SurveyorLedger.API.Controllers
         {
             var callerId = CallerId();
             var job = await _jobService.GetByIdAsync(workspaceId, callerId, id);
-            return Ok(ApiResponse<JobResponse>.Ok(ToResponse(job)));
+            var response = ToResponse(job);
+            response.CanManageParticipants = await _access.CanAccessJobAsync(callerId, workspaceId, id, "manage_participants");
+            return Ok(ApiResponse<JobResponse>.Ok(response));
         }
 
         [HttpPut("{id}")]

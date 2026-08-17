@@ -197,6 +197,41 @@ public class JobAccessScopingTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
+    public async Task CanAccessJobAsync_Admin_CanManageParticipantsTrue()
+    {
+        await SeedJobsAsync();
+        var access = GetService<IScopedAccessService>();
+
+        var canManage = await access.CanAccessJobAsync(AdminId, WorkspaceId, _jobAId, "manage_participants");
+
+        Assert.True(canManage);
+    }
+
+    [Fact]
+    public async Task CanAccessJobAsync_Surveyor_CanManageParticipantsFalse()
+    {
+        await SeedJobsAsync();
+        var access = GetService<IScopedAccessService>();
+
+        var canManage = await access.CanAccessJobAsync(SurveyorId, WorkspaceId, _jobAId, "manage_participants");
+
+        Assert.False(canManage);
+    }
+
+    [Fact]
+    public async Task CanAccessJobAsync_Surveyor_CanEditTrueOnOwnJob()
+    {
+        // Sanity check the method isn't hardcoded to always return false for non-Admin -
+        // Surveyor holds job.edit on their own assigned job.
+        await SeedJobsAsync();
+        var access = GetService<IScopedAccessService>();
+
+        var canEdit = await access.CanAccessJobAsync(SurveyorId, WorkspaceId, _jobAId, "edit");
+
+        Assert.True(canEdit);
+    }
+
+    [Fact]
     public async Task GetParticipants_DirectOnly_ExcludesAdmin()
     {
         // Direct list is the "who's assigned" view - Admin has zero Job-scope rows, so

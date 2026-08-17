@@ -40,6 +40,14 @@ public interface IScopedAccessService
     /// <summary>Permission check for one specific job. Throws <see cref="ForbiddenException"/> if denied.</summary>
     Task EnsureJobAccessAsync(Guid userId, Guid workspaceId, Guid jobId, string action);
 
+    /// <summary>
+    /// Non-throwing version of the same rule EnsureJobAccessAsync enforces (blanket job.view_all
+    /// bypass at Workspace scope, else a per-job Casbin check) - for callers that need a boolean
+    /// to drive UI, not an exception to catch. EnsureJobAccessAsync itself is untouched; this is
+    /// a new method, not a refactor, so its existing error messages and tests can't regress.
+    /// </summary>
+    Task<bool> CanAccessJobAsync(Guid userId, Guid workspaceId, Guid jobId, string action);
+
     /// <summary>Permission check for one specific land record. Throws <see cref="ForbiddenException"/> if denied.</summary>
     Task EnsureLandAccessAsync(Guid userId, Guid workspaceId, Guid landId, string action);
 
@@ -143,6 +151,14 @@ public class ScopedAccessService : IScopedAccessService
 
         if (!await _casbinService.EnforceAsync(userId.ToString(), "job", action, jobId.ToString()))
             throw new ForbiddenException($"You do not have permission to {action} this job.");
+    }
+
+    public async Task<bool> CanAccessJobAsync(Guid userId, Guid workspaceId, Guid jobId, string action)
+    {
+        if (await HasViewAllAsync(userId, "job", workspaceId))
+            return await _casbinService.EnforceAsync(userId.ToString(), "job", action, workspaceId.ToString());
+
+        return await _casbinService.EnforceAsync(userId.ToString(), "job", action, jobId.ToString());
     }
 
     /// <summary>
