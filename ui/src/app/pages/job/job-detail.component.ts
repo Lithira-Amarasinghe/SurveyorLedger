@@ -24,6 +24,7 @@ import { DocumentViewerModalComponent } from './document-viewer-modal/document-v
 import { InvoiceFormModalComponent } from '../billing/invoices/invoice-form-modal/invoice-form-modal.component';
 import { QuotationFormModalComponent } from '../billing/quotations/quotation-form-modal/quotation-form-modal.component';
 import { ExpenseFormModalComponent } from './expense-form-modal/expense-form-modal.component';
+import { StatusBadgeComponent } from '../../shared/status-badge/status-badge.component';
 import { HasUnsavedChanges } from '../../core/unsaved-changes.guard';
 
 const STATUSES = ['Draft', 'Scheduled', 'InProgress', 'Completed', 'Cancelled'];
@@ -44,7 +45,8 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
     DocumentViewerModalComponent,
     InvoiceFormModalComponent,
     QuotationFormModalComponent,
-    ExpenseFormModalComponent
+    ExpenseFormModalComponent,
+    StatusBadgeComponent
   ],
   template: `
     @if (loading()) {
@@ -331,7 +333,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
               </div>
               <p class="text-xs text-neutral-500 mt-sm">Updated by {{ budget.updatedByName }}</p>
               @if (j.canEditBudget) {
-                <button type="button" class="text-xs text-primary-500 hover:text-primary-600 mt-sm" (click)="deleteBudget()">Clear budget</button>
+                <button type="button" class="text-xs text-primary-500 hover:text-primary-600 mt-sm" (click)="confirmingClearBudget.set(true)">Clear budget</button>
               }
             } @else {
               <p class="text-sm text-neutral-500">No budget set for this job yet.</p>
@@ -341,6 +343,9 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
 
         <div class="card">
           <h2 class="text-sm font-semibold text-neutral-900 mb-md">Financial summary</h2>
+          @if (financeMessage()) {
+            <p class="text-xs text-primary-600 mb-md">{{ financeMessage() }}</p>
+          }
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-md text-sm">
             <div>
               <span class="block text-xs text-neutral-500">Invoiced</span>
@@ -392,7 +397,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                     <tr class="border-t border-neutral-200">
                       <td class="px-lg py-sm text-neutral-900">{{ invoice.number }}</td>
                       <td class="px-lg py-sm text-neutral-600">{{ invoice.total | number: '1.2-2' }}</td>
-                      <td class="px-lg py-sm text-neutral-600">{{ invoice.status }}</td>
+                      <td class="px-lg py-sm"><app-status-badge [status]="invoice.status" /></td>
                     </tr>
                     @if (invoice.installments.length > 0) {
                       <tr class="border-t border-neutral-100 bg-neutral-50">
@@ -437,7 +442,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                     <tr class="border-t border-neutral-200">
                       <td class="px-lg py-sm text-neutral-900">{{ quotation.number }}</td>
                       <td class="px-lg py-sm text-neutral-600">{{ quotation.total | number: '1.2-2' }}</td>
-                      <td class="px-lg py-sm text-neutral-600">{{ quotation.status }}</td>
+                      <td class="px-lg py-sm"><app-status-badge [status]="quotation.status" /></td>
                     </tr>
                   }
                 </tbody>
@@ -477,7 +482,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                       <td class="px-lg py-sm text-neutral-600">{{ expense.amount | number: '1.2-2' }}</td>
                       <td class="px-lg py-sm text-right whitespace-nowrap">
                         <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700 mr-sm" (click)="openExpenseModal(expense)">Edit</button>
-                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="deleteExpense(expense)">Delete</button>
+                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="confirmingDeleteExpense.set(expense)">Delete</button>
                       </td>
                     </tr>
                   }
@@ -738,6 +743,32 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
       </div>
     }
 
+    @if (confirmingDeleteExpense(); as expense) {
+      <div class="fixed inset-0 z-50 bg-neutral-900/40 flex items-center justify-center px-lg">
+        <div class="card w-full max-w-sm">
+          <h2 class="text-base font-semibold text-neutral-900">Delete expense?</h2>
+          <p class="text-sm text-neutral-600 mt-xs">{{ expense.category }} · {{ expense.amount | number: '1.2-2' }} will be deleted and cannot be undone.</p>
+          <div class="flex gap-sm mt-lg">
+            <button type="button" class="btn-secondary flex-1 text-xs" (click)="confirmingDeleteExpense.set(null)">Cancel</button>
+            <button type="button" class="btn-primary flex-1 text-xs" (click)="doDeleteExpense(expense)">Delete</button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (confirmingClearBudget()) {
+      <div class="fixed inset-0 z-50 bg-neutral-900/40 flex items-center justify-center px-lg">
+        <div class="card w-full max-w-sm">
+          <h2 class="text-base font-semibold text-neutral-900">Clear budget?</h2>
+          <p class="text-sm text-neutral-600 mt-xs">The estimated fee and cost for this job will be removed and cannot be undone.</p>
+          <div class="flex gap-sm mt-lg">
+            <button type="button" class="btn-secondary flex-1 text-xs" (click)="confirmingClearBudget.set(false)">Cancel</button>
+            <button type="button" class="btn-primary flex-1 text-xs" (click)="doClearBudget()">Clear</button>
+          </div>
+        </div>
+      </div>
+    }
+
     @if (confirmingLeave()) {
       <div class="fixed inset-0 z-50 bg-neutral-900/40 flex items-center justify-center px-lg">
         <div class="card w-full max-w-sm">
@@ -820,14 +851,24 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     return { invoicedTotal, paidTotal, outstanding, expensesTotal, margin };
   });
 
+  financeMessage = signal('');
+  confirmingDeleteExpense = signal<Expense | null>(null);
+  confirmingClearBudget = signal(false);
+
   onInvoiceSaved(): void {
     this.showInvoiceModal.set(false);
-    this.invoiceService.search(this.workspaceId, undefined, this.jobId).subscribe(list => this.jobInvoices.set(list));
+    this.invoiceService.search(this.workspaceId, undefined, this.jobId).subscribe(list => {
+      this.jobInvoices.set(list);
+      this.financeMessage.set('Invoice saved.');
+    });
   }
 
   onQuotationSaved(): void {
     this.showQuotationModal.set(false);
-    this.quotationService.search(this.workspaceId, undefined, this.jobId).subscribe(list => this.jobQuotations.set(list));
+    this.quotationService.search(this.workspaceId, undefined, this.jobId).subscribe(list => {
+      this.jobQuotations.set(list);
+      this.financeMessage.set('Quotation saved.');
+    });
   }
 
   openExpenseModal(expense: Expense | null = null): void {
@@ -838,12 +879,20 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   onExpenseSaved(): void {
     this.showExpenseModal.set(false);
     this.editingExpense.set(null);
-    this.expenseService.getAll(this.workspaceId, this.jobId).subscribe(list => this.jobExpenses.set(list));
+    this.expenseService.getAll(this.workspaceId, this.jobId).subscribe(list => {
+      this.jobExpenses.set(list);
+      this.financeMessage.set('Expense saved.');
+    });
   }
 
-  deleteExpense(expense: Expense): void {
-    this.expenseService.delete(this.workspaceId, this.jobId, expense.expenseId).subscribe(() => {
-      this.jobExpenses.update(list => list.filter(e => e.expenseId !== expense.expenseId));
+  doDeleteExpense(expense: Expense): void {
+    this.confirmingDeleteExpense.set(null);
+    this.expenseService.delete(this.workspaceId, this.jobId, expense.expenseId).subscribe({
+      next: () => {
+        this.jobExpenses.update(list => list.filter(e => e.expenseId !== expense.expenseId));
+        this.financeMessage.set('Expense deleted.');
+      },
+      error: err => this.error.set(err.error?.message ?? 'Could not delete expense.')
     });
   }
 
@@ -863,6 +912,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
         this.savingBudget.set(false);
         this.jobBudget.set(budget);
         this.editingBudget.set(false);
+        this.financeMessage.set('Budget saved.');
       },
       error: err => {
         this.savingBudget.set(false);
@@ -871,8 +921,15 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     });
   }
 
-  deleteBudget(): void {
-    this.jobBudgetService.delete(this.workspaceId, this.jobId).subscribe(() => this.jobBudget.set(null));
+  doClearBudget(): void {
+    this.confirmingClearBudget.set(false);
+    this.jobBudgetService.delete(this.workspaceId, this.jobId).subscribe({
+      next: () => {
+        this.jobBudget.set(null);
+        this.financeMessage.set('Budget cleared.');
+      },
+      error: err => this.error.set(err.error?.message ?? 'Could not clear budget.')
+    });
   }
   requestingDocument = signal(false);
   requestTitleDraft = '';

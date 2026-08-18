@@ -1,7 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { forkJoin } from 'rxjs';
 import {
   ExpenseHistoryRow,
   FinancialSummary,
@@ -42,13 +41,11 @@ function today(): string {
         </div>
       </div>
 
-      @if (error()) {
-        <div class="card text-sm text-primary-500">{{ error() }}</div>
-      }
-
       <div class="card">
         <h2 class="text-sm font-semibold text-neutral-900 mb-md">Financial summary</h2>
-        @if (summary(); as s) {
+        @if (summaryError()) {
+          <p class="text-sm text-primary-500">{{ summaryError() }}</p>
+        } @else if (summary(); as s) {
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-md text-sm">
             <div><span class="block text-xs text-neutral-500">Invoiced</span><span class="font-semibold text-neutral-900">{{ s.totalInvoiced | number: '1.2-2' }}</span></div>
             <div><span class="block text-xs text-neutral-500">Paid</span><span class="font-semibold text-neutral-900">{{ s.totalPaid | number: '1.2-2' }}</span></div>
@@ -57,7 +54,7 @@ function today(): string {
             <div><span class="block text-xs text-neutral-500">Gross profit</span><span class="font-semibold" [class.text-primary-500]="s.grossProfit < 0">{{ s.grossProfit | number: '1.2-2' }}</span></div>
             <div><span class="block text-xs text-neutral-500">Profit margin</span><span class="font-semibold text-neutral-900">{{ s.profitMarginPercent | number: '1.1-1' }}%</span></div>
           </div>
-        } @else if (loading()) {
+        } @else if (summaryLoading()) {
           <p class="text-sm text-neutral-500">Loading…</p>
         }
       </div>
@@ -69,7 +66,11 @@ function today(): string {
             <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="exportOutstanding()">Export CSV</button>
           }
         </div>
-        @if (outstanding().length === 0) {
+        @if (outstandingError()) {
+          <p class="text-sm text-primary-500">{{ outstandingError() }}</p>
+        } @else if (outstandingLoading()) {
+          <p class="text-sm text-neutral-500">Loading…</p>
+        } @else if (outstanding().length === 0) {
           <p class="text-sm text-neutral-500">Nothing outstanding.</p>
         } @else {
           <div class="card p-0 overflow-x-auto">
@@ -110,7 +111,11 @@ function today(): string {
             <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="exportPayments()">Export CSV</button>
           }
         </div>
-        @if (payments().length === 0) {
+        @if (paymentsError()) {
+          <p class="text-sm text-primary-500">{{ paymentsError() }}</p>
+        } @else if (paymentsLoading()) {
+          <p class="text-sm text-neutral-500">Loading…</p>
+        } @else if (payments().length === 0) {
           <p class="text-sm text-neutral-500">No payments in this range.</p>
         } @else {
           <div class="card p-0 overflow-x-auto">
@@ -153,7 +158,11 @@ function today(): string {
             <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="exportExpenses()">Export CSV</button>
           }
         </div>
-        @if (expenses().length === 0) {
+        @if (expensesError()) {
+          <p class="text-sm text-primary-500">{{ expensesError() }}</p>
+        } @else if (expensesLoading()) {
+          <p class="text-sm text-neutral-500">Loading…</p>
+        } @else if (expenses().length === 0) {
           <p class="text-sm text-neutral-500">No expenses in this range.</p>
         } @else {
           <div class="card p-0 overflow-x-auto">
@@ -196,8 +205,18 @@ export class ReportsComponent implements OnInit {
   workspaceId = '';
   from = firstOfMonth();
   to = today();
-  loading = signal(false);
-  error = signal('');
+
+  // Each section loads independently - a slow query in one never blocks the others,
+  // and a failure in one doesn't take down the whole page (matches the design spec's
+  // intent: "load/refresh them independently").
+  summaryLoading = signal(false);
+  summaryError = signal('');
+  outstandingLoading = signal(false);
+  outstandingError = signal('');
+  paymentsLoading = signal(false);
+  paymentsError = signal('');
+  expensesLoading = signal(false);
+  expensesError = signal('');
 
   summary = signal<FinancialSummary | null>(null);
   outstanding = signal<OutstandingInvoiceRow[]>([]);
@@ -208,6 +227,10 @@ export class ReportsComponent implements OnInit {
   expensesTotalCount = signal(0);
   expensesPage = 1;
 
+  loading(): boolean {
+    return this.summaryLoading() || this.outstandingLoading() || this.paymentsLoading() || this.expensesLoading();
+  }
+
   ngOnInit(): void {
     this.workspaceId = this.currentWorkspace.current()?.workspaceId ?? '';
     this.fetch();
@@ -216,28 +239,33 @@ export class ReportsComponent implements OnInit {
   fetch(): void {
     this.paymentsPage = 1;
     this.expensesPage = 1;
-    this.loading.set(true);
-    this.error.set('');
 
-    forkJoin({
-      summary: this.reportService.getSummary(this.workspaceId, this.from, this.to),
-      outstanding: this.reportService.getOutstandingInvoices(this.workspaceId),
-      payments: this.reportService.getPayments(this.workspaceId, this.from, this.to, 1),
-      expenses: this.reportService.getExpenses(this.workspaceId, this.from, this.to, 1)
-    }).subscribe({
-      next: ({ summary, outstanding, payments, expenses }) => {
-        this.summary.set(summary);
-        this.outstanding.set(outstanding);
-        this.payments.set(payments.items);
-        this.paymentsTotalCount.set(payments.totalCount);
-        this.expenses.set(expenses.items);
-        this.expensesTotalCount.set(expenses.totalCount);
-        this.loading.set(false);
-      },
-      error: err => {
-        this.error.set(err.error?.message ?? 'Could not load reports.');
-        this.loading.set(false);
-      }
+    this.summaryLoading.set(true);
+    this.summaryError.set('');
+    this.reportService.getSummary(this.workspaceId, this.from, this.to).subscribe({
+      next: s => { this.summary.set(s); this.summaryLoading.set(false); },
+      error: err => { this.summaryError.set(err.error?.message ?? 'Could not load summary.'); this.summaryLoading.set(false); }
+    });
+
+    this.outstandingLoading.set(true);
+    this.outstandingError.set('');
+    this.reportService.getOutstandingInvoices(this.workspaceId).subscribe({
+      next: rows => { this.outstanding.set(rows); this.outstandingLoading.set(false); },
+      error: err => { this.outstandingError.set(err.error?.message ?? 'Could not load outstanding invoices.'); this.outstandingLoading.set(false); }
+    });
+
+    this.paymentsLoading.set(true);
+    this.paymentsError.set('');
+    this.reportService.getPayments(this.workspaceId, this.from, this.to, 1).subscribe({
+      next: result => { this.payments.set(result.items); this.paymentsTotalCount.set(result.totalCount); this.paymentsLoading.set(false); },
+      error: err => { this.paymentsError.set(err.error?.message ?? 'Could not load payment history.'); this.paymentsLoading.set(false); }
+    });
+
+    this.expensesLoading.set(true);
+    this.expensesError.set('');
+    this.reportService.getExpenses(this.workspaceId, this.from, this.to, 1).subscribe({
+      next: result => { this.expenses.set(result.items); this.expensesTotalCount.set(result.totalCount); this.expensesLoading.set(false); },
+      error: err => { this.expensesError.set(err.error?.message ?? 'Could not load expense history.'); this.expensesLoading.set(false); }
     });
   }
 

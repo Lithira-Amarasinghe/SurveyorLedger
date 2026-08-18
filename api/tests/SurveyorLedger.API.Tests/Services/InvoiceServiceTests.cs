@@ -415,4 +415,35 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
         await Assert.ThrowsAsync<ValidationException>(() =>
             _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 1000m, Method = "Cash", ReceivedAt = DateTime.UtcNow.AddDays(1) }, null));
     }
+
+    private static Microsoft.AspNetCore.Http.IFormFile MakeFile(string name, string contentType)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes("fake-bytes");
+        var stream = new MemoryStream(bytes);
+        return new Microsoft.AspNetCore.Http.FormFile(stream, 0, bytes.Length, "proofFile", name) { Headers = new Microsoft.AspNetCore.Http.HeaderDictionary(), ContentType = contentType };
+    }
+
+    [Fact]
+    public async Task RecordPaymentAsync_RejectsDisallowedProofExtension()
+    {
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
+
+        await Assert.ThrowsAsync<ValidationException>(() => _invoiceService.RecordPaymentAsync(
+            WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 1000m, Method = "Cash", ReceivedAt = DateTime.UtcNow },
+            MakeFile("proof.exe", "application/octet-stream")));
+    }
+
+    [Fact]
+    public async Task RecordPaymentAsync_AcceptsAllowedProofExtension()
+    {
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
+
+        var payment = await _invoiceService.RecordPaymentAsync(
+            WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 1000m, Method = "Cash", ReceivedAt = DateTime.UtcNow },
+            MakeFile("proof.jpg", "image/jpeg"));
+
+        Assert.NotNull(payment.ProofFilePath);
+    }
 }

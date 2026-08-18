@@ -30,6 +30,7 @@ public interface IInvoiceService
 public class InvoiceService : IInvoiceService
 {
     private static readonly HashSet<string> AllowedMethods = new(StringComparer.OrdinalIgnoreCase) { "Cash", "BankTransfer", "Cheque" };
+    private static readonly HashSet<string> AllowedProofExtensions = new(StringComparer.OrdinalIgnoreCase) { ".pdf", ".jpg", ".jpeg", ".png" };
 
     private readonly ApplicationDbContext _context;
     private readonly IScopedAccessService _access;
@@ -195,6 +196,12 @@ public class InvoiceService : IInvoiceService
         string? proofPath = null;
         if (proofFile != null)
         {
+            var extension = Path.GetExtension(proofFile.FileName);
+            if (!AllowedProofExtensions.Contains(extension))
+                throw new ValidationException($"File type '{extension}' is not allowed. Allowed types: {string.Join(", ", AllowedProofExtensions)}.");
+            if (proofFile.Length > DocumentService.MaxFileSizeBytes)
+                throw new ValidationException($"File exceeds the {DocumentService.MaxFileSizeBytes / (1024 * 1024)}MB size limit.");
+
             var storedFileName = $"{Guid.NewGuid():N}_{proofFile.FileName}";
             proofPath = $"{workspaceId}/invoices/{invoiceId}/payments/{storedFileName}";
             await using var stream = proofFile.OpenReadStream();

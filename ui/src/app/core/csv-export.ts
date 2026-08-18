@@ -1,7 +1,16 @@
 /** RFC 4180 field quoting - wraps in quotes and doubles internal quotes whenever the
- * field contains a comma, quote, or newline. Plain fields pass through unquoted. */
+ * field contains a comma, quote, or newline. Plain fields pass through unquoted.
+ *
+ * Also guards against CSV/formula injection: a field starting with =, +, -, or @ is
+ * interpreted as a formula by Excel/Sheets when the file is opened - user-controlled
+ * data here (client names, descriptions) could otherwise execute arbitrary formulas on
+ * whoever opens the export. Prefixing with a single quote neutralizes it while keeping
+ * the value readable. */
 function escapeCsvField(value: unknown): string {
-  const str = value === null || value === undefined ? '' : String(value);
+  let str = value === null || value === undefined ? '' : String(value);
+  if (/^[=+\-@]/.test(str)) {
+    str = `'${str}`;
+  }
   if (/[",\n\r]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`;
   }
