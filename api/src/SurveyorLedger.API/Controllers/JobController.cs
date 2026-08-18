@@ -51,6 +51,9 @@ namespace SurveyorLedger.API.Controllers
             var job = await _jobService.GetByIdAsync(workspaceId, callerId, id);
             var response = ToResponse(job);
             response.CanManageParticipants = await _access.CanAccessJobAsync(callerId, workspaceId, id, "manage_participants");
+            response.CanViewBudget = await _access.CanAsync(callerId, "budget", "view", workspaceId);
+            response.CanEditBudget = await _access.CanAsync(callerId, "budget", "create", workspaceId)
+                || await _access.CanAsync(callerId, "budget", "edit", workspaceId);
             return Ok(ApiResponse<JobResponse>.Ok(response));
         }
 

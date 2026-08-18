@@ -35,11 +35,11 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
     public static readonly Guid CreateExpenseId = new("00000000-0000-0000-0000-000000000130");
     public static readonly Guid EditExpenseId = new("00000000-0000-0000-0000-000000000131");
     public static readonly Guid DeleteExpenseId = new("00000000-0000-0000-0000-000000000132");
-    public static readonly Guid ViewStaffPaymentId = new("00000000-0000-0000-0000-000000000133");
-    public static readonly Guid CreateStaffPaymentId = new("00000000-0000-0000-0000-000000000134");
-    public static readonly Guid EditStaffPaymentId = new("00000000-0000-0000-0000-000000000135");
-    public static readonly Guid DeleteStaffPaymentId = new("00000000-0000-0000-0000-000000000136");
-    public static readonly Guid ViewAllStaffPaymentId = new("00000000-0000-0000-0000-000000000137");
+    public static readonly Guid ViewBudgetId = new("00000000-0000-0000-0000-000000000139");
+    public static readonly Guid CreateBudgetId = new("00000000-0000-0000-0000-000000000140");
+    public static readonly Guid EditBudgetId = new("00000000-0000-0000-0000-000000000141");
+    public static readonly Guid DeleteBudgetId = new("00000000-0000-0000-0000-000000000142");
+    public static readonly Guid ViewAllExpenseId = new("00000000-0000-0000-0000-000000000143");
 
     public void Configure(EntityTypeBuilder<Permission> builder)
     {
@@ -89,11 +89,11 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
             new Permission { Id = CreateExpenseId, Name = "expense.create", Description = "Record job expenses.", Resource = "expense", Action = "create", Scope = null, CreatedAt = seededAt },
             new Permission { Id = EditExpenseId, Name = "expense.edit", Description = "Edit job expenses.", Resource = "expense", Action = "edit", Scope = null, CreatedAt = seededAt },
             new Permission { Id = DeleteExpenseId, Name = "expense.delete", Description = "Delete job expenses.", Resource = "expense", Action = "delete", Scope = null, CreatedAt = seededAt },
-            new Permission { Id = ViewStaffPaymentId, Name = "staffpayment.view", Description = "View staff payments.", Resource = "staffpayment", Action = "view", Scope = null, CreatedAt = seededAt },
-            new Permission { Id = CreateStaffPaymentId, Name = "staffpayment.create", Description = "Record staff payments.", Resource = "staffpayment", Action = "create", Scope = null, CreatedAt = seededAt },
-            new Permission { Id = EditStaffPaymentId, Name = "staffpayment.edit", Description = "Edit staff payments.", Resource = "staffpayment", Action = "edit", Scope = null, CreatedAt = seededAt },
-            new Permission { Id = DeleteStaffPaymentId, Name = "staffpayment.delete", Description = "Delete staff payments.", Resource = "staffpayment", Action = "delete", Scope = null, CreatedAt = seededAt },
-            new Permission { Id = ViewAllStaffPaymentId, Name = "staffpayment.view_all", Description = "View every staff payment on a job, not just the caller's own.", Resource = "staffpayment", Action = "view_all", Scope = null, CreatedAt = seededAt }
+            new Permission { Id = ViewBudgetId, Name = "budget.view", Description = "View a job's estimated fee/cost budget.", Resource = "budget", Action = "view", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = CreateBudgetId, Name = "budget.create", Description = "Set a job's budget for the first time.", Resource = "budget", Action = "create", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = EditBudgetId, Name = "budget.edit", Description = "Edit a job's existing budget.", Resource = "budget", Action = "edit", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = DeleteBudgetId, Name = "budget.delete", Description = "Clear a job's budget.", Resource = "budget", Action = "delete", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = ViewAllExpenseId, Name = "expense.view_all", Description = "View every StaffCost expense on a job, not just the caller's own payee rows.", Resource = "expense", Action = "view_all", Scope = null, CreatedAt = seededAt }
         );
     }
 }

@@ -12,7 +12,7 @@ namespace SurveyorLedger.API.Services;
 public interface IInvoiceService
 {
     Task<Invoice> CreateAsync(Guid workspaceId, Guid callerUserId, InvoiceRequest request);
-    Task<List<Invoice>> SearchAsync(Guid workspaceId, Guid callerUserId, Guid? clientId);
+    Task<List<Invoice>> SearchAsync(Guid workspaceId, Guid callerUserId, Guid? clientId, Guid? jobId = null);
     Task<Invoice> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId);
     Task<Invoice> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, InvoiceRequest request);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId);
@@ -82,7 +82,7 @@ public class InvoiceService : IInvoiceService
         return invoice;
     }
 
-    public async Task<List<Invoice>> SearchAsync(Guid workspaceId, Guid callerUserId, Guid? clientId)
+    public async Task<List<Invoice>> SearchAsync(Guid workspaceId, Guid callerUserId, Guid? clientId, Guid? jobId = null)
     {
         await _access.EnsureListAllowedAsync(callerUserId, workspaceId);
 
@@ -95,6 +95,8 @@ public class InvoiceService : IInvoiceService
         }
         if (clientId.HasValue)
             invoices = invoices.Where(i => i.ClientId == clientId.Value);
+        if (jobId.HasValue)
+            invoices = invoices.Where(i => i.JobId == jobId.Value);
 
         return await invoices.OrderByDescending(i => i.CreatedAt).ToListAsync();
     }

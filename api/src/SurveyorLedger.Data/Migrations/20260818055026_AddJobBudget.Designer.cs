@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SurveyorLedger.Data;
 
@@ -11,9 +12,11 @@ using SurveyorLedger.Data;
 namespace SurveyorLedger.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260818055026_AddJobBudget")]
+    partial class AddJobBudget
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -384,13 +387,6 @@ namespace SurveyorLedger.Data.Migrations
                     b.Property<Guid>("JobId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid?>("PayeeId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("PayeeType")
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
-
                     b.Property<string>("ReceiptFilePath")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
@@ -404,8 +400,6 @@ namespace SurveyorLedger.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("JobId");
-
-                    b.HasIndex("PayeeId");
 
                     b.HasIndex("RecordedBy");
 
@@ -1368,6 +1362,51 @@ namespace SurveyorLedger.Data.Migrations
                         },
                         new
                         {
+                            Id = new Guid("00000000-0000-0000-0000-000000000133"),
+                            Action = "view",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "View staff payments.",
+                            Name = "staffpayment.view",
+                            Resource = "staffpayment"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000134"),
+                            Action = "create",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Record staff payments.",
+                            Name = "staffpayment.create",
+                            Resource = "staffpayment"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000135"),
+                            Action = "edit",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Edit staff payments.",
+                            Name = "staffpayment.edit",
+                            Resource = "staffpayment"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000136"),
+                            Action = "delete",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "Delete staff payments.",
+                            Name = "staffpayment.delete",
+                            Resource = "staffpayment"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000137"),
+                            Action = "view_all",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "View every staff payment on a job, not just the caller's own.",
+                            Name = "staffpayment.view_all",
+                            Resource = "staffpayment"
+                        },
+                        new
+                        {
                             Id = new Guid("00000000-0000-0000-0000-000000000139"),
                             Action = "view",
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
@@ -1401,15 +1440,6 @@ namespace SurveyorLedger.Data.Migrations
                             Description = "Clear a job's budget.",
                             Name = "budget.delete",
                             Resource = "budget"
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000143"),
-                            Action = "view_all",
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "View every StaffCost expense on a job, not just the caller's own payee rows.",
-                            Name = "expense.view_all",
-                            Resource = "expense"
                         });
                 });
 
@@ -2065,6 +2095,48 @@ namespace SurveyorLedger.Data.Migrations
                         },
                         new
                         {
+                            Id = new Guid("00000000-0000-0000-0000-000000000276"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000133"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000277"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000134"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000278"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000135"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000279"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000136"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000280"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000137"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000281"),
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            PermissionId = new Guid("00000000-0000-0000-0000-000000000133"),
+                            RoleId = new Guid("00000000-0000-0000-0000-000000000003")
+                        },
+                        new
+                        {
                             Id = new Guid("00000000-0000-0000-0000-000000000286"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             PermissionId = new Guid("00000000-0000-0000-0000-000000000139"),
@@ -2089,13 +2161,6 @@ namespace SurveyorLedger.Data.Migrations
                             Id = new Guid("00000000-0000-0000-0000-000000000289"),
                             CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             PermissionId = new Guid("00000000-0000-0000-0000-000000000142"),
-                            RoleId = new Guid("00000000-0000-0000-0000-000000000001")
-                        },
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000290"),
-                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            PermissionId = new Guid("00000000-0000-0000-0000-000000000143"),
                             RoleId = new Guid("00000000-0000-0000-0000-000000000001")
                         });
                 });
@@ -2171,6 +2236,57 @@ namespace SurveyorLedger.Data.Migrations
                             ScopeType = "Job",
                             ParentScopeType = "Workspace"
                         });
+                });
+
+            modelBuilder.Entity("SurveyorLedger.Data.Entities.StaffPayment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime>("PaidDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("RecordedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JobId");
+
+                    b.HasIndex("RecordedBy");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("WorkspaceId");
+
+                    b.ToTable("StaffPayments");
                 });
 
             modelBuilder.Entity("SurveyorLedger.Data.Entities.Subscription", b =>
@@ -2480,11 +2596,6 @@ namespace SurveyorLedger.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("SurveyorLedger.Data.Entities.Person", "Payee")
-                        .WithMany()
-                        .HasForeignKey("PayeeId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("SurveyorLedger.Data.Entities.Person", "RecordedByUser")
                         .WithMany()
                         .HasForeignKey("RecordedBy")
@@ -2492,8 +2603,6 @@ namespace SurveyorLedger.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Job");
-
-                    b.Navigation("Payee");
 
                     b.Navigation("RecordedByUser");
                 });
@@ -2930,6 +3039,33 @@ namespace SurveyorLedger.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Role");
+                });
+
+            modelBuilder.Entity("SurveyorLedger.Data.Entities.StaffPayment", b =>
+                {
+                    b.HasOne("SurveyorLedger.Data.Entities.Job", "Job")
+                        .WithMany()
+                        .HasForeignKey("JobId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SurveyorLedger.Data.Entities.Person", "RecordedByUser")
+                        .WithMany()
+                        .HasForeignKey("RecordedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SurveyorLedger.Data.Entities.Person", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Job");
+
+                    b.Navigation("RecordedByUser");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("SurveyorLedger.Data.Entities.Subscription", b =>

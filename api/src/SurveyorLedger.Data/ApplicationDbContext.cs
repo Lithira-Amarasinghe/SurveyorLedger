@@ -37,7 +37,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Invoice> Invoices { get; set; }
     public DbSet<Payment> Payments { get; set; }
     public DbSet<Expense> Expenses { get; set; }
-    public DbSet<StaffPayment> StaffPayments { get; set; }
+    public DbSet<JobBudget> JobBudgets { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

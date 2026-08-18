@@ -109,8 +109,10 @@ export class QuotationService {
     return `${environment.apiBaseUrl}/workspace/${workspaceId}/quotations`;
   }
 
-  search(workspaceId: string, clientId?: string): Observable<Quotation[]> {
-    const params = clientId ? new HttpParams().set('clientId', clientId) : undefined;
+  search(workspaceId: string, clientId?: string, jobId?: string): Observable<Quotation[]> {
+    let params = new HttpParams();
+    if (clientId) params = params.set('clientId', clientId);
+    if (jobId) params = params.set('jobId', jobId);
     return this.http.get<ApiResponse<Quotation[]>>(this.base(workspaceId), { params }).pipe(map(res => res.data));
   }
 
@@ -149,8 +151,10 @@ export class InvoiceService {
     return `${environment.apiBaseUrl}/workspace/${workspaceId}/invoices`;
   }
 
-  search(workspaceId: string, clientId?: string): Observable<Invoice[]> {
-    const params = clientId ? new HttpParams().set('clientId', clientId) : undefined;
+  search(workspaceId: string, clientId?: string, jobId?: string): Observable<Invoice[]> {
+    let params = new HttpParams();
+    if (clientId) params = params.set('clientId', clientId);
+    if (jobId) params = params.set('jobId', jobId);
     return this.http.get<ApiResponse<Invoice[]>>(this.base(workspaceId), { params }).pipe(map(res => res.data));
   }
 

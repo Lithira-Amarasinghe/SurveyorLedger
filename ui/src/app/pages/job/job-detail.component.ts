@@ -14,11 +14,16 @@ import { DocumentRequest, DocumentRequestService } from '../../core/document-req
 import { CurrentWorkspaceService } from '../../core/current-workspace.service';
 import { InvitationService } from '../../core/invitation.service';
 import { Invoice, InvoiceService, Quotation, QuotationService } from '../../core/billing.service';
+import { Expense, ExpenseService } from '../../core/expense.service';
+import { JobBudget, JobBudgetService } from '../../core/job-budget.service';
 import { AddJobPersonModalComponent } from './add-job-person-modal/add-job-person-modal.component';
 import { AddLandWidgetComponent } from './add-land-widget/add-land-widget.component';
 import { LandDetailPanelComponent } from '../land/land-detail-panel/land-detail-panel.component';
 import { DocumentUploadWidgetComponent } from './document-upload-widget/document-upload-widget.component';
 import { DocumentViewerModalComponent } from './document-viewer-modal/document-viewer-modal.component';
+import { InvoiceFormModalComponent } from '../billing/invoices/invoice-form-modal/invoice-form-modal.component';
+import { QuotationFormModalComponent } from '../billing/quotations/quotation-form-modal/quotation-form-modal.component';
+import { ExpenseFormModalComponent } from './expense-form-modal/expense-form-modal.component';
 import { HasUnsavedChanges } from '../../core/unsaved-changes.guard';
 
 const STATUSES = ['Draft', 'Scheduled', 'InProgress', 'Completed', 'Cancelled'];
@@ -36,7 +41,10 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
     AddLandWidgetComponent,
     LandDetailPanelComponent,
     DocumentUploadWidgetComponent,
-    DocumentViewerModalComponent
+    DocumentViewerModalComponent,
+    InvoiceFormModalComponent,
+    QuotationFormModalComponent,
+    ExpenseFormModalComponent
   ],
   template: `
     @if (loading()) {
@@ -273,8 +281,98 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
           }
         </div>
 
+        @if (j.canViewBudget) {
+          <div class="card">
+            <div class="flex items-center justify-between mb-md">
+              <h2 class="text-sm font-semibold text-neutral-900">Budget</h2>
+              @if (j.canEditBudget && !editingBudget()) {
+                <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="startEditingBudget()">
+                  {{ jobBudget() ? 'Edit' : '+ Set budget' }}
+                </button>
+              }
+            </div>
+
+            @if (editingBudget()) {
+              <div class="space-y-sm">
+                <div class="grid grid-cols-2 gap-sm">
+                  <div>
+                    <label class="block text-xs font-medium text-neutral-700 mb-xs">Estimated fee</label>
+                    <input class="input-field" type="number" min="0" step="0.01" [(ngModel)]="budgetFeeDraft" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-neutral-700 mb-xs">Estimated cost</label>
+                    <input class="input-field" type="number" min="0" step="0.01" [(ngModel)]="budgetCostDraft" />
+                  </div>
+                </div>
+                @if (budgetError()) {
+                  <p class="text-xs text-primary-500">{{ budgetError() }}</p>
+                }
+                <div class="flex items-center justify-end gap-sm">
+                  <button type="button" class="btn-secondary text-xs" (click)="editingBudget.set(false)">Cancel</button>
+                  <button type="button" class="btn-primary text-xs" [disabled]="savingBudget()" (click)="saveBudget()">
+                    {{ savingBudget() ? 'Saving…' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+            } @else if (jobBudget(); as budget) {
+              <div class="grid grid-cols-3 gap-md text-sm">
+                <div>
+                  <span class="block text-xs text-neutral-500">Estimated fee</span>
+                  <span class="font-semibold text-neutral-900">{{ budget.estimatedFee | number: '1.2-2' }}</span>
+                </div>
+                <div>
+                  <span class="block text-xs text-neutral-500">Estimated cost</span>
+                  <span class="font-semibold text-neutral-900">{{ budget.estimatedCost | number: '1.2-2' }}</span>
+                </div>
+                <div>
+                  <span class="block text-xs text-neutral-500">Expected profit</span>
+                  <span class="font-semibold" [class.text-primary-500]="budget.expectedProfit < 0">{{ budget.expectedProfit | number: '1.2-2' }}</span>
+                </div>
+              </div>
+              <p class="text-xs text-neutral-500 mt-sm">Updated by {{ budget.updatedByName }}</p>
+              @if (j.canEditBudget) {
+                <button type="button" class="text-xs text-primary-500 hover:text-primary-600 mt-sm" (click)="deleteBudget()">Clear budget</button>
+              }
+            } @else {
+              <p class="text-sm text-neutral-500">No budget set for this job yet.</p>
+            }
+          </div>
+        }
+
         <div class="card">
-          <h2 class="text-sm font-semibold text-neutral-900 mb-md">Billing</h2>
+          <h2 class="text-sm font-semibold text-neutral-900 mb-md">Financial summary</h2>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-md text-sm">
+            <div>
+              <span class="block text-xs text-neutral-500">Invoiced</span>
+              <span class="font-semibold text-neutral-900">{{ financialSummary().invoicedTotal | number: '1.2-2' }}</span>
+            </div>
+            <div>
+              <span class="block text-xs text-neutral-500">Paid</span>
+              <span class="font-semibold text-neutral-900">{{ financialSummary().paidTotal | number: '1.2-2' }}</span>
+            </div>
+            <div>
+              <span class="block text-xs text-neutral-500">Outstanding</span>
+              <span class="font-semibold text-neutral-900">{{ financialSummary().outstanding | number: '1.2-2' }}</span>
+            </div>
+            <div>
+              <span class="block text-xs text-neutral-500">Expenses</span>
+              <span class="font-semibold text-neutral-900">{{ financialSummary().expensesTotal | number: '1.2-2' }}</span>
+            </div>
+            <div>
+              <span class="block text-xs text-neutral-500">Margin (paid - costs)</span>
+              <span class="font-semibold" [class.text-primary-500]="financialSummary().margin < 0">{{ financialSummary().margin | number: '1.2-2' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="flex items-center justify-between mb-md">
+            <h2 class="text-sm font-semibold text-neutral-900">Billing</h2>
+            <div class="flex gap-sm">
+              <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="showQuotationModal.set(true)">+ Quotation</button>
+              <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="showInvoiceModal.set(true)">+ Invoice</button>
+            </div>
+          </div>
 
           <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-xs">Invoices</h3>
           @if (jobInvoices().length === 0) {
@@ -333,6 +431,44 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
           <a class="text-xs text-primary-500 hover:text-primary-600" [routerLink]="['/app/workspace', workspaceId, 'billing', 'quotations']">
             Manage quotations →
           </a>
+        </div>
+
+        <div class="card">
+          <div class="flex items-center justify-between mb-md">
+            <h2 class="text-sm font-semibold text-neutral-900">Expenses</h2>
+            <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="openExpenseModal()">+ Expense</button>
+          </div>
+          @if (jobExpenses().length === 0) {
+            <p class="text-sm text-neutral-500">No expenses recorded on this job yet.</p>
+          } @else {
+            <div class="card p-0 overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-neutral-100 text-neutral-600 text-xs uppercase">
+                  <tr>
+                    <th class="text-left px-lg py-sm font-medium">Date</th>
+                    <th class="text-left px-lg py-sm font-medium">Category</th>
+                    <th class="text-left px-lg py-sm font-medium">Payee</th>
+                    <th class="text-left px-lg py-sm font-medium">Amount</th>
+                    <th class="text-left px-lg py-sm font-medium"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (expense of jobExpenses(); track expense.expenseId) {
+                    <tr class="border-t border-neutral-200">
+                      <td class="px-lg py-sm text-neutral-600">{{ expense.incurredDate | date: 'mediumDate' }}</td>
+                      <td class="px-lg py-sm text-neutral-900">{{ expense.category }}</td>
+                      <td class="px-lg py-sm text-neutral-600">{{ expense.payeeName ?? '—' }}</td>
+                      <td class="px-lg py-sm text-neutral-600">{{ expense.amount | number: '1.2-2' }}</td>
+                      <td class="px-lg py-sm text-right whitespace-nowrap">
+                        <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700 mr-sm" (click)="openExpenseModal(expense)">Edit</button>
+                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="deleteExpense(expense)">Delete</button>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
         </div>
 
         <div class="card">
@@ -503,6 +639,35 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
       }
     }
 
+    @if (showInvoiceModal()) {
+      <app-invoice-form-modal
+        [workspaceId]="workspaceId"
+        [fixedJobId]="jobId"
+        (cancel)="showInvoiceModal.set(false)"
+        (saved)="onInvoiceSaved()"
+      />
+    }
+
+    @if (showQuotationModal()) {
+      <app-quotation-form-modal
+        [workspaceId]="workspaceId"
+        [fixedJobId]="jobId"
+        (cancel)="showQuotationModal.set(false)"
+        (saved)="onQuotationSaved()"
+      />
+    }
+
+    @if (showExpenseModal()) {
+      <app-expense-form-modal
+        [workspaceId]="workspaceId"
+        [jobId]="jobId"
+        [participants]="effectiveParticipants()"
+        [editing]="editingExpense()"
+        (cancel)="showExpenseModal.set(false); editingExpense.set(null)"
+        (saved)="onExpenseSaved()"
+      />
+    }
+
     @if (confirmingDeleteDocument(); as doc) {
       <div class="fixed inset-0 z-50 bg-neutral-900/40 flex items-center justify-center px-lg">
         <div class="card w-full max-w-sm">
@@ -618,6 +783,81 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   documentRequests = signal<DocumentRequest[]>([]);
   jobInvoices = signal<Invoice[]>([]);
   jobQuotations = signal<Quotation[]>([]);
+  jobExpenses = signal<Expense[]>([]);
+  jobBudget = signal<JobBudget | null>(null);
+  editingBudget = signal(false);
+  budgetFeeDraft = 0;
+  budgetCostDraft = 0;
+  budgetError = signal('');
+  savingBudget = signal(false);
+  showInvoiceModal = signal(false);
+  showQuotationModal = signal(false);
+  showExpenseModal = signal(false);
+  editingExpense = signal<Expense | null>(null);
+
+  financialSummary = computed(() => {
+    const invoicedTotal = this.jobInvoices().reduce((sum, i) => sum + i.total, 0);
+    const paidTotal = this.jobInvoices().reduce((sum, i) => sum + i.amountPaid, 0);
+    const outstanding = invoicedTotal - paidTotal;
+    const expensesTotal = this.jobExpenses().reduce((sum, e) => sum + e.amount, 0);
+    const margin = paidTotal - expensesTotal;
+    return { invoicedTotal, paidTotal, outstanding, expensesTotal, margin };
+  });
+
+  onInvoiceSaved(): void {
+    this.showInvoiceModal.set(false);
+    this.invoiceService.search(this.workspaceId, undefined, this.jobId).subscribe(list => this.jobInvoices.set(list));
+  }
+
+  onQuotationSaved(): void {
+    this.showQuotationModal.set(false);
+    this.quotationService.search(this.workspaceId, undefined, this.jobId).subscribe(list => this.jobQuotations.set(list));
+  }
+
+  openExpenseModal(expense: Expense | null = null): void {
+    this.editingExpense.set(expense);
+    this.showExpenseModal.set(true);
+  }
+
+  onExpenseSaved(): void {
+    this.showExpenseModal.set(false);
+    this.editingExpense.set(null);
+    this.expenseService.getAll(this.workspaceId, this.jobId).subscribe(list => this.jobExpenses.set(list));
+  }
+
+  deleteExpense(expense: Expense): void {
+    this.expenseService.delete(this.workspaceId, this.jobId, expense.expenseId).subscribe(() => {
+      this.jobExpenses.update(list => list.filter(e => e.expenseId !== expense.expenseId));
+    });
+  }
+
+  startEditingBudget(): void {
+    const current = this.jobBudget();
+    this.budgetFeeDraft = current?.estimatedFee ?? 0;
+    this.budgetCostDraft = current?.estimatedCost ?? 0;
+    this.budgetError.set('');
+    this.editingBudget.set(true);
+  }
+
+  saveBudget(): void {
+    this.budgetError.set('');
+    this.savingBudget.set(true);
+    this.jobBudgetService.upsert(this.workspaceId, this.jobId, { estimatedFee: this.budgetFeeDraft, estimatedCost: this.budgetCostDraft }).subscribe({
+      next: budget => {
+        this.savingBudget.set(false);
+        this.jobBudget.set(budget);
+        this.editingBudget.set(false);
+      },
+      error: err => {
+        this.savingBudget.set(false);
+        this.budgetError.set(err.error?.message ?? 'Could not save budget.');
+      }
+    });
+  }
+
+  deleteBudget(): void {
+    this.jobBudgetService.delete(this.workspaceId, this.jobId).subscribe(() => this.jobBudget.set(null));
+  }
   requestingDocument = signal(false);
   requestTitleDraft = '';
   requestDescriptionDraft = '';
@@ -681,6 +921,8 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     private documentRequestService: DocumentRequestService,
     private invoiceService: InvoiceService,
     private quotationService: QuotationService,
+    private expenseService: ExpenseService,
+    private jobBudgetService: JobBudgetService,
     private currentWorkspace: CurrentWorkspaceService,
     private authService: AuthService,
     private invitationService: InvitationService,
@@ -724,10 +966,11 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
       milestones: this.milestoneService.list(this.workspaceId, this.jobId),
       documents: this.documentService.list(this.workspaceId, this.jobId),
       documentRequests: this.documentRequestService.list(this.workspaceId, this.jobId),
-      invoices: this.invoiceService.search(this.workspaceId),
-      quotations: this.quotationService.search(this.workspaceId)
+      invoices: this.invoiceService.search(this.workspaceId, undefined, this.jobId),
+      quotations: this.quotationService.search(this.workspaceId, undefined, this.jobId),
+      expenses: this.expenseService.getAll(this.workspaceId, this.jobId)
     }).subscribe({
-      next: ({ job, participants, effectiveParticipants, pendingInvitations, lands, milestones, documents, documentRequests, invoices, quotations }) => {
+      next: ({ job, participants, effectiveParticipants, pendingInvitations, lands, milestones, documents, documentRequests, invoices, quotations, expenses }) => {
         this.job.set(job);
         this.titleDraft = job.title;
         this.descriptionDraft = job.description ?? '';
@@ -738,9 +981,16 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
         this.milestones.set(milestones);
         this.documents.set(documents);
         this.documentRequests.set(documentRequests);
-        this.jobInvoices.set(invoices.filter(i => i.jobId === this.jobId));
-        this.jobQuotations.set(quotations.filter(q => q.jobId === this.jobId));
+        this.jobInvoices.set(invoices);
+        this.jobQuotations.set(quotations);
+        this.jobExpenses.set(expenses);
         this.loading.set(false);
+
+        if (job.canViewBudget) {
+          this.jobBudgetService.get(this.workspaceId, this.jobId).subscribe({
+            next: budget => this.jobBudget.set(budget)
+          });
+        }
       },
       error: (err) => {
         this.error.set(err.error?.message ?? 'Could not load job.');

@@ -23,9 +23,9 @@ namespace SurveyorLedger.API.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<ApiResponse<List<InvoiceResponse>>>> Search(Guid workspaceId, [FromQuery] Guid? clientId)
+        public async Task<ActionResult<ApiResponse<List<InvoiceResponse>>>> Search(Guid workspaceId, [FromQuery] Guid? clientId, [FromQuery] Guid? jobId)
         {
-            var invoices = await _invoiceService.SearchAsync(workspaceId, CallerId(), clientId);
+            var invoices = await _invoiceService.SearchAsync(workspaceId, CallerId(), clientId, jobId);
             return Ok(ApiResponse<List<InvoiceResponse>>.Ok(invoices.Select(i => ToResponse(i, _invoiceService)).ToList()));
         }
 

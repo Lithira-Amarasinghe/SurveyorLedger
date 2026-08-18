@@ -81,6 +81,9 @@ namespace SurveyorLedger.API.Controllers
             Description = e.Description,
             IncurredDate = e.IncurredDate,
             HasReceipt = e.ReceiptFilePath != null,
+            PayeeId = e.PayeeId,
+            PayeeName = e.Payee == null ? null : $"{e.Payee.FirstName} {e.Payee.LastName}",
+            PayeeType = e.PayeeType,
             RecordedByName = $"{e.RecordedByUser.FirstName} {e.RecordedByUser.LastName}",
             CreatedAt = e.CreatedAt
         };

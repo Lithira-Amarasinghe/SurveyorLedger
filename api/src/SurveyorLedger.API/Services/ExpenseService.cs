@@ -18,10 +18,19 @@ public interface IExpenseService
     Task<(Expense expense, Stream content)> GetReceiptFileAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid expenseId);
 }
 
+/// <summary>
+/// StaffCost is a category here, not a separate resource (see expense-staffpayment-merge
+/// design spec) - own-only visibility for that one category is filtered here in C# for
+/// callers without expense.view_all, same shape StaffPaymentService used for its whole
+/// resource. Every other category stays visible to anyone with expense.view.
+/// </summary>
 public class ExpenseService : IExpenseService
 {
+    private const string StaffCostCategory = "StaffCost";
     private static readonly HashSet<string> ValidCategories = new()
-        { "Travel", "Equipment", "Printing", "ThirdPartyFees", "GovernmentCharges", "Miscellaneous" };
+        { "StaffCost", "Subcontractor", "Equipment", "Material", "Transport", "Other" };
+    private static readonly HashSet<string> ValidPayeeTypes = new()
+        { "Salary", "Commission", "Bonus", "ProfitShare" };
     private static readonly HashSet<string> AllowedReceiptExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".pdf", ".jpg", ".jpeg", ".png" };
 
@@ -42,7 +51,7 @@ public class ExpenseService : IExpenseService
     {
         await FindJobAsync(workspaceId, jobId);
         await _access.EnsureAllowedAsync(callerUserId, "expense", "create", workspaceId);
-        ValidateCategory(request.Category);
+        await ValidateAndNormalizePayeeAsync(request);
         var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
 
         var expense = new Expense
@@ -54,6 +63,8 @@ public class ExpenseService : IExpenseService
             Amount = request.Amount,
             Description = request.Description,
             IncurredDate = request.IncurredDate,
+            PayeeId = request.PayeeId,
+            PayeeType = request.PayeeType,
             RecordedBy = callerPersonId,
             CreatedAt = DateTime.UtcNow
         };
@@ -70,30 +81,47 @@ public class ExpenseService : IExpenseService
         await FindJobAsync(workspaceId, jobId);
         await _access.EnsureAllowedAsync(callerUserId, "expense", "view", workspaceId);
 
-        return await _context.Expenses.Include(e => e.RecordedByUser)
-            .Where(e => e.JobId == jobId)
-            .OrderByDescending(e => e.IncurredDate)
-            .ToListAsync();
+        var query = _context.Expenses.Include(e => e.RecordedByUser).Include(e => e.Payee)
+            .Where(e => e.JobId == jobId);
+
+        if (!await _access.HasViewAllAsync(callerUserId, "expense", workspaceId))
+        {
+            var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
+            query = query.Where(e => e.Category != StaffCostCategory || e.PayeeId == callerPersonId);
+        }
+
+        return await query.OrderByDescending(e => e.IncurredDate).ToListAsync();
     }
 
     public async Task<Expense> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid expenseId)
     {
         await FindJobAsync(workspaceId, jobId);
         await _access.EnsureAllowedAsync(callerUserId, "expense", "view", workspaceId);
-        return await FindExpenseAsync(jobId, expenseId);
+        var expense = await FindExpenseAsync(jobId, expenseId);
+
+        if (expense.Category == StaffCostCategory && !await _access.HasViewAllAsync(callerUserId, "expense", workspaceId))
+        {
+            var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
+            if (expense.PayeeId != callerPersonId)
+                throw new NotFoundException("Expense not found");
+        }
+
+        return expense;
     }
 
     public async Task<Expense> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid expenseId, ExpenseRequest request)
     {
         await FindJobAsync(workspaceId, jobId);
         await _access.EnsureAllowedAsync(callerUserId, "expense", "edit", workspaceId);
-        ValidateCategory(request.Category);
+        await ValidateAndNormalizePayeeAsync(request);
         var expense = await FindExpenseAsync(jobId, expenseId);
 
         expense.Category = request.Category;
         expense.Amount = request.Amount;
         expense.Description = request.Description;
         expense.IncurredDate = request.IncurredDate;
+        expense.PayeeId = request.PayeeId;
+        expense.PayeeType = request.PayeeType;
 
         await _context.SaveChangesAsync();
         return expense;
@@ -150,10 +178,25 @@ public class ExpenseService : IExpenseService
         return (expense, content);
     }
 
-    private static void ValidateCategory(string category)
+    private async Task ValidateAndNormalizePayeeAsync(ExpenseRequest request)
     {
-        if (!ValidCategories.Contains(category))
+        if (!ValidCategories.Contains(request.Category))
             throw new ValidationException($"Category must be one of: {string.Join(", ", ValidCategories)}.");
+
+        if (request.Category == StaffCostCategory)
+        {
+            if (request.PayeeId == null || request.PayeeType == null)
+                throw new ValidationException("PayeeId and PayeeType are required when Category is StaffCost.");
+            if (!ValidPayeeTypes.Contains(request.PayeeType))
+                throw new ValidationException($"PayeeType must be one of: {string.Join(", ", ValidPayeeTypes)}.");
+            var payeeExists = await _context.People.AnyAsync(p => p.Id == request.PayeeId && p.IsActive);
+            if (!payeeExists)
+                throw new ValidationException("PayeeId does not match an existing account.");
+        }
+        else if (request.PayeeId != null || request.PayeeType != null)
+        {
+            throw new ValidationException("PayeeId and PayeeType must be empty unless Category is StaffCost.");
+        }
     }
 
     private async Task<Job> FindJobAsync(Guid workspaceId, Guid jobId)
@@ -164,7 +207,7 @@ public class ExpenseService : IExpenseService
 
     private async Task<Expense> FindExpenseAsync(Guid jobId, Guid expenseId)
     {
-        return await _context.Expenses.Include(e => e.RecordedByUser)
+        return await _context.Expenses.Include(e => e.RecordedByUser).Include(e => e.Payee)
             .FirstOrDefaultAsync(e => e.Id == expenseId && e.JobId == jobId)
             ?? throw new NotFoundException("Expense not found");
     }

@@ -48,13 +48,13 @@ public class ExpenseServiceTests : WorkspaceIntegrationTestBase
         await SeedJobAsync();
         var expense = await _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest
         {
-            Category = "Travel",
+            Category = "Transport",
             Amount = 5000m,
             Description = "Fuel",
             IncurredDate = DateTime.UtcNow
         });
 
-        Assert.Equal("Travel", expense.Category);
+        Assert.Equal("Transport", expense.Category);
         var fetched = await _expenseService.GetByIdAsync(WorkspaceId, AdminId, _jobId, expense.Id);
         Assert.Equal(expense.Id, fetched.Id);
     }
@@ -64,14 +64,14 @@ public class ExpenseServiceTests : WorkspaceIntegrationTestBase
     {
         await SeedJobAsync();
         await Assert.ThrowsAsync<ForbiddenException>(
-            () => _expenseService.CreateAsync(WorkspaceId, ClientId, _jobId, new ExpenseRequest { Category = "Travel", Amount = 100m, IncurredDate = DateTime.UtcNow }));
+            () => _expenseService.CreateAsync(WorkspaceId, ClientId, _jobId, new ExpenseRequest { Category = "Transport", Amount = 100m, IncurredDate = DateTime.UtcNow }));
     }
 
     [Fact]
     public async Task Surveyor_CannotDeleteExpense()
     {
         await SeedJobAsync();
-        var expense = await _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest { Category = "Travel", Amount = 100m, IncurredDate = DateTime.UtcNow });
+        var expense = await _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest { Category = "Transport", Amount = 100m, IncurredDate = DateTime.UtcNow });
         await Assert.ThrowsAsync<ForbiddenException>(() => _expenseService.DeleteAsync(WorkspaceId, SurveyorId, _jobId, expense.Id));
     }
 
@@ -81,7 +81,7 @@ public class ExpenseServiceTests : WorkspaceIntegrationTestBase
         await SeedJobAsync();
         var otherWorkspaceId = Guid.NewGuid();
         await Assert.ThrowsAsync<NotFoundException>(
-            () => _expenseService.CreateAsync(otherWorkspaceId, AdminId, _jobId, new ExpenseRequest { Category = "Travel", Amount = 100m, IncurredDate = DateTime.UtcNow }));
+            () => _expenseService.CreateAsync(otherWorkspaceId, AdminId, _jobId, new ExpenseRequest { Category = "Transport", Amount = 100m, IncurredDate = DateTime.UtcNow }));
     }
 
     private static IFormFile MakeReceipt(string name = "receipt.jpg", string contentType = "image/jpeg")
@@ -115,7 +115,7 @@ public class ExpenseServiceTests : WorkspaceIntegrationTestBase
     public async Task DeleteAsync_RemovesExpense()
     {
         await SeedJobAsync();
-        var expense = await _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest { Category = "Miscellaneous", Amount = 50m, IncurredDate = DateTime.UtcNow });
+        var expense = await _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest { Category = "Other", Amount = 50m, IncurredDate = DateTime.UtcNow });
         await _expenseService.DeleteAsync(WorkspaceId, AdminId, _jobId, expense.Id);
 
         var all = await _expenseService.GetAllAsync(WorkspaceId, AdminId, _jobId);
@@ -131,12 +131,56 @@ public class ExpenseServiceTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
+    public async Task CreateAsync_StaffCost_RequiresPayee()
+    {
+        await SeedJobAsync();
+        await Assert.ThrowsAsync<ValidationException>(
+            () => _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest { Category = "StaffCost", Amount = 100m, IncurredDate = DateTime.UtcNow }));
+    }
+
+    [Fact]
+    public async Task CreateAsync_NonStaffCost_RejectsPayee()
+    {
+        await SeedJobAsync();
+        await Assert.ThrowsAsync<ValidationException>(
+            () => _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest { Category = "Transport", Amount = 100m, IncurredDate = DateTime.UtcNow, PayeeId = AdminPersonId, PayeeType = "Salary" }));
+    }
+
+    [Fact]
+    public async Task CreateAsync_StaffCost_WithPayee_Persists()
+    {
+        await SeedJobAsync();
+        var expense = await _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest
+        {
+            Category = "StaffCost", Amount = 500m, IncurredDate = DateTime.UtcNow, PayeeId = SurveyorPersonId, PayeeType = "Salary"
+        });
+
+        Assert.Equal(SurveyorPersonId, expense.PayeeId);
+        Assert.Equal("Salary", expense.PayeeType);
+    }
+
+    [Fact]
+    public async Task Surveyor_SeesOnlyOwnStaffCostRows_ButAllOtherCategories()
+    {
+        await SeedJobAsync();
+        await _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest { Category = "StaffCost", Amount = 500m, IncurredDate = DateTime.UtcNow, PayeeId = AdminPersonId, PayeeType = "Salary" });
+        await _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest { Category = "StaffCost", Amount = 600m, IncurredDate = DateTime.UtcNow, PayeeId = SurveyorPersonId, PayeeType = "Salary" });
+        await _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest { Category = "Transport", Amount = 100m, IncurredDate = DateTime.UtcNow });
+
+        var visible = await _expenseService.GetAllAsync(WorkspaceId, SurveyorId, _jobId);
+        Assert.Equal(2, visible.Count);
+        Assert.Contains(visible, e => e.Category == "Transport");
+        Assert.Contains(visible, e => e.Category == "StaffCost" && e.PayeeId == SurveyorPersonId);
+        Assert.DoesNotContain(visible, e => e.Category == "StaffCost" && e.PayeeId == AdminPersonId);
+    }
+
+    [Fact]
     public async Task CreateAsync_SetsRecordedByUser_AsPersonNotUserAccount()
     {
         await SeedJobAsync();
         var expense = await _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest
         {
-            Category = "Travel", Amount = 100m, IncurredDate = DateTime.UtcNow
+            Category = "Transport", Amount = 100m, IncurredDate = DateTime.UtcNow
         });
 
         var loaded = await Context.Expenses.Include(e => e.RecordedByUser).FirstAsync(e => e.Id == expense.Id);

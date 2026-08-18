@@ -11,7 +11,7 @@ namespace SurveyorLedger.API.Services;
 public interface IQuotationService
 {
     Task<Quotation> CreateAsync(Guid workspaceId, Guid callerUserId, QuotationRequest request);
-    Task<List<Quotation>> SearchAsync(Guid workspaceId, Guid callerUserId, Guid? clientId);
+    Task<List<Quotation>> SearchAsync(Guid workspaceId, Guid callerUserId, Guid? clientId, Guid? jobId = null);
     Task<Quotation> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid quotationId);
     Task<Quotation> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, QuotationRequest request);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid quotationId);
@@ -71,7 +71,7 @@ public class QuotationService : IQuotationService
         return quotation;
     }
 
-    public async Task<List<Quotation>> SearchAsync(Guid workspaceId, Guid callerUserId, Guid? clientId)
+    public async Task<List<Quotation>> SearchAsync(Guid workspaceId, Guid callerUserId, Guid? clientId, Guid? jobId = null)
     {
         await _access.EnsureListAllowedAsync(callerUserId, workspaceId);
 
@@ -84,6 +84,8 @@ public class QuotationService : IQuotationService
         }
         if (clientId.HasValue)
             quotations = quotations.Where(q => q.ClientId == clientId.Value);
+        if (jobId.HasValue)
+            quotations = quotations.Where(q => q.JobId == jobId.Value);
 
         return await quotations.OrderByDescending(q => q.CreatedAt).ToListAsync();
     }

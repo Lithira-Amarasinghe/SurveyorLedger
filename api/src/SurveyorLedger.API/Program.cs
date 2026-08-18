@@ -118,7 +118,7 @@ builder.Services.AddScoped<IInvoiceService, InvoiceService>();
 builder.Services.AddScoped<IQuotationService, QuotationService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
 builder.Services.AddScoped<IExpenseService, ExpenseService>();
-builder.Services.AddScoped<IStaffPaymentService, StaffPaymentService>();
+builder.Services.AddScoped<IJobBudgetService, JobBudgetService>();
 
 // Register scope ID resolver for walking the scope hierarchy (used by UserAccessGrantService
 // to look up parent/child scope IDs during access chaining). ScopeIdResolver itself holds no

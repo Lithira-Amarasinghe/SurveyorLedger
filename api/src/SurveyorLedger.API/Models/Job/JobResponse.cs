@@ -11,4 +11,6 @@ public class JobResponse
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public bool CanManageParticipants { get; set; }
+    public bool CanViewBudget { get; set; }
+    public bool CanEditBudget { get; set; }
 }

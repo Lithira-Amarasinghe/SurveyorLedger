@@ -112,15 +112,16 @@ public class RolePermissionConfiguration : IEntityTypeConfiguration<RolePermissi
             Grant(new Guid("00000000-0000-0000-0000-000000000273"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.ViewExpenseId),
             Grant(new Guid("00000000-0000-0000-0000-000000000274"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.CreateExpenseId),
             Grant(new Guid("00000000-0000-0000-0000-000000000275"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.EditExpenseId),
-            // StaffPayment - Admin: full CRUD + view_all (payroll is a stricter surface than
-            // expenses). Surveyor: view only, and only their own (view_all withheld - the
-            // service layer filters to UserId == callerUserId without it). Client: nothing.
-            Grant(new Guid("00000000-0000-0000-0000-000000000276"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewStaffPaymentId),
-            Grant(new Guid("00000000-0000-0000-0000-000000000277"), RoleConfiguration.AdminRoleId, PermissionConfiguration.CreateStaffPaymentId),
-            Grant(new Guid("00000000-0000-0000-0000-000000000278"), RoleConfiguration.AdminRoleId, PermissionConfiguration.EditStaffPaymentId),
-            Grant(new Guid("00000000-0000-0000-0000-000000000279"), RoleConfiguration.AdminRoleId, PermissionConfiguration.DeleteStaffPaymentId),
-            Grant(new Guid("00000000-0000-0000-0000-000000000280"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewAllStaffPaymentId),
-            Grant(new Guid("00000000-0000-0000-0000-000000000281"), RoleConfiguration.SurveyorRoleId, PermissionConfiguration.ViewStaffPaymentId)
+            // Budget - Admin only, full CRUD. Surveyor/Client/Finance get nothing - the
+            // estimated fee/cost is internal to Admin. Full CRUD (not just view/edit) so a
+            // future role (e.g. Finance) can be granted a subset without a schema change.
+            Grant(new Guid("00000000-0000-0000-0000-000000000286"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewBudgetId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000287"), RoleConfiguration.AdminRoleId, PermissionConfiguration.CreateBudgetId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000288"), RoleConfiguration.AdminRoleId, PermissionConfiguration.EditBudgetId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000289"), RoleConfiguration.AdminRoleId, PermissionConfiguration.DeleteBudgetId),
+            // Expense view_all - Admin sees every StaffCost row (payroll-equivalent data);
+            // Surveyor only their own (ExpenseService filters StaffCost rows without this).
+            Grant(new Guid("00000000-0000-0000-0000-000000000290"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewAllExpenseId)
         );
     }
 }

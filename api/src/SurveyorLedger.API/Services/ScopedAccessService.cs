@@ -25,6 +25,10 @@ public interface IScopedAccessService
     /// <summary>Plain workspace-scoped permission check - no record involved (create, list, manage).</summary>
     Task EnsureAllowedAsync(Guid userId, string resource, string action, Guid workspaceId);
 
+    /// <summary>Non-throwing version of EnsureAllowedAsync - for callers that need a boolean
+    /// to drive UI flags (e.g. JobResponse.CanViewBudget) rather than an exception to catch.</summary>
+    Task<bool> CanAsync(Guid userId, string resource, string action, Guid workspaceId);
+
     /// <summary>
     /// Gate for a list endpoint (GetJobsAsync, LandService.SearchAsync). Deliberately a
     /// membership check, not a permission check: a Member with zero job.view permission and
@@ -115,6 +119,9 @@ public class ScopedAccessService : IScopedAccessService
         if (!await _casbinService.EnforceAsync(userId.ToString(), resource, action, workspaceId.ToString()))
             throw new ForbiddenException($"You do not have permission to {action} {resource}s in this workspace.");
     }
+
+    public Task<bool> CanAsync(Guid userId, string resource, string action, Guid workspaceId) =>
+        _casbinService.EnforceAsync(userId.ToString(), resource, action, workspaceId.ToString());
 
     public async Task EnsureListAllowedAsync(Guid userId, Guid workspaceId)
     {

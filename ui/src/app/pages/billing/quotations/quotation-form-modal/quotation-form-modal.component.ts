@@ -16,15 +16,17 @@ import { LineItemEditorComponent } from '../../../../shared/line-item-editor/lin
         <h2 class="text-base font-semibold text-neutral-900">{{ editing ? 'Edit quotation' : 'New quotation' }}</h2>
 
         <form class="mt-lg space-y-md" (ngSubmit)="submit()">
-          <div>
-            <label class="block text-xs font-medium text-neutral-700 mb-xs">Job</label>
-            <select class="input-field" name="jobId" [(ngModel)]="jobId" (ngModelChange)="onJobChange()" [disabled]="!!editing">
-              <option [ngValue]="null">Select a job…</option>
-              @for (job of jobs(); track job.jobId) {
-                <option [ngValue]="job.jobId">{{ job.jobNumber }} · {{ job.title }}</option>
-              }
-            </select>
-          </div>
+          @if (!fixedJobId) {
+            <div>
+              <label class="block text-xs font-medium text-neutral-700 mb-xs">Job</label>
+              <select class="input-field" name="jobId" [(ngModel)]="jobId" (ngModelChange)="onJobChange()" [disabled]="!!editing">
+                <option [ngValue]="null">Select a job…</option>
+                @for (job of jobs(); track job.jobId) {
+                  <option [ngValue]="job.jobId">{{ job.jobNumber }} · {{ job.title }}</option>
+                }
+              </select>
+            </div>
+          }
 
           <app-billing-recipient-picker [workspaceId]="workspaceId" [jobId]="jobId" [value]="clientId" (valueChange)="clientId = $event" />
 
@@ -69,6 +71,7 @@ import { LineItemEditorComponent } from '../../../../shared/line-item-editor/lin
 })
 export class QuotationFormModalComponent implements OnInit {
   @Input() workspaceId = '';
+  @Input() fixedJobId: string | null = null;
   @Input() editing: Quotation | null = null;
   @Output() cancel = new EventEmitter<void>();
   @Output() saved = new EventEmitter<Quotation>();
@@ -86,7 +89,11 @@ export class QuotationFormModalComponent implements OnInit {
   constructor(private quotationService: QuotationService, private jobService: JobService) {}
 
   ngOnInit(): void {
-    this.jobService.list(this.workspaceId).subscribe({ next: jobs => this.jobs.set(jobs) });
+    if (this.fixedJobId) {
+      this.jobId = this.fixedJobId;
+    } else {
+      this.jobService.list(this.workspaceId).subscribe({ next: jobs => this.jobs.set(jobs) });
+    }
 
     if (this.editing) {
       this.jobId = this.editing.jobId;

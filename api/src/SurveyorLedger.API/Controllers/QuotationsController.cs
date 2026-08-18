@@ -25,9 +25,9 @@ namespace SurveyorLedger.API.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<ApiResponse<List<QuotationResponse>>>> Search(Guid workspaceId, [FromQuery] Guid? clientId)
+        public async Task<ActionResult<ApiResponse<List<QuotationResponse>>>> Search(Guid workspaceId, [FromQuery] Guid? clientId, [FromQuery] Guid? jobId)
         {
-            var quotations = await _quotationService.SearchAsync(workspaceId, CallerId(), clientId);
+            var quotations = await _quotationService.SearchAsync(workspaceId, CallerId(), clientId, jobId);
             return Ok(ApiResponse<List<QuotationResponse>>.Ok(quotations.Select(ToResponse).ToList()));
         }
 

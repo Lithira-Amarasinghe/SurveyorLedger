@@ -6,6 +6,8 @@ public class ExpenseRequest
     public decimal Amount { get; set; }
     public string? Description { get; set; }
     public DateTime IncurredDate { get; set; }
+    public Guid? PayeeId { get; set; }
+    public string? PayeeType { get; set; }
 }
 
 public class ExpenseResponse
@@ -17,6 +19,9 @@ public class ExpenseResponse
     public string? Description { get; set; }
     public DateTime IncurredDate { get; set; }
     public bool HasReceipt { get; set; }
+    public Guid? PayeeId { get; set; }
+    public string? PayeeName { get; set; }
+    public string? PayeeType { get; set; }
     public string RecordedByName { get; set; }
     public DateTime CreatedAt { get; set; }
 }
