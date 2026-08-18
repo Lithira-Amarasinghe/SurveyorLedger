@@ -41,6 +41,7 @@ public class QuotationService : IQuotationService
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, request.JobId, "create");
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
         ValidateLineItems(request.LineItems);
+        ValidateTaxRate(request.TaxRatePercent);
 
         var quotation = new Quotation
         {
@@ -103,6 +104,7 @@ public class QuotationService : IQuotationService
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId, "edit");
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
         ValidateLineItems(request.LineItems);
+        ValidateTaxRate(request.TaxRatePercent);
 
         // Line items changed after the quote was Sent - bump RevisionNumber so
         // "revision charges" have something to point at, without a new entity.
@@ -151,6 +153,11 @@ public class QuotationService : IQuotationService
 
         if (quotation.Status is not ("Draft" or "Sent"))
             throw new ValidationException($"Cannot convert a quotation with status '{quotation.Status}'.");
+        if (request.DiscountAmount < 0)
+            throw new ValidationException("Discount amount cannot be negative.");
+        var quotationSubtotal = quotation.LineItems.Sum(li => li.Quantity * li.UnitPrice);
+        if (request.DiscountAmount > quotationSubtotal)
+            throw new ValidationException($"Discount ({request.DiscountAmount}) cannot exceed the subtotal ({quotationSubtotal}).");
 
         var invoice = new Invoice
         {
@@ -264,6 +271,12 @@ public class QuotationService : IQuotationService
             throw new ValidationException("At least one line item is required.");
         if (items.Any(i => i.Quantity <= 0 || i.UnitPrice < 0))
             throw new ValidationException("Line item quantity must be positive and unit price cannot be negative.");
+    }
+
+    private static void ValidateTaxRate(decimal taxRatePercent)
+    {
+        if (taxRatePercent < 0)
+            throw new ValidationException("Tax rate cannot be negative.");
     }
 
     private static List<QuotationLineItem> ToEntities(List<LineItemDto> items) =>

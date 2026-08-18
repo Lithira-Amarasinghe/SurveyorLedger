@@ -182,6 +182,8 @@ public class ExpenseService : IExpenseService
     {
         if (!ValidCategories.Contains(request.Category))
             throw new ValidationException($"Category must be one of: {string.Join(", ", ValidCategories)}.");
+        if (request.Amount <= 0)
+            throw new ValidationException("Amount must be positive.");
 
         if (request.Category == StaffCostCategory)
         {

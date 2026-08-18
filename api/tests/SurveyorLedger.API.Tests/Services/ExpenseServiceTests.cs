@@ -175,6 +175,16 @@ public class ExpenseServiceTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
+    public async Task CreateAsync_ZeroOrNegativeAmount_Rejected()
+    {
+        await SeedJobAsync();
+        await Assert.ThrowsAsync<ValidationException>(
+            () => _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest { Category = "Transport", Amount = 0m, IncurredDate = DateTime.UtcNow }));
+        await Assert.ThrowsAsync<ValidationException>(
+            () => _expenseService.CreateAsync(WorkspaceId, AdminId, _jobId, new ExpenseRequest { Category = "Transport", Amount = -50m, IncurredDate = DateTime.UtcNow }));
+    }
+
+    [Fact]
     public async Task CreateAsync_SetsRecordedByUser_AsPersonNotUserAccount()
     {
         await SeedJobAsync();

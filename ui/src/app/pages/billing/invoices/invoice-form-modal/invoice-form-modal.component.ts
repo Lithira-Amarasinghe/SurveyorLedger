@@ -29,39 +29,48 @@ import { InstallmentEditorComponent } from '../../../../shared/installment-edito
             </div>
           }
 
-          <app-billing-recipient-picker [workspaceId]="workspaceId" [jobId]="jobId" [value]="clientId" (valueChange)="clientId = $event" />
-
-          <app-line-item-editor [items]="lineItems" (itemsChange)="lineItems = $event" />
-
-          <div class="grid grid-cols-3 gap-sm">
-            <div>
-              <label class="block text-xs font-medium text-neutral-700 mb-xs">Tax rate (%)</label>
-              <input class="input-field" type="number" min="0" step="0.01" name="taxRate" [(ngModel)]="taxRatePercent" />
+          @if (isLocked()) {
+            <div class="rounded bg-amber-50 border border-amber-200 px-md py-sm text-xs text-amber-800">
+              This invoice already has recorded payments - the amount is locked. Only the due date can be changed. Cancel and reissue if the amount is wrong.
             </div>
-            <div>
-              <label class="block text-xs font-medium text-neutral-700 mb-xs">Discount</label>
-              <input class="input-field" type="number" min="0" step="0.01" name="discount" [(ngModel)]="discountAmount" />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-neutral-700 mb-xs">Due date</label>
-              <input class="input-field" type="date" name="dueDate" [(ngModel)]="dueDate" />
-            </div>
-          </div>
+          }
 
-          <app-installment-editor [items]="installments" [invoiceTotal]="invoiceTotal()" (itemsChange)="installments = $event" />
+          <fieldset [disabled]="isLocked()" class="space-y-md" [class.opacity-60]="isLocked()">
+            <app-billing-recipient-picker [workspaceId]="workspaceId" [jobId]="jobId" [value]="clientId" (valueChange)="clientId = $event" />
+
+            <app-line-item-editor [items]="lineItems" (itemsChange)="lineItems = $event" />
+
+            <div class="grid grid-cols-2 gap-sm">
+              <div>
+                <label class="block text-xs font-medium text-neutral-700 mb-xs">Tax rate (%)</label>
+                <input class="input-field" type="number" min="0" step="0.01" name="taxRate" [(ngModel)]="taxRatePercent" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-neutral-700 mb-xs">Discount</label>
+                <input class="input-field" type="number" min="0" step="0.01" name="discount" [(ngModel)]="discountAmount" />
+              </div>
+            </div>
+
+            <app-installment-editor [items]="installments" [invoiceTotal]="invoiceTotal()" (itemsChange)="installments = $event" />
+
+            <div>
+              <label class="block text-xs font-medium text-neutral-700 mb-xs">Status</label>
+              <select class="input-field" name="status" [(ngModel)]="status">
+                <option value="Draft">Draft</option>
+                <option value="Sent">Sent</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
+              @if (editing && (editing.status === 'PartiallyPaid' || editing.status === 'Paid')) {
+                <p class="text-xs text-neutral-500 mt-xs">
+                  Current status is {{ editing.status }} - set automatically from payments and can't be changed here.
+                </p>
+              }
+            </div>
+          </fieldset>
 
           <div>
-            <label class="block text-xs font-medium text-neutral-700 mb-xs">Status</label>
-            <select class="input-field" name="status" [(ngModel)]="status">
-              <option value="Draft">Draft</option>
-              <option value="Sent">Sent</option>
-              <option value="Cancelled">Cancelled</option>
-            </select>
-            @if (editing && (editing.status === 'PartiallyPaid' || editing.status === 'Paid')) {
-              <p class="text-xs text-neutral-500 mt-xs">
-                Current status is {{ editing.status }} - set automatically from payments and can't be changed here.
-              </p>
-            }
+            <label class="block text-xs font-medium text-neutral-700 mb-xs">Due date</label>
+            <input class="input-field" type="date" name="dueDate" [(ngModel)]="dueDate" />
           </div>
 
           @if (error()) {
@@ -121,6 +130,10 @@ export class InvoiceFormModalComponent implements OnInit {
 
   onJobChange(): void {
     this.clientId = null;
+  }
+
+  isLocked(): boolean {
+    return !!this.editing && this.editing.amountPaid > 0;
   }
 
   invoiceTotal(): number {

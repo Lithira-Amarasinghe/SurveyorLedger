@@ -122,4 +122,24 @@ public class QuotationServiceTests : WorkspaceIntegrationTestBase
         await Assert.ThrowsAsync<ValidationException>(
             () => _quotationService.ConvertToInvoiceAsync(WorkspaceId, AdminId, quotation.Id, new ConvertQuotationRequest()));
     }
+
+    [Fact]
+    public async Task CreateAsync_NegativeTaxRate_Throws()
+    {
+        var (job, clientId) = await SeedJobWithClientParticipantAsync();
+        var request = MakeRequest(clientId, job.Id);
+        request.TaxRatePercent = -5m;
+
+        await Assert.ThrowsAsync<ValidationException>(() => _quotationService.CreateAsync(WorkspaceId, AdminId, request));
+    }
+
+    [Fact]
+    public async Task ConvertToInvoiceAsync_DiscountExceedsSubtotal_Throws()
+    {
+        var (job, clientId) = await SeedJobWithClientParticipantAsync();
+        var quotation = await _quotationService.CreateAsync(WorkspaceId, AdminId, MakeRequest(clientId, job.Id));
+
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            _quotationService.ConvertToInvoiceAsync(WorkspaceId, AdminId, quotation.Id, new ConvertQuotationRequest { DiscountAmount = 999999m }));
+    }
 }

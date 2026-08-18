@@ -53,6 +53,7 @@ public class InvoiceService : IInvoiceService
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, request.JobId, "create");
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
         ValidateLineItems(request.LineItems);
+        ValidateFinancials(request.TaxRatePercent, request.DiscountAmount, request.LineItems);
         ValidateInstallments(request.Installments, request.LineItems, request.TaxRatePercent, request.DiscountAmount);
 
         var invoice = new Invoice
@@ -115,8 +116,18 @@ public class InvoiceService : IInvoiceService
     {
         var invoice = await FindInvoiceAsync(workspaceId, invoiceId);
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, invoice.JobId, "edit");
+
+        // Once money has moved, the figures behind that payment are locked - only the
+        // due date stays editable. Prevents e.g. shrinking the total below AmountPaid
+        // (negative balance) or silently reverting a PartiallyPaid/Paid invoice back to
+        // Draft. Same "no touching it once paid" principle DeleteAsync already enforces
+        // for the delete path.
+        if (invoice.Payments.Count > 0)
+            EnsureOnlyDueDateChanged(invoice, request);
+
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
         ValidateLineItems(request.LineItems);
+        ValidateFinancials(request.TaxRatePercent, request.DiscountAmount, request.LineItems);
         ValidateInstallments(request.Installments, request.LineItems, request.TaxRatePercent, request.DiscountAmount);
 
         invoice.ClientId = request.ClientId;
@@ -174,6 +185,8 @@ public class InvoiceService : IInvoiceService
             throw new ValidationException($"Method must be one of: {string.Join(", ", AllowedMethods)}.");
         if (request.Amount <= 0)
             throw new ValidationException("Amount must be positive.");
+        if (request.ReceivedAt.Date > DateTime.UtcNow.Date)
+            throw new ValidationException("Received date cannot be in the future.");
 
         var (total, amountPaid, balance, _, _) = ComputeInvoiceTotals(invoice);
         if (request.Amount > balance)
@@ -328,6 +341,42 @@ public class InvoiceService : IInvoiceService
             throw new ValidationException("At least one line item is required.");
         if (items.Any(i => i.Quantity <= 0 || i.UnitPrice < 0))
             throw new ValidationException("Line item quantity must be positive and unit price cannot be negative.");
+    }
+
+    /// <summary>Guards against a negative total: tax rate must be non-negative, discount
+    /// must be non-negative and cannot exceed the subtotal it's discounting.</summary>
+    private static void ValidateFinancials(decimal taxRatePercent, decimal discountAmount, List<LineItemDto> lineItems)
+    {
+        if (taxRatePercent < 0)
+            throw new ValidationException("Tax rate cannot be negative.");
+        if (discountAmount < 0)
+            throw new ValidationException("Discount amount cannot be negative.");
+
+        var subtotal = lineItems.Sum(li => li.Quantity * li.UnitPrice);
+        if (discountAmount > subtotal)
+            throw new ValidationException($"Discount ({discountAmount}) cannot exceed the subtotal ({subtotal}).");
+    }
+
+    /// <summary>Once a payment exists, only DueDate may change - everything that affects
+    /// the invoice's figures (client, job, line items, tax, discount, installments,
+    /// status) is locked. Compares by value, not reference, since the request always
+    /// carries the full current state back (line-item collection is replaced wholesale
+    /// on every save, not patched).</summary>
+    private static void EnsureOnlyDueDateChanged(Invoice invoice, InvoiceRequest request)
+    {
+        var lineItemsChanged = invoice.LineItems.Count != request.LineItems.Count
+            || invoice.LineItems.OrderBy(li => li.Id).Select(li => (li.Description, li.Quantity, li.UnitPrice))
+                .Except(request.LineItems.Select(li => (li.Description.Trim(), li.Quantity, li.UnitPrice))).Any();
+
+        if (invoice.ClientId != request.ClientId
+            || invoice.JobId != request.JobId
+            || invoice.TaxRatePercent != request.TaxRatePercent
+            || invoice.DiscountAmount != request.DiscountAmount
+            || (request.Status != null && request.Status != invoice.Status)
+            || lineItemsChanged)
+        {
+            throw new ConflictException("This invoice already has recorded payments - only the due date can be changed. Cancel and reissue instead if the amount is wrong.");
+        }
     }
 
     /// <summary>Empty schedule is always valid - installments are optional. When present,

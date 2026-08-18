@@ -344,4 +344,75 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
         Assert.Equal("Paid", statuses[0].Status);
         Assert.Equal("Pending", statuses[1].Status);
     }
+
+    [Fact]
+    public async Task UpdateAsync_AfterPayment_CannotChangeLineItems()
+    {
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
+        await _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 10000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null);
+
+        await Assert.ThrowsAsync<ConflictException>(() => _invoiceService.UpdateAsync(WorkspaceId, AdminId, invoiceId, new InvoiceRequest
+        {
+            ClientId = clientPersonId,
+            JobId = job.Id,
+            LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 5000m } }, // shrunk below AmountPaid
+            TaxRatePercent = 0,
+            DiscountAmount = 0,
+            Status = "Sent",
+            Installments = new List<InstallmentDto>()
+        }));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_AfterPayment_CanStillChangeDueDate()
+    {
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
+        await _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 10000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null);
+        var invoice = await _invoiceService.GetByIdAsync(WorkspaceId, AdminId, invoiceId);
+        var newDueDate = DateTime.UtcNow.Date.AddDays(14);
+
+        var updated = await _invoiceService.UpdateAsync(WorkspaceId, AdminId, invoiceId, new InvoiceRequest
+        {
+            ClientId = invoice.ClientId,
+            JobId = invoice.JobId,
+            LineItems = invoice.LineItems.Select(li => new LineItemDto { Description = li.Description, Quantity = li.Quantity, UnitPrice = li.UnitPrice }).ToList(),
+            TaxRatePercent = invoice.TaxRatePercent,
+            DiscountAmount = invoice.DiscountAmount,
+            DueDate = newDueDate,
+            Status = invoice.Status,
+            Installments = new List<InstallmentDto>()
+        });
+
+        Assert.Equal(newDueDate, updated.DueDate);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DiscountExceedsSubtotal_Throws()
+    {
+        _invoiceService = GetService<IInvoiceService>();
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+
+        await Assert.ThrowsAsync<ValidationException>(() => _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
+        {
+            ClientId = clientPersonId,
+            JobId = job.Id,
+            LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 1000m } },
+            TaxRatePercent = 0,
+            DiscountAmount = 5000m,
+            Status = "Draft",
+            Installments = new List<InstallmentDto>()
+        }));
+    }
+
+    [Fact]
+    public async Task RecordPaymentAsync_FutureDated_Throws()
+    {
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
+
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 1000m, Method = "Cash", ReceivedAt = DateTime.UtcNow.AddDays(1) }, null));
+    }
 }
