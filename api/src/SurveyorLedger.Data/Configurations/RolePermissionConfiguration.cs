@@ -121,7 +121,10 @@ public class RolePermissionConfiguration : IEntityTypeConfiguration<RolePermissi
             Grant(new Guid("00000000-0000-0000-0000-000000000289"), RoleConfiguration.AdminRoleId, PermissionConfiguration.DeleteBudgetId),
             // Expense view_all - Admin sees every StaffCost row (payroll-equivalent data);
             // Surveyor only their own (ExpenseService filters StaffCost rows without this).
-            Grant(new Guid("00000000-0000-0000-0000-000000000290"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewAllExpenseId)
+            Grant(new Guid("00000000-0000-0000-0000-000000000290"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewAllExpenseId),
+            // Reports - Admin only, single view permission covering all four report
+            // endpoints (one page, one access level).
+            Grant(new Guid("00000000-0000-0000-0000-000000000291"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewReportId)
         );
     }
 }

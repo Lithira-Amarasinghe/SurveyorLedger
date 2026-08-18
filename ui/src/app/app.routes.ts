@@ -22,6 +22,7 @@ import { InvoicePrintComponent } from './pages/billing/print/invoice-print.compo
 import { QuotationPrintComponent } from './pages/billing/print/quotation-print.component';
 import { ReceiptPrintComponent } from './pages/billing/print/receipt-print.component';
 import { InvitationsComponent } from './pages/invitations/invitations.component';
+import { ReportsComponent } from './pages/workspace/reports.component';
 import { ProfileComponent } from './pages/profile/profile.component';
 import { AppShellComponent } from './shell/app-shell.component';
 import { authGuard } from './core/auth.guard';
@@ -72,6 +73,7 @@ export const routes: Routes = [
           { path: 'billing/invoices', component: InvoiceListComponent },
           { path: 'members', component: MembersComponent },
           { path: 'roles', component: RolesComponent },
+          { path: 'reports', component: ReportsComponent },
         ]
       },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },

@@ -40,6 +40,7 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
     public static readonly Guid EditBudgetId = new("00000000-0000-0000-0000-000000000141");
     public static readonly Guid DeleteBudgetId = new("00000000-0000-0000-0000-000000000142");
     public static readonly Guid ViewAllExpenseId = new("00000000-0000-0000-0000-000000000143");
+    public static readonly Guid ViewReportId = new("00000000-0000-0000-0000-000000000144");
 
     public void Configure(EntityTypeBuilder<Permission> builder)
     {
@@ -93,7 +94,8 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
             new Permission { Id = CreateBudgetId, Name = "budget.create", Description = "Set a job's budget for the first time.", Resource = "budget", Action = "create", Scope = null, CreatedAt = seededAt },
             new Permission { Id = EditBudgetId, Name = "budget.edit", Description = "Edit a job's existing budget.", Resource = "budget", Action = "edit", Scope = null, CreatedAt = seededAt },
             new Permission { Id = DeleteBudgetId, Name = "budget.delete", Description = "Clear a job's budget.", Resource = "budget", Action = "delete", Scope = null, CreatedAt = seededAt },
-            new Permission { Id = ViewAllExpenseId, Name = "expense.view_all", Description = "View every StaffCost expense on a job, not just the caller's own payee rows.", Resource = "expense", Action = "view_all", Scope = null, CreatedAt = seededAt }
+            new Permission { Id = ViewAllExpenseId, Name = "expense.view_all", Description = "View every StaffCost expense on a job, not just the caller's own payee rows.", Resource = "expense", Action = "view_all", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = ViewReportId, Name = "report.view", Description = "View workspace-wide financial reports.", Resource = "report", Action = "view", Scope = null, CreatedAt = seededAt }
         );
     }
 }
