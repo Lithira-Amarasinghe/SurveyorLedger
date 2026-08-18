@@ -26,6 +26,14 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
             li.Property(x => x.UnitPrice).HasColumnType("decimal(18,2)");
         });
 
+        builder.OwnsMany(x => x.Installments, i =>
+        {
+            i.ToTable("InvoiceInstallments");
+            i.WithOwner().HasForeignKey("InvoiceId");
+            i.HasKey(x => x.Id);
+            i.Property(x => x.Amount).HasColumnType("decimal(18,2)");
+        });
+
         builder.HasIndex(x => x.JobId);
         builder.HasIndex(x => new { x.JobId, x.Number }).IsUnique();
         builder.HasIndex(x => x.IsActive);

@@ -14,6 +14,7 @@ public class Invoice
     public Guid? QuotationId { get; set; }
     public string Number { get; set; }
     public List<InvoiceLineItem> LineItems { get; set; } = new();
+    public List<InvoiceInstallment> Installments { get; set; } = new();
     public decimal TaxRatePercent { get; set; }
     public decimal DiscountAmount { get; set; }
     public string Status { get; set; } = "Draft";

@@ -9,6 +9,20 @@ public class InvoiceRequest
     public decimal DiscountAmount { get; set; }
     public DateTime? DueDate { get; set; }
     public string? Status { get; set; }
+    public List<InstallmentDto> Installments { get; set; } = new();
+}
+
+public class InstallmentDto
+{
+    public decimal Amount { get; set; }
+    public DateTime DueDate { get; set; }
+}
+
+public class InstallmentResponse
+{
+    public decimal Amount { get; set; }
+    public DateTime DueDate { get; set; }
+    public string Status { get; set; }
 }
 
 public class SendInvoiceRequest
@@ -57,4 +71,5 @@ public class InvoiceResponse
     public int DaysOverdue { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public List<InstallmentResponse> Installments { get; set; } = new();
 }

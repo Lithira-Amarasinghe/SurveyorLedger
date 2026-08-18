@@ -1,15 +1,16 @@
 import { Component, EventEmitter, Input, OnInit, Output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Invoice, InvoiceRequest, InvoiceService, LineItem } from '../../../../core/billing.service';
+import { Installment, Invoice, InvoiceRequest, InvoiceService, LineItem } from '../../../../core/billing.service';
 import { Job, JobService } from '../../../../core/job.service';
 import { BillingRecipientPickerComponent } from '../../../../shared/billing-recipient-picker/billing-recipient-picker.component';
 import { LineItemEditorComponent } from '../../../../shared/line-item-editor/line-item-editor.component';
+import { InstallmentEditorComponent } from '../../../../shared/installment-editor/installment-editor.component';
 
 @Component({
   selector: 'app-invoice-form-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, BillingRecipientPickerComponent, LineItemEditorComponent],
+  imports: [CommonModule, FormsModule, BillingRecipientPickerComponent, LineItemEditorComponent, InstallmentEditorComponent],
   template: `
     <div class="fixed inset-0 z-50 bg-neutral-900/40 flex items-center justify-center px-lg" (click)="cancel.emit()">
       <div class="card w-full max-w-lg" (click)="$event.stopPropagation()">
@@ -47,6 +48,8 @@ import { LineItemEditorComponent } from '../../../../shared/line-item-editor/lin
             </div>
           </div>
 
+          <app-installment-editor [items]="installments" [invoiceTotal]="invoiceTotal()" (itemsChange)="installments = $event" />
+
           <div>
             <label class="block text-xs font-medium text-neutral-700 mb-xs">Status</label>
             <select class="input-field" name="status" [(ngModel)]="status">
@@ -67,7 +70,7 @@ import { LineItemEditorComponent } from '../../../../shared/line-item-editor/lin
 
           <div class="flex justify-end gap-sm pt-sm">
             <button type="button" class="btn-secondary" (click)="cancel.emit()">Cancel</button>
-            <button type="submit" class="btn-primary" [disabled]="loading() || !jobId || !clientId || lineItems.length === 0">
+            <button type="submit" class="btn-primary" [disabled]="loading() || !jobId || !clientId || lineItems.length === 0 || !installmentsValid()">
               {{ loading() ? 'Saving…' : editing ? 'Save' : 'Create' }}
             </button>
           </div>
@@ -91,6 +94,7 @@ export class InvoiceFormModalComponent implements OnInit {
   discountAmount = 0;
   dueDate = '';
   status: 'Draft' | 'Sent' | 'Cancelled' = 'Draft';
+  installments: Installment[] = [];
   loading = signal(false);
   error = signal('');
 
@@ -111,6 +115,7 @@ export class InvoiceFormModalComponent implements OnInit {
       this.discountAmount = this.editing.discountAmount;
       this.dueDate = this.editing.dueDate ? this.editing.dueDate.substring(0, 10) : '';
       this.status = this.editing.status === 'Draft' || this.editing.status === 'Sent' || this.editing.status === 'Cancelled' ? this.editing.status : 'Sent';
+      this.installments = this.editing.installments.map(i => ({ amount: i.amount, dueDate: i.dueDate.substring(0, 10) }));
     }
   }
 
@@ -118,8 +123,18 @@ export class InvoiceFormModalComponent implements OnInit {
     this.clientId = null;
   }
 
+  invoiceTotal(): number {
+    const subtotal = this.lineItems.reduce((sum, li) => sum + li.quantity * li.unitPrice, 0);
+    return subtotal - this.discountAmount + (subtotal * this.taxRatePercent) / 100;
+  }
+
+  installmentsValid(): boolean {
+    if (this.installments.length === 0) return true;
+    return Math.round(this.installments.reduce((sum, i) => sum + i.amount, 0) * 100) === Math.round(this.invoiceTotal() * 100);
+  }
+
   submit(): void {
-    if (!this.jobId || !this.clientId || this.lineItems.length === 0) return;
+    if (!this.jobId || !this.clientId || this.lineItems.length === 0 || !this.installmentsValid()) return;
     this.error.set('');
     this.loading.set(true);
 
@@ -130,7 +145,8 @@ export class InvoiceFormModalComponent implements OnInit {
       taxRatePercent: this.taxRatePercent,
       discountAmount: this.discountAmount,
       dueDate: this.dueDate || undefined,
-      status: this.status
+      status: this.status,
+      installments: this.installments
     };
 
     const save$ = this.editing

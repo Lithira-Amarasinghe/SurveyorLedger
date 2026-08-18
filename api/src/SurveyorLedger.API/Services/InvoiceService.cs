@@ -20,6 +20,7 @@ public interface IInvoiceService
     Task<List<Payment>> GetPaymentsAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId);
     Task SendAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, List<Guid> recipientPersonIds, string appBaseUrl);
     (decimal Total, decimal AmountPaid, decimal Balance, bool IsOverdue, int DaysOverdue) ComputeInvoiceTotals(Invoice invoice);
+    List<(InvoiceInstallment Installment, string Status)> ComputeInstallmentStatuses(Invoice invoice);
 }
 
 /// <summary>
@@ -52,6 +53,7 @@ public class InvoiceService : IInvoiceService
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, request.JobId, "create");
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
         ValidateLineItems(request.LineItems);
+        ValidateInstallments(request.Installments, request.LineItems, request.TaxRatePercent, request.DiscountAmount);
 
         var invoice = new Invoice
         {
@@ -59,6 +61,7 @@ public class InvoiceService : IInvoiceService
             ClientId = request.ClientId,
             JobId = request.JobId,
             LineItems = request.LineItems.Select(i => new InvoiceLineItem { Id = Guid.NewGuid(), Description = i.Description.Trim(), Quantity = i.Quantity, UnitPrice = i.UnitPrice }).ToList(),
+            Installments = request.Installments.Select(i => new InvoiceInstallment { Id = Guid.NewGuid(), Amount = i.Amount, DueDate = i.DueDate }).ToList(),
             TaxRatePercent = request.TaxRatePercent,
             DiscountAmount = request.DiscountAmount,
             Status = request.Status ?? "Draft",
@@ -114,6 +117,7 @@ public class InvoiceService : IInvoiceService
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, invoice.JobId, "edit");
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
         ValidateLineItems(request.LineItems);
+        ValidateInstallments(request.Installments, request.LineItems, request.TaxRatePercent, request.DiscountAmount);
 
         invoice.ClientId = request.ClientId;
         invoice.JobId = request.JobId;
@@ -127,6 +131,14 @@ public class InvoiceService : IInvoiceService
         {
             invoice.LineItems.Add(item);
             _context.Entry(item).State = EntityState.Added;
+        }
+        foreach (var old in invoice.Installments.ToList())
+            _context.Remove(old);
+        invoice.Installments.Clear();
+        foreach (var installment in request.Installments.Select(i => new InvoiceInstallment { Id = Guid.NewGuid(), Amount = i.Amount, DueDate = i.DueDate }))
+        {
+            invoice.Installments.Add(installment);
+            _context.Entry(installment).State = EntityState.Added;
         }
         invoice.TaxRatePercent = request.TaxRatePercent;
         invoice.DiscountAmount = request.DiscountAmount;
@@ -318,9 +330,54 @@ public class InvoiceService : IInvoiceService
             throw new ValidationException("Line item quantity must be positive and unit price cannot be negative.");
     }
 
+    /// <summary>Empty schedule is always valid - installments are optional. When present,
+    /// checked only at write time against the total as computed from this same request -
+    /// not re-validated if the invoice is edited again without touching the schedule (see
+    /// design spec's "accepted limitation" note).</summary>
+    private static void ValidateInstallments(List<InstallmentDto> installments, List<LineItemDto> lineItems, decimal taxRatePercent, decimal discountAmount)
+    {
+        if (installments.Count == 0)
+            return;
+        if (installments.Any(i => i.Amount <= 0))
+            throw new ValidationException("Installment amount must be positive.");
+
+        var subtotal = lineItems.Sum(li => li.Quantity * li.UnitPrice);
+        var total = subtotal - discountAmount + subtotal * taxRatePercent / 100m;
+        var scheduled = installments.Sum(i => i.Amount);
+        if (scheduled != total)
+            throw new ValidationException($"Installments must sum to the invoice total ({total}), got {scheduled}.");
+    }
+
+    /// <summary>Ordered by due date, walks cumulative installment amount against the
+    /// invoice's cumulative AmountPaid - Paid once that running total covers the
+    /// installment, Overdue if its due date has passed and it isn't yet, else Pending.
+    /// Purely a display layer - ComputeInvoiceTotals/Invoice.Status are unaffected.</summary>
+    public List<(InvoiceInstallment Installment, string Status)> ComputeInstallmentStatuses(Invoice invoice)
+    {
+        var (_, amountPaid, _, _, _) = ComputeInvoiceTotals(invoice);
+        var ordered = invoice.Installments.OrderBy(i => i.DueDate).ToList();
+        var result = new List<(InvoiceInstallment, string)>();
+        var cumulative = 0m;
+
+        foreach (var installment in ordered)
+        {
+            cumulative += installment.Amount;
+            string status;
+            if (amountPaid >= cumulative)
+                status = "Paid";
+            else if (installment.DueDate.Date < DateTime.UtcNow.Date)
+                status = "Overdue";
+            else
+                status = "Pending";
+            result.Add((installment, status));
+        }
+
+        return result;
+    }
+
     private async Task<Invoice> FindInvoiceAsync(Guid workspaceId, Guid invoiceId)
     {
-        return await _context.Invoices.Include(i => i.Payments).Include(i => i.LineItems).Include(i => i.Client)
+        return await _context.Invoices.Include(i => i.Payments).Include(i => i.LineItems).Include(i => i.Installments).Include(i => i.Client)
             .FirstOrDefaultAsync(i => i.Id == invoiceId && i.Job.WorkspaceId == workspaceId)
             ?? throw new NotFoundException("Invoice not found");
     }

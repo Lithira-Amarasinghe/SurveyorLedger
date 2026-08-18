@@ -272,4 +272,76 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
         var stub = (StubEmailService)_emailService;
         Assert.Contains(stub.Sent, s => s.DocumentType == "Invoice");
     }
+
+    [Fact]
+    public async Task CreateAsync_InstallmentsSummingToTotal_Persists()
+    {
+        _invoiceService = GetService<IInvoiceService>();
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+
+        var invoice = await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
+        {
+            ClientId = clientPersonId,
+            JobId = job.Id,
+            LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 100000m } },
+            TaxRatePercent = 0,
+            DiscountAmount = 0,
+            Status = "Draft",
+            Installments = new List<InstallmentDto>
+            {
+                new() { Amount = 30000m, DueDate = DateTime.UtcNow.Date },
+                new() { Amount = 70000m, DueDate = DateTime.UtcNow.Date.AddDays(30) }
+            }
+        });
+
+        Assert.Equal(2, invoice.Installments.Count);
+    }
+
+    [Fact]
+    public async Task CreateAsync_InstallmentsNotMatchingTotal_Throws()
+    {
+        _invoiceService = GetService<IInvoiceService>();
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+
+        await Assert.ThrowsAsync<ValidationException>(() => _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
+        {
+            ClientId = clientPersonId,
+            JobId = job.Id,
+            LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 100000m } },
+            TaxRatePercent = 0,
+            DiscountAmount = 0,
+            Status = "Draft",
+            Installments = new List<InstallmentDto> { new() { Amount = 50000m, DueDate = DateTime.UtcNow.Date } }
+        }));
+    }
+
+    [Fact]
+    public async Task ComputeInstallmentStatuses_ReflectsPaymentsAndDueDates()
+    {
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        _invoiceService = GetService<IInvoiceService>();
+
+        var invoice = await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
+        {
+            ClientId = clientPersonId,
+            JobId = job.Id,
+            LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 100000m } },
+            TaxRatePercent = 0,
+            DiscountAmount = 0,
+            Status = "Sent",
+            Installments = new List<InstallmentDto>
+            {
+                new() { Amount = 30000m, DueDate = DateTime.UtcNow.Date.AddDays(-10) }, // overdue if unpaid
+                new() { Amount = 70000m, DueDate = DateTime.UtcNow.Date.AddDays(30) }   // pending
+            }
+        });
+
+        await _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoice.Id, new PaymentRequest { Amount = 30000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null);
+
+        var refreshed = await _invoiceService.GetByIdAsync(WorkspaceId, AdminId, invoice.Id);
+        var statuses = _invoiceService.ComputeInstallmentStatuses(refreshed);
+
+        Assert.Equal("Paid", statuses[0].Status);
+        Assert.Equal("Pending", statuses[1].Status);
+    }
 }

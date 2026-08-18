@@ -394,6 +394,22 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                       <td class="px-lg py-sm text-neutral-600">{{ invoice.total | number: '1.2-2' }}</td>
                       <td class="px-lg py-sm text-neutral-600">{{ invoice.status }}</td>
                     </tr>
+                    @if (invoice.installments.length > 0) {
+                      <tr class="border-t border-neutral-100 bg-neutral-50">
+                        <td colspan="3" class="px-lg py-sm">
+                          <div class="flex flex-wrap gap-sm text-xs">
+                            @for (installment of invoice.installments; track installment.dueDate) {
+                              <span
+                                class="px-sm py-xs rounded bg-neutral-100 text-neutral-700"
+                                [class.text-primary-500]="installment.status === 'Overdue'"
+                              >
+                                {{ installment.dueDate | date: 'mediumDate' }} · {{ installment.amount | number: '1.2-2' }} · {{ installment.status }}
+                              </span>
+                            }
+                          </div>
+                        </td>
+                      </tr>
+                    }
                   }
                 </tbody>
               </table>

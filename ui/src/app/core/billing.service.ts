@@ -64,6 +64,7 @@ export interface Invoice {
   daysOverdue: number;
   createdAt: string;
   updatedAt: string;
+  installments: Installment[];
 }
 
 export interface InvoiceRequest {
@@ -74,6 +75,15 @@ export interface InvoiceRequest {
   discountAmount: number;
   dueDate?: string;
   status?: 'Draft' | 'Sent' | 'Cancelled';
+  installments: Installment[];
+}
+
+export type InstallmentStatus = 'Paid' | 'Overdue' | 'Pending';
+
+export interface Installment {
+  amount: number;
+  dueDate: string;
+  status?: InstallmentStatus;
 }
 
 export interface Payment {

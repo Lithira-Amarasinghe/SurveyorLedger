@@ -104,7 +104,10 @@ namespace SurveyorLedger.API.Controllers
                 IsOverdue = isOverdue,
                 DaysOverdue = daysOverdue,
                 CreatedAt = i.CreatedAt,
-                UpdatedAt = i.UpdatedAt
+                UpdatedAt = i.UpdatedAt,
+                Installments = invoiceService.ComputeInstallmentStatuses(i)
+                    .Select(x => new InstallmentResponse { Amount = x.Installment.Amount, DueDate = x.Installment.DueDate, Status = x.Status })
+                    .ToList()
             };
         }
 
