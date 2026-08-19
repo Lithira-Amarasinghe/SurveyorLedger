@@ -649,9 +649,10 @@ export class LandDetailPanelComponent implements OnInit {
   province = '';
   provinces = PROVINCES;
 
-  /** Only the selected province's districts once one is chosen - otherwise every district, so picking a district first still works (and auto-fills the province via onDistrictChange). */
+  /** Only the selected province's districts once one is chosen - otherwise (or if the loaded record's province is legacy free text that doesn't match our canonical list) every district, so a mismatched/empty province never hides every option. */
   get districtOptions(): string[] {
-    return this.province ? DISTRICTS_BY_PROVINCE[this.province] ?? [] : Object.values(DISTRICTS_BY_PROVINCE).flat();
+    if (this.province && DISTRICTS_BY_PROVINCE[this.province]) return DISTRICTS_BY_PROVINCE[this.province];
+    return Object.values(DISTRICTS_BY_PROVINCE).flat();
   }
 
   onProvinceChange(newProvince: string): void {
