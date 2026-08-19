@@ -51,7 +51,7 @@ interface NominatimResult {
           <input
             class="input-field flex-1"
             type="text"
-            placeholder="Search for an address, or click the map to add a point…"
+            placeholder="Search for an address…"
             [(ngModel)]="searchQuery"
             (keydown.enter)="search()"
           />
@@ -75,9 +75,24 @@ interface NominatimResult {
             }
           </div>
         }
+        <button
+          type="button"
+          class="text-sm"
+          [class.text-primary-600]="!addMode()"
+          [class.text-primary-500]="addMode()"
+          [class.font-medium]="addMode()"
+          (click)="toggleAddMode()"
+        >
+          {{ addMode() ? '✕ Cancel adding a point' : '+ Add a point' }}
+        </button>
       }
       <div class="relative">
-        <div #mapEl class="w-full rounded-md border border-neutral-200" [class]="heightClass"></div>
+        <div #mapEl class="w-full rounded-md border border-neutral-200" [class]="heightClass" [class.cursor-crosshair]="addMode()"></div>
+        @if (addMode()) {
+          <div class="absolute top-sm left-sm z-[1000] bg-primary-600 text-white text-xs px-sm py-xs rounded-md shadow pointer-events-none">
+            Tap the map to place a point
+          </div>
+        }
         @if (markers.length > 0) {
           <button
             type="button"
@@ -90,7 +105,7 @@ interface NominatimResult {
         }
       </div>
       @if (!readonly) {
-        <p class="text-xs text-neutral-500">Click the map (or pick a search result) to add a point. Drag an existing pin to move it.</p>
+        <p class="text-xs text-neutral-500">Drag an existing pin to move it.</p>
       }
     </div>
   `
@@ -115,6 +130,8 @@ export class LandLocationPickerComponent implements OnInit, OnChanges, OnDestroy
   searchResults = signal<NominatimResult[]>([]);
   searching = signal(false);
   searchError = signal('');
+  /** Click-to-add must be explicitly armed - an un-armed map click just pans/zooms like normal, so a stray tap (very easy to trigger on a touchscreen, or while just scrolling past the map) never drops an accidental pending point. Auto-disarms after one point so the next incidental tap doesn't add another. */
+  addMode = signal(false);
 
   private map!: L.Map;
   private markerLayers = new Map<string, L.Marker>();
@@ -137,7 +154,9 @@ export class LandLocationPickerComponent implements OnInit, OnChanges, OnDestroy
 
     if (!this.readonly) {
       this.map.on('click', (e: L.LeafletMouseEvent) => {
+        if (!this.addMode()) return;
         this.pointAdded.emit({ lat: e.latlng.lat, lng: e.latlng.lng });
+        this.addMode.set(false);
       });
     }
 
@@ -178,6 +197,10 @@ export class LandLocationPickerComponent implements OnInit, OnChanges, OnDestroy
   ngOnDestroy(): void {
     this.resizeObserver?.disconnect();
     this.map?.remove();
+  }
+
+  toggleAddMode(): void {
+    this.addMode.update(v => !v);
   }
 
   /**
