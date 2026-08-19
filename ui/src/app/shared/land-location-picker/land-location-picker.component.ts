@@ -108,6 +108,7 @@ export class LandLocationPickerComponent implements OnInit, OnChanges, OnDestroy
   private markerLayers = new Map<string, L.Marker>();
   private pendingLayer: L.Marker | null = null;
   private hasFitBounds = false;
+  private hasCorrectedInitialSize = false;
   private resizeObserver: ResizeObserver | null = null;
 
   ngOnInit(): void {
@@ -134,9 +135,20 @@ export class LandLocationPickerComponent implements OnInit, OnChanges, OnDestroy
 
     // Leaflet lays out tiles/markers against the container's size at construction time - if
     // this component mounts inside a collapsed/tabbed/still-animating panel, that size can be
-    // zero or stale, leaving blank tiles until the user manually zooms. Re-running invalidateSize
-    // whenever the container's real size changes fixes that without a fragile fixed delay.
-    this.resizeObserver = new ResizeObserver(() => this.map.invalidateSize());
+    // zero or stale, leaving blank tiles until the user manually zooms. invalidateSize() alone
+    // only fixes the tiles though: fitToMarkers()/setView() already ran above against that same
+    // wrong size, so the view's center/zoom can still be locked onto the wrong place - panning
+    // every marker out of the visible area even once the tiles repaint. Re-running fitToMarkers
+    // once the container reaches its real size fixes both at once; the flag keeps this a one-time
+    // correction so it doesn't fight a manual pan/zoom on every later resize.
+    this.resizeObserver = new ResizeObserver(() => {
+      this.map.invalidateSize();
+      if (!this.hasCorrectedInitialSize) {
+        this.hasCorrectedInitialSize = true;
+        this.hasFitBounds = false;
+        this.fitToMarkers();
+      }
+    });
     this.resizeObserver.observe(this.mapEl.nativeElement);
   }
 
