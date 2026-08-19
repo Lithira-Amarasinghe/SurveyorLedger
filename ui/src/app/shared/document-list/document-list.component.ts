@@ -56,17 +56,19 @@ export interface DocRow {
                 <span class="text-neutral-500 block text-xs">{{ group.rows[0].uploadedByName }} · {{ group.rows[0].createdAt | date: 'mediumDate' }}</span>
               </div>
               <div class="flex items-center gap-xs flex-shrink-0" (click)="$event.stopPropagation()">
-                @if (group.rows[0].requestId) {
-                  <!-- A request-derived group is reopened, not deleted - matches the existing single-row rule (row.requestId shows Reopen instead of Delete), just applied to the whole group instead of one doc. -->
-                  <button type="button" class="icon-btn" title="Reopen request" (click)="requestReopen.emit(group.rows[0])"><app-icon name="reopen" /></button>
-                } @else if (confirmingRemoveGroupId() === group.batchId) {
-                  <span class="text-xs text-neutral-600 whitespace-nowrap">
-                    Remove all?
-                    <button type="button" class="text-primary-500 font-medium ml-xs" (click)="confirmRemoveGroup(group.batchId)">Yes</button>
-                    <button type="button" class="text-neutral-500 ml-xs" (click)="confirmingRemoveGroupId.set(null)">No</button>
-                  </span>
-                } @else {
-                  <button type="button" class="icon-btn text-primary-500" title="Remove all" (click)="confirmingRemoveGroupId.set(group.batchId)"><app-icon name="delete" /></button>
+                @if (!group.rows[0].readonly) {
+                  @if (group.rows[0].requestId) {
+                    <!-- A request-derived group is reopened, not deleted - matches the existing single-row rule (row.requestId shows Reopen instead of Delete), just applied to the whole group instead of one doc. -->
+                    <button type="button" class="icon-btn" title="Reopen request" (click)="requestReopen.emit(group.rows[0])"><app-icon name="reopen" /></button>
+                  } @else if (confirmingRemoveGroupId() === group.batchId) {
+                    <span class="text-xs text-neutral-600 whitespace-nowrap">
+                      Remove all?
+                      <button type="button" class="text-primary-500 font-medium ml-xs" (click)="confirmRemoveGroup(group.batchId)">Yes</button>
+                      <button type="button" class="text-neutral-500 ml-xs" (click)="confirmingRemoveGroupId.set(null)">No</button>
+                    </span>
+                  } @else {
+                    <button type="button" class="icon-btn text-primary-500" title="Remove all" (click)="confirmingRemoveGroupId.set(group.batchId)"><app-icon name="delete" /></button>
+                  }
                 }
                 <app-icon [name]="expandedGroupId() === group.batchId ? 'chevronUp' : 'chevronDown'" />
               </div>

@@ -493,6 +493,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
             (view)="onJobDocView($event)"
             (download)="onJobDocDownload($event)"
             (remove)="onJobDocRemove($event)"
+            (removeGroup)="onRemoveGroup($event)"
             (rename)="onJobDocRename($event)"
             (toggleVisibility)="onJobDocToggleVisibility($event)"
             (requestFulfill)="onFulfillDocRequest($event)"
@@ -804,16 +805,16 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     const rows: DocRow[] = [];
 
     for (const d of this.documents()) {
-      const request = requests.find(r => r.fulfilledDocumentId === d.documentId) ?? null;
+      const request = d.uploadBatchId ? requests.find(r => r.fulfilledBatchId === d.uploadBatchId) ?? null : null;
       rows.push({
         key: d.documentId, ownerKind: 'job', ownerId: this.jobId, documentId: d.documentId,
         fileName: d.fileName, contentType: d.contentType, uploadedByName: d.uploadedByName, createdAt: d.createdAt,
-        category: d.category, visibility: d.visibility,
+        category: d.category, visibility: d.visibility, batchId: d.uploadBatchId,
         requestId: request?.requestId ?? null, requestTitle: request?.title ?? null, requestStatus: request?.status ?? null
       });
     }
     for (const r of requests) {
-      if (!this.documents().some(d => d.documentId === r.fulfilledDocumentId)) {
+      if (!r.fulfilledBatchId) {
         rows.push({
           key: r.requestId, ownerKind: 'job', ownerId: this.jobId, documentId: null,
           fileName: null, contentType: null, uploadedByName: null, createdAt: null,
@@ -1142,7 +1143,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
           docs.map(d => ({
             key: d.documentId, ownerKind: 'land' as const, ownerId: land.landId, documentId: d.documentId,
             fileName: d.fileName, contentType: d.contentType, uploadedByName: d.uploadedByName, createdAt: d.createdAt,
-            sourceLabel: addressLine(land), readonly: true
+            batchId: d.uploadBatchId, sourceLabel: addressLine(land), readonly: true
           }))
         );
         this.landDocumentRows.set(rows);
@@ -1238,8 +1239,9 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   onDocumentFilesSelected(files: File[]): void {
     this.documentError.set('');
     const visibility = this.isClient() ? 'ClientVisible' : 'Internal';
+    const batchId = files.length > 1 ? crypto.randomUUID() : undefined;
     files.forEach(file =>
-      this.documentService.upload(this.workspaceId, this.jobId, file, 'Other', visibility).subscribe({
+      this.documentService.upload(this.workspaceId, this.jobId, file, 'Other', visibility, undefined, batchId).subscribe({
         next: (doc) => this.documents.update(list => [doc, ...list]),
         error: (err) => this.documentError.set(err.error?.message ?? 'Could not upload document.')
       })
@@ -1294,6 +1296,10 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     });
   }
 
+  onRemoveGroup(rows: DocRow[]): void {
+    rows.forEach(row => this.onJobDocRemove(row));
+  }
+
   onJobDocRemove(row: DocRow): void {
     if (row.ownerKind !== 'job') return;
     this.documentService.delete(this.workspaceId, this.jobId, row.documentId!).subscribe({
@@ -1324,10 +1330,11 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
       });
   }
 
-  onFulfillDocRequest(event: { row: DocRow; file: File }): void {
+  onFulfillDocRequest(event: { row: DocRow; files: File[] }): void {
     const visibility = this.isClient() ? 'ClientVisible' : 'Internal';
+    const batchId = event.row.batchId ?? crypto.randomUUID();
     this.documentError.set('');
-    this.documentRequestService.fulfill(this.workspaceId, this.jobId, event.row.requestId!, event.file, visibility).subscribe({
+    this.documentRequestService.fulfill(this.workspaceId, this.jobId, event.row.requestId!, event.files, batchId, visibility).subscribe({
       next: (fulfilled) => {
         this.documentRequests.update(list => list.map(r => (r.requestId === fulfilled.requestId ? fulfilled : r)));
         this.documentService.list(this.workspaceId, this.jobId).subscribe(documents => this.documents.set(documents));
