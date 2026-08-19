@@ -489,10 +489,11 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
           <h2 class="text-sm font-semibold text-neutral-900 mb-md">Documents</h2>
           <app-document-list
             [rows]="documentRows()"
-            [allowRename]="false"
+            [previewUrls]="previewUrls()"
             (view)="onJobDocView($event)"
             (download)="onJobDocDownload($event)"
             (remove)="onJobDocRemove($event)"
+            (rename)="onJobDocRename($event)"
             (toggleVisibility)="onJobDocToggleVisibility($event)"
             (requestFulfill)="onFulfillDocRequest($event)"
             (requestReopen)="reopenRequestRow($event)"
@@ -686,6 +687,8 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   documents = signal<Document[]>([]);
   viewingDocument = signal<{ fileName: string; contentType: string } | null>(null);
   viewingBlobUrl = signal<string | null>(null);
+  /** Inline preview object-URLs for image rows in the Documents card, keyed by documentId - covers Job's own documents and every linked land's documents. */
+  previewUrls = signal<Record<string, string>>({});
   documentError = signal('');
   documentRequests = signal<DocumentRequest[]>([]);
   jobInvoices = signal<Invoice[]>([]);
@@ -922,6 +925,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
         this.jobInvoices.set(invoices);
         this.jobQuotations.set(quotations);
         this.jobExpenses.set(expenses);
+        this.loadPreviews(this.documentRows());
         this.loading.set(false);
 
         if (job.canViewBudget) {
@@ -1134,16 +1138,26 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     }
     forkJoin(lands.map(land => this.landService.getDocuments(this.workspaceId, land.landId).pipe(map(docs => ({ land, docs })))))
       .subscribe(results => {
-        this.landDocumentRows.set(
-          results.flatMap(({ land, docs }) =>
-            docs.map(d => ({
-              key: d.documentId, ownerKind: 'land' as const, ownerId: land.landId, documentId: d.documentId,
-              fileName: d.fileName, contentType: d.contentType, uploadedByName: d.uploadedByName, createdAt: d.createdAt,
-              sourceLabel: addressLine(land), readonly: true
-            }))
-          )
+        const rows = results.flatMap(({ land, docs }) =>
+          docs.map(d => ({
+            key: d.documentId, ownerKind: 'land' as const, ownerId: land.landId, documentId: d.documentId,
+            fileName: d.fileName, contentType: d.contentType, uploadedByName: d.uploadedByName, createdAt: d.createdAt,
+            sourceLabel: addressLine(land), readonly: true
+          }))
         );
+        this.landDocumentRows.set(rows);
+        this.loadPreviews(rows);
       });
+  }
+
+  /** Fetches and caches an inline-preview object-URL for every image row not already cached - covers Job's own documents and every linked land's read-only rows. */
+  private loadPreviews(rows: DocRow[]): void {
+    for (const row of rows) {
+      if (!row.documentId || !row.contentType?.startsWith('image/') || this.previewUrls()[row.documentId]) continue;
+      this.docBlob(row).subscribe(blob => {
+        this.previewUrls.update(urls => ({ ...urls, [row.documentId!]: URL.createObjectURL(blob) }));
+      });
+    }
   }
 
   /** The land record itself was deleted (not just unlinked) - drop it locally, no separate unlink call needed. */
@@ -1232,14 +1246,16 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     );
   }
 
-  private jobDocBlob(row: DocRow) {
-    return this.documentService.getFileBlob(this.workspaceId, this.jobId, row.documentId!);
+  /** Job's own rows fetch through DocumentService; linked-land rows (ownerKind 'land', ownerId = that land's id) fetch through LandService - both dispatch through here so view/download/preview work for every row, not just Job's own. */
+  private docBlob(row: DocRow) {
+    return row.ownerKind === 'land'
+      ? this.landService.getDocumentBlob(this.workspaceId, row.ownerId, row.documentId!)
+      : this.documentService.getFileBlob(this.workspaceId, this.jobId, row.documentId!);
   }
 
   onJobDocView(row: DocRow): void {
-    if (row.ownerKind !== 'job') return; // Land-sourced rows are read-only reference, viewed via that land's own panel.
     this.documentError.set('');
-    this.jobDocBlob(row).subscribe({
+    this.docBlob(row).subscribe({
       next: (blob) => {
         this.viewingDocument.set({ fileName: row.fileName!, contentType: row.contentType! });
         this.viewingBlobUrl.set(URL.createObjectURL(blob));
@@ -1256,9 +1272,8 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   }
 
   onJobDocDownload(row: DocRow): void {
-    if (row.ownerKind !== 'job') return;
     this.documentError.set('');
-    this.jobDocBlob(row).subscribe({
+    this.docBlob(row).subscribe({
       next: (blob) => {
         const url = URL.createObjectURL(blob);
         const link = window.document.createElement('a');
@@ -1268,6 +1283,14 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
         URL.revokeObjectURL(url);
       },
       error: (err) => this.documentError.set(err.error?.message ?? 'Could not download document.')
+    });
+  }
+
+  onJobDocRename(event: { row: DocRow; fileName: string }): void {
+    if (event.row.ownerKind !== 'job') return; // Land-sourced rows are read-only reference here; rename that document from the land's own panel.
+    this.documentService.rename(this.workspaceId, this.jobId, event.row.documentId!, event.fileName).subscribe({
+      next: (updated) => this.documents.update(list => list.map(d => (d.documentId === updated.documentId ? updated : d))),
+      error: (err) => this.documentError.set(err.error?.message ?? 'Could not rename document.')
     });
   }
 

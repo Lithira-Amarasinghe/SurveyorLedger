@@ -59,6 +59,13 @@ namespace SurveyorLedger.API.Controllers
             return Ok(ApiResponse<DocumentResponse>.Ok(ToResponse(document)));
         }
 
+        [HttpPatch("{id}")]
+        public async Task<ActionResult<ApiResponse<DocumentResponse>>> Rename(Guid workspaceId, Guid jobId, Guid id, [FromBody] RenameDocumentRequest request)
+        {
+            var document = await _documentService.RenameAsync(workspaceId, CallerId(), jobId, id, request.FileName);
+            return Ok(ApiResponse<DocumentResponse>.Ok(ToResponse(document)));
+        }
+
         private Guid CallerId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
 
         private static DocumentResponse ToResponse(Document d) => new()

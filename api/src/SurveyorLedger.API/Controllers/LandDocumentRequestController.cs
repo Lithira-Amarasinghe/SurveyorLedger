@@ -30,7 +30,7 @@ namespace SurveyorLedger.API.Controllers
         [HttpPost]
         public async Task<ActionResult<ApiResponse<LandDocumentRequestResponse>>> Create(Guid workspaceId, Guid landId, [FromBody] LandDocumentRequestCreateRequest request)
         {
-            var created = await _requestService.CreateAsync(workspaceId, CallerId(), landId, request.Title, request.Description, request.Category, request.TargetRole);
+            var created = await _requestService.CreateAsync(workspaceId, CallerId(), landId, request.Title, request.Description, request.Category, request.TargetRole, request.OwnerType, request.OwnerId);
             return Ok(ApiResponse<LandDocumentRequestResponse>.Ok(ToResponse(created)));
         }
 
@@ -87,6 +87,8 @@ namespace SurveyorLedger.API.Controllers
         {
             RequestId = r.Id,
             LandId = r.LandId,
+            OwnerType = r.OwnerType,
+            OwnerId = r.OwnerId,
             Title = r.Title,
             Description = r.Description,
             Category = r.Category,

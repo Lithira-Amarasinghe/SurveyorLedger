@@ -7,7 +7,6 @@ import { LandDocumentRequest, LandDocumentRequestService } from '../../../core/l
 import { OwnerPickerComponent, OwnerValue } from '../owner-picker/owner-picker.component';
 import { LandLocationPickerComponent } from '../../../shared/land-location-picker/land-location-picker.component';
 import { LandLocationQrComponent } from '../../../shared/land-location-qr/land-location-qr.component';
-import { PhotoGridComponent } from '../../../shared/photo-grid/photo-grid.component';
 import { LandAreaInputComponent } from '../../../shared/land-area-input/land-area-input.component';
 import { DocumentListComponent, DocRow } from '../../../shared/document-list/document-list.component';
 import { DocumentUploadButtonComponent } from '../../../shared/document-upload-button/document-upload-button.component';
@@ -20,7 +19,7 @@ import { RouterLink } from '@angular/router';
   selector: 'app-land-detail-panel',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, OwnerPickerComponent, LandLocationPickerComponent, LandLocationQrComponent, PhotoGridComponent,
+    CommonModule, FormsModule, OwnerPickerComponent, LandLocationPickerComponent, LandLocationQrComponent,
     LandAreaInputComponent, DocumentListComponent, DocumentUploadButtonComponent, DocumentRequestFormComponent, DocumentViewerModalComponent, IconComponent, RouterLink
   ],
   template: `
@@ -268,13 +267,26 @@ import { RouterLink } from '@angular/router';
                   </div>
                   <div class="mt-sm">
                     <app-document-list
-                      [rows]="toDocRows(surveyDocuments()[s.id] ?? [], 'landSurvey', s.id)"
+                      [rows]="ownerRows(surveyDocuments()[s.id] ?? [], 'landSurvey', s.id)"
+                      [previewUrls]="previewUrls()"
                       (view)="onOwnedDocView($event)"
                       (download)="onOwnedDocDownload($event)"
                       (remove)="onOwnedDocRemove($event)"
                       (rename)="onOwnedDocRename($event)"
+                      (requestFulfill)="onFulfillDocRequest($event)"
+                      (requestReopen)="reopenDocRequestRow($event)"
+                      (requestCancel)="cancelDocRequestRow($event)"
+                      (requestCopyShareLink)="copyDocRequestShareLinkRow($event)"
                     />
-                    <app-document-upload-button label="Add file(s)" (filesSelected)="onSurveyDocUpload(s.id, $event)" />
+                    <div class="flex gap-md mt-xs">
+                      <app-document-upload-button label="Add file(s)" (filesSelected)="onSurveyDocUpload(s.id, $event)" />
+                      <button type="button" class="text-sm text-primary-600" (click)="startOwnerRequest('landSurvey', s.id)">+ Request document</button>
+                    </div>
+                    @if (isRequestFormTarget('landSurvey', s.id)) {
+                      <div class="mt-sm">
+                        <app-document-request-form (submitted)="submitDocRequest($event)" (cancelled)="requestFormTarget.set(null)" />
+                      </div>
+                    }
                   </div>
                 </div>
               }
@@ -328,13 +340,26 @@ import { RouterLink } from '@angular/router';
                   </div>
                   <div class="mt-sm">
                     <app-document-list
-                      [rows]="toDocRows(deedDocuments()[d.id] ?? [], 'landDeed', d.id)"
+                      [rows]="ownerRows(deedDocuments()[d.id] ?? [], 'landDeed', d.id)"
+                      [previewUrls]="previewUrls()"
                       (view)="onOwnedDocView($event)"
                       (download)="onOwnedDocDownload($event)"
                       (remove)="onOwnedDocRemove($event)"
                       (rename)="onOwnedDocRename($event)"
+                      (requestFulfill)="onFulfillDocRequest($event)"
+                      (requestReopen)="reopenDocRequestRow($event)"
+                      (requestCancel)="cancelDocRequestRow($event)"
+                      (requestCopyShareLink)="copyDocRequestShareLinkRow($event)"
                     />
-                    <app-document-upload-button label="Add file(s)" (filesSelected)="onDeedDocUpload(d.id, $event)" />
+                    <div class="flex gap-md mt-xs">
+                      <app-document-upload-button label="Add file(s)" (filesSelected)="onDeedDocUpload(d.id, $event)" />
+                      <button type="button" class="text-sm text-primary-600" (click)="startOwnerRequest('landDeed', d.id)">+ Request document</button>
+                    </div>
+                    @if (isRequestFormTarget('landDeed', d.id)) {
+                      <div class="mt-sm">
+                        <app-document-request-form (submitted)="submitDocRequest($event)" (cancelled)="requestFormTarget.set(null)" />
+                      </div>
+                    }
                   </div>
                 </div>
               }
@@ -407,25 +432,11 @@ import { RouterLink } from '@angular/router';
         </div>
 
         <div>
-          <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-sm">Photos</h3>
-          <app-photo-grid
-            [photos]="photos()"
-            [photoUrls]="photoUrls()"
-            (upload)="onPhotoUpload($event)"
-            (remove)="onPhotoDelete($event)"
-            (view)="onPhotoView($event)"
-            (download)="onPhotoDownload($event)"
-            (rename)="onPhotoRename($event)"
-          />
-          @if (photoError()) {
-            <p class="text-xs text-primary-500 mt-xs">{{ photoError() }}</p>
-          }
-        </div>
-
-        <div>
           <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-sm">Documents</h3>
+          <p class="text-xs text-neutral-500 mb-sm">Photos, deeds/surveys attachments live in their own sections above - general uploads and requested documents (including photos added here) show below.</p>
           <app-document-list
             [rows]="documentRows()"
+            [previewUrls]="previewUrls()"
             (view)="onOwnedDocView($event)"
             (download)="onOwnedDocDownload($event)"
             (remove)="onOwnedDocRemove($event)"
@@ -435,12 +446,12 @@ import { RouterLink } from '@angular/router';
             (requestCancel)="cancelDocRequestRow($event)"
             (requestCopyShareLink)="copyDocRequestShareLinkRow($event)"
           />
-          @if (addingDocRequest()) {
-            <app-document-request-form (submitted)="submitDocRequest($event)" (cancelled)="addingDocRequest.set(false)" />
+          @if (isRequestFormTarget('land', landId)) {
+            <app-document-request-form (submitted)="submitDocRequest($event)" (cancelled)="requestFormTarget.set(null)" />
           } @else {
             <div class="flex gap-md mt-sm">
               <app-document-upload-button (filesSelected)="onDocumentFilesSelected($event)" />
-              <button type="button" class="text-sm text-primary-600" (click)="addingDocRequest.set(true)">+ Request document</button>
+              <button type="button" class="text-sm text-primary-600" (click)="startOwnerRequest('land', landId)">+ Request document</button>
             </div>
           }
           @if (documentError()) {
@@ -488,8 +499,8 @@ export class LandDetailPanelComponent implements OnInit {
   shareLinkCopied = signal(false);
   mapViewShareLinkCopied = signal(false);
   photos = signal<LandPhoto[]>([]);
-  photoUrls = signal<Record<string, string>>({});
-  photoError = signal('');
+  /** Inline preview object-URLs for every image row across every section (photos, general docs, survey/deed docs) - keyed by documentId, fed to every <app-document-list> instance. */
+  previewUrls = signal<Record<string, string>>({});
 
   mapPoints = signal<LandMapPoint[]>([]);
   mapPointError = signal('');
@@ -511,28 +522,50 @@ export class LandDetailPanelComponent implements OnInit {
   documents = signal<OwnedDocument[]>([]);
   documentRequests = signal<LandDocumentRequest[]>([]);
   documentError = signal('');
-  addingDocRequest = signal(false);
+  /** Which owner's "+ Request document" form is open, if any - one signal shared by the general Documents section and every Survey/Deed row, since only one can be open at a time. */
+  requestFormTarget = signal<{ ownerType: 'Land' | 'LandSurvey' | 'LandDeed'; ownerId: string } | null>(null);
   viewingDocument = signal<{ fileName: string; contentType: string } | null>(null);
   viewingBlobUrl = signal<string | null>(null);
 
-  /** Merges plain uploaded documents with pending/fulfilled document requests into one DocRow list, same pattern job-detail.component.ts uses - a fulfilled request's document row absorbs the request (shown as one row, not two). */
-  documentRows = computed<DocRow[]>(() => {
-    const requests = this.documentRequests();
+  private readonly ownerTypeApi: Record<'land' | 'landSurvey' | 'landDeed' | 'landPhoto', 'Land' | 'LandSurvey' | 'LandDeed' | 'LandPhoto'> = {
+    land: 'Land', landSurvey: 'LandSurvey', landDeed: 'LandDeed', landPhoto: 'LandPhoto'
+  };
+
+  startOwnerRequest(ownerType: 'land' | 'landSurvey' | 'landDeed', ownerId: string): void {
+    this.requestFormTarget.set({ ownerType: this.ownerTypeApi[ownerType] as 'Land' | 'LandSurvey' | 'LandDeed', ownerId });
+  }
+
+  isRequestFormTarget(ownerType: 'land' | 'landSurvey' | 'landDeed', ownerId: string): boolean {
+    const target = this.requestFormTarget();
+    return !!target && target.ownerType === this.ownerTypeApi[ownerType] && target.ownerId === ownerId;
+  }
+
+  /** Photos merged into the same unified list as every other document - a fulfilled photo request row absorbs into its photo row exactly like any other request. */
+  photoRows = computed<DocRow[]>(() =>
+    this.photos().map(p => ({
+      key: p.photoId, ownerKind: 'landPhoto' as const, ownerId: this.landId, documentId: p.photoId,
+      fileName: p.fileName, contentType: p.contentType, uploadedByName: p.uploadedByName, createdAt: p.createdAt,
+      category: 'Photo'
+    }))
+  );
+
+  /** Merges an owner's plain uploaded documents with its pending/fulfilled document requests into one DocRow list - the one place every owner kind (general land, survey, deed) builds its rows, so request-fulfillment shows correctly everywhere. */
+  private buildOwnerRows(docs: OwnedDocument[], ownerKind: DocRow['ownerKind'], apiOwnerType: string, ownerId: string, subId?: string): DocRow[] {
+    const requests = this.documentRequests().filter(r => r.ownerType === apiOwnerType && r.ownerId === ownerId);
     const rows: DocRow[] = [];
 
-    for (const doc of this.documents()) {
+    for (const doc of docs) {
       const request = requests.find(r => r.fulfilledDocumentId === doc.documentId) ?? null;
       rows.push({
-        key: doc.documentId, ownerKind: 'land', ownerId: this.landId, documentId: doc.documentId,
+        key: doc.documentId, ownerKind, ownerId, subId, documentId: doc.documentId,
         fileName: doc.fileName, contentType: doc.contentType, uploadedByName: doc.uploadedByName, createdAt: doc.createdAt,
         requestId: request?.requestId ?? null, requestTitle: request?.title ?? null, requestStatus: request?.status ?? null
       });
     }
     for (const request of requests) {
-      if (!this.documents().some(d => d.documentId === request.fulfilledDocumentId)) {
-        // Pending/reopened, or fulfilled but the document itself isn't in `documents` (e.g. still loading) - show the request row on its own.
+      if (!docs.some(d => d.documentId === request.fulfilledDocumentId)) {
         rows.push({
-          key: request.requestId, ownerKind: 'land', ownerId: this.landId, documentId: null,
+          key: request.requestId, ownerKind, ownerId, subId, documentId: null,
           fileName: null, contentType: null, uploadedByName: null, createdAt: null,
           requestId: request.requestId, requestTitle: request.title, requestStatus: request.status,
           requestDescription: request.description, hasActiveShareLink: request.hasActiveShareLink
@@ -540,7 +573,16 @@ export class LandDetailPanelComponent implements OnInit {
       }
     }
     return rows;
-  });
+  }
+
+  ownerRows(docs: OwnedDocument[], ownerKind: 'landSurvey' | 'landDeed', subId: string): DocRow[] {
+    return this.buildOwnerRows(docs, ownerKind, this.ownerTypeApi[ownerKind], subId, subId);
+  }
+
+  documentRows = computed<DocRow[]>(() => [
+    ...this.buildOwnerRows(this.documents(), 'land', 'Land', this.landId),
+    ...this.photoRows()
+  ]);
 
   telHref = telHref;
   whatsAppHref = whatsAppHref;
@@ -630,10 +672,10 @@ export class LandDetailPanelComponent implements OnInit {
         this.loadDeedDocuments(deeds);
         this.boundaries.set(boundaries);
         this.photos.set(photos);
-        this.loadPhotoThumbnails(photos);
         this.mapPoints.set(mapPoints);
         this.documents.set(documents);
         this.documentRequests.set(documentRequests);
+        this.loadPreviews(this.documentRows());
         this.loading.set(false);
       },
       error: (err) => {
@@ -1063,66 +1105,11 @@ export class LandDetailPanelComponent implements OnInit {
     });
   }
 
-  private loadPhotoThumbnails(photos: LandPhoto[]): void {
-    photos.forEach(photo => {
-      this.landService.getPhotoBlob(this.workspaceId, this.landId, photo.photoId).subscribe(blob => {
-        this.photoUrls.update(urls => ({ ...urls, [photo.photoId]: URL.createObjectURL(blob) }));
-      });
-    });
-  }
-
-  onPhotoUpload(file: File): void {
-    this.photoError.set('');
-    this.landService.uploadPhoto(this.workspaceId, this.landId, file).subscribe({
-      next: (photo) => {
-        this.photos.update(list => [photo, ...list]);
-        this.loadPhotoThumbnails([photo]);
-      },
-      error: (err) => this.photoError.set(err.error?.message ?? 'Could not upload photo.')
-    });
-  }
-
-  onPhotoDelete(photoId: string): void {
-    this.photoError.set('');
-    this.landService.deletePhoto(this.workspaceId, this.landId, photoId).subscribe({
-      next: () => {
-        this.photos.update(list => list.filter(p => p.photoId !== photoId));
-        this.photoUrls.update(urls => {
-          const { [photoId]: _, ...rest } = urls;
-          return rest;
-        });
-      },
-      error: (err) => this.photoError.set(err.error?.message ?? 'Could not delete photo.')
-    });
-  }
-
-  onPhotoView(photo: LandPhoto): void {
-    this.landService.getPhotoBlob(this.workspaceId, this.landId, photo.photoId).subscribe(blob => this.openViewer(photo, blob));
-  }
-
-  onPhotoDownload(photo: LandPhoto): void {
-    const url = this.photoUrls()[photo.photoId];
-    if (!url) return;
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = photo.fileName;
-    link.click();
-  }
-
-  onPhotoRename(event: { photoId: string; fileName: string }): void {
-    this.photoError.set('');
-    this.landService.renamePhoto(this.workspaceId, this.landId, event.photoId, event.fileName).subscribe({
-      next: (updated) => {
-        this.photos.update(list => list.map(p => (p.photoId === updated.photoId ? updated : p)));
-      },
-      error: (err) => this.photoError.set(err.error?.message ?? 'Could not rename photo.')
-    });
-  }
-
   private loadSurveyDocuments(surveys: LandSurvey[]): void {
     surveys.forEach(s => {
       this.landService.getSurveyDocuments(this.workspaceId, this.landId, s.id).subscribe(docs => {
         this.surveyDocuments.update(map => ({ ...map, [s.id]: docs }));
+        this.loadPreviews(this.ownerRows(docs, 'landSurvey', s.id));
       });
     });
   }
@@ -1131,8 +1118,19 @@ export class LandDetailPanelComponent implements OnInit {
     deeds.forEach(d => {
       this.landService.getDeedDocuments(this.workspaceId, this.landId, d.id).subscribe(docs => {
         this.deedDocuments.update(map => ({ ...map, [d.id]: docs }));
+        this.loadPreviews(this.ownerRows(docs, 'landDeed', d.id));
       });
     });
+  }
+
+  /** Fetches and caches an inline-preview object-URL for every image row not already cached - the one place every section (photos, general docs, survey/deed docs) goes through so a click-to-preview modal thumbnail is never the only preview. */
+  private loadPreviews(rows: DocRow[]): void {
+    for (const row of rows) {
+      if (!row.documentId || !row.contentType?.startsWith('image/') || this.previewUrls()[row.documentId]) continue;
+      this.ownedDocBlob(row).subscribe(blob => {
+        this.previewUrls.update(urls => ({ ...urls, [row.documentId!]: URL.createObjectURL(blob) }));
+      });
+    }
   }
 
   private triggerDownload(blob: Blob, fileName: string): void {
@@ -1164,27 +1162,14 @@ export class LandDetailPanelComponent implements OnInit {
     );
   }
 
-  /** Maps an owner-kind's OwnedDocument[] into the generic DocRow shape app-document-list renders - the one adapter every owner kind (general/survey/deed) goes through. */
-  toDocRows(docs: OwnedDocument[], ownerKind: DocRow['ownerKind'], subId?: string): DocRow[] {
-    return docs.map(d => ({
-      key: d.documentId,
-      ownerKind,
-      ownerId: this.landId,
-      subId,
-      documentId: d.documentId,
-      fileName: d.fileName,
-      contentType: d.contentType,
-      uploadedByName: d.uploadedByName,
-      createdAt: d.createdAt
-    }));
-  }
-
   private ownedDocBlob(row: DocRow) {
     switch (row.ownerKind) {
       case 'landSurvey':
         return this.landService.getSurveyDocumentBlob(this.workspaceId, this.landId, row.subId!, row.documentId!);
       case 'landDeed':
         return this.landService.getDeedDocumentBlob(this.workspaceId, this.landId, row.subId!, row.documentId!);
+      case 'landPhoto':
+        return this.landService.getPhotoBlob(this.workspaceId, this.landId, row.documentId!);
       default:
         return this.landService.getDocumentBlob(this.workspaceId, this.landId, row.documentId!);
     }
@@ -1215,6 +1200,12 @@ export class LandDetailPanelComponent implements OnInit {
           error: (err) => this.error.set(err.error?.message ?? 'Could not delete document.')
         });
         break;
+      case 'landPhoto':
+        this.landService.deletePhoto(this.workspaceId, this.landId, documentId).subscribe({
+          next: () => this.photos.update(list => list.filter(p => p.photoId !== documentId)),
+          error: (err) => this.documentError.set(err.error?.message ?? 'Could not delete photo.')
+        });
+        break;
       default:
         this.landService.deleteDocument(this.workspaceId, this.landId, documentId).subscribe({
           next: () => this.documents.update(list => list.filter(d => d.documentId !== documentId)),
@@ -1241,6 +1232,12 @@ export class LandDetailPanelComponent implements OnInit {
           error: (err) => this.error.set(err.error?.message ?? 'Could not rename document.')
         });
         break;
+      case 'landPhoto':
+        this.landService.renamePhoto(this.workspaceId, this.landId, documentId, fileName).subscribe({
+          next: (updated) => this.photos.update(list => list.map(p => (p.photoId === updated.photoId ? updated : p))),
+          error: (err) => this.documentError.set(err.error?.message ?? 'Could not rename photo.')
+        });
+        break;
       default:
         this.landService.renameDocument(this.workspaceId, this.landId, documentId, fileName).subscribe({
           next: (updated) => this.documents.update(list => list.map(d => (d.documentId === updated.documentId ? updated : d))),
@@ -1260,24 +1257,28 @@ export class LandDetailPanelComponent implements OnInit {
     });
   }
 
+  /** One upload path for every file, photos included - a photo is just a file whose content-type happens to be an image, category is auto-detected rather than needing its own trigger. */
   onDocumentFilesSelected(files: File[]): void {
     this.documentError.set('');
-    files.forEach(file =>
-      this.landService.uploadDocument(this.workspaceId, this.landId, file).subscribe({
+    files.forEach(file => {
+      const category = file.type.startsWith('image/') ? 'Photo' : 'Other';
+      this.landService.uploadDocument(this.workspaceId, this.landId, file, category).subscribe({
         next: (doc) => this.documents.update(list => [doc, ...list]),
         error: (err) => this.documentError.set(err.error?.message ?? 'Could not upload document.')
-      })
-    );
+      });
+    });
   }
 
   submitDocRequest(value: DocumentRequestFormValue): void {
+    const target = this.requestFormTarget();
+    if (!target) return;
     this.documentError.set('');
     this.documentRequestService
-      .create(this.workspaceId, this.landId, value.title, value.description, value.category, value.targetRole)
+      .create(this.workspaceId, this.landId, value.title, value.description, value.category, value.targetRole, target.ownerType, target.ownerId)
       .subscribe({
         next: (request) => {
           this.documentRequests.update(list => [request, ...list]);
-          this.addingDocRequest.set(false);
+          this.requestFormTarget.set(null);
         },
         error: (err) => this.documentError.set(err.error?.message ?? 'Could not create request.')
       });

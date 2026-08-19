@@ -16,7 +16,10 @@ public class LandDocumentRequestConfiguration : IEntityTypeConfiguration<LandDoc
         builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
         builder.Property(x => x.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
 
+        builder.Property(x => x.OwnerType).HasMaxLength(20).IsRequired();
+
         builder.HasIndex(x => x.LandId);
+        builder.HasIndex(x => new { x.OwnerType, x.OwnerId });
 
         builder.HasOne(x => x.Land)
             .WithMany()

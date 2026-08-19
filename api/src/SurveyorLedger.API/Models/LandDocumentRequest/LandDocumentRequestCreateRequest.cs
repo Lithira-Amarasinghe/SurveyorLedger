@@ -16,4 +16,9 @@ public class LandDocumentRequestCreateRequest
     public required DocumentCategory Category { get; set; }
 
     public string? TargetRole { get; set; }
+
+    /// <summary>"Land" (default, general documents), "LandSurvey", or "LandDeed".</summary>
+    public string OwnerType { get; set; } = "Land";
+    /// <summary>The survey/deed id when OwnerType targets one; omitted (defaults to the land itself) for general land documents.</summary>
+    public Guid? OwnerId { get; set; }
 }

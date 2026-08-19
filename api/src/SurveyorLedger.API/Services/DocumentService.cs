@@ -14,6 +14,7 @@ public interface IDocumentService
     Task<(Document Document, Stream Content)> GetFileAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId);
     Task<Document> UpdateVisibilityAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId, DocumentVisibility visibility);
+    Task<Document> RenameAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId, string fileName);
 
     /// <summary>ownerType is "LandSurvey" or "LandDeed"; landId gates the permission check (EnsureLandAccessAsync), ownerId is the survey/deed's own id.</summary>
     Task<List<Document>> GetOwnedDocumentsAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId);
@@ -23,6 +24,7 @@ public interface IDocumentService
     Task<(Document Document, Stream Content)> GetOwnedDocumentFileAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, Guid documentId);
     Task DeleteOwnedDocumentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, Guid documentId);
     Task<Document> RenameOwnedDocumentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, Guid documentId, string fileName);
+    Task EnsureOwnerBelongsToLandAsync(string ownerType, Guid ownerId, Guid landId);
 
     /// <summary>Hard-deletes every Document row (and its stored file) for one owner - called by LandService when a LandSurvey/LandDeed itself is deleted, so attachments don't outlive their owner.</summary>
     Task DeleteAllForOwnerAsync(string ownerType, Guid ownerId);
@@ -164,6 +166,24 @@ public class DocumentService : IDocumentService
         return document;
     }
 
+    /// <summary>Renames the display filename only - StoredPath/extension untouched, same as RenameOwnedDocumentAsync/LandService.RenamePhotoAsync.</summary>
+    public async Task<Document> RenameAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId, string fileName)
+    {
+        await FindJobAsync(workspaceId, jobId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+
+        if (string.IsNullOrWhiteSpace(fileName))
+            throw new ValidationException("File name is required.");
+        if (fileName.Length > 255)
+            throw new ValidationException("File name must be 255 characters or fewer.");
+
+        var document = await FindDocumentAsync(jobId, documentId);
+        document.FileName = fileName.Trim();
+        document.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return document;
+    }
+
     public async Task<List<Document>> GetOwnedDocumentsAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId)
     {
         await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "view");
@@ -292,8 +312,8 @@ public class DocumentService : IDocumentService
         await _context.SaveChangesAsync();
     }
 
-    /// <summary>Defense in depth: confirms the caller-supplied landId actually owns this survey/deed, so a mismatched (landId, ownerId) pair can't be used to read/write another land's documents once EnsureLandAccessAsync has passed for the (wrong) landId.</summary>
-    private async Task EnsureOwnerBelongsToLandAsync(string ownerType, Guid ownerId, Guid landId)
+    /// <summary>Defense in depth: confirms the caller-supplied landId actually owns this survey/deed, so a mismatched (landId, ownerId) pair can't be used to read/write another land's documents once EnsureLandAccessAsync has passed for the (wrong) landId. Public so LandDocumentRequestService can validate a request's OwnerType/OwnerId the same way before creating it.</summary>
+    public async Task EnsureOwnerBelongsToLandAsync(string ownerType, Guid ownerId, Guid landId)
     {
         var belongs = ownerType switch
         {

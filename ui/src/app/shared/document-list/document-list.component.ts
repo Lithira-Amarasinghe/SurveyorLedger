@@ -12,7 +12,7 @@ import { IconComponent } from '../icon/icon.component';
  */
 export interface DocRow {
   key: string;
-  ownerKind: 'job' | 'land' | 'landSurvey' | 'landDeed';
+  ownerKind: 'job' | 'land' | 'landSurvey' | 'landDeed' | 'landPhoto';
   ownerId: string;
   subId?: string;
   documentId: string | null;
@@ -43,11 +43,13 @@ export interface DocRow {
         <div class="px-md py-sm rounded bg-neutral-50 text-sm">
           <div class="flex items-center gap-sm">
             @if (row.documentId && isPreviewable(row.contentType) && previewUrls[row.documentId]) {
-              <img [src]="previewUrls[row.documentId]" class="w-8 h-8 rounded object-cover flex-shrink-0" [alt]="row.fileName" />
+              <button type="button" class="flex-shrink-0" title="Preview" (click)="view.emit(row)">
+                <img [src]="previewUrls[row.documentId]" class="w-14 h-14 rounded-md object-cover border border-neutral-200" [alt]="row.fileName" />
+              </button>
             } @else if (row.documentId) {
-              <span class="w-8 h-8 rounded bg-neutral-200 flex items-center justify-center flex-shrink-0 text-neutral-500">
+              <button type="button" class="w-14 h-14 rounded-md bg-neutral-200 flex items-center justify-center flex-shrink-0 text-neutral-500 border border-neutral-200" title="Preview" (click)="view.emit(row)">
                 <app-icon name="view" />
-              </span>
+              </button>
             }
             <div class="min-w-0 flex-1">
               @if (row.fileName) {

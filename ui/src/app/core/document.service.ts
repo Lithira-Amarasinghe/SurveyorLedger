@@ -63,4 +63,10 @@ export class DocumentService {
       .patch<ApiResponse<Document>>(`${this.base(workspaceId, jobId)}/${documentId}/visibility`, { visibility })
       .pipe(map(res => res.data));
   }
+
+  rename(workspaceId: string, jobId: string, documentId: string, fileName: string): Observable<Document> {
+    return this.http
+      .patch<ApiResponse<Document>>(`${this.base(workspaceId, jobId)}/${documentId}`, { fileName })
+      .pipe(map(res => res.data));
+  }
 }

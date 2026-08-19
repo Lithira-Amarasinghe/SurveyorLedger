@@ -10,7 +10,7 @@ namespace SurveyorLedger.API.Services;
 public interface ILandDocumentRequestService
 {
     Task<List<LandDocumentRequest>> GetForLandAsync(Guid workspaceId, Guid callerUserId, Guid landId);
-    Task<LandDocumentRequest> CreateAsync(Guid workspaceId, Guid callerUserId, Guid landId, string title, string? description, DocumentCategory category, string? targetRole = null);
+    Task<LandDocumentRequest> CreateAsync(Guid workspaceId, Guid callerUserId, Guid landId, string title, string? description, DocumentCategory category, string? targetRole = null, string ownerType = "Land", Guid? ownerId = null);
     Task<LandDocumentRequest> FulfillAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid requestId, IFormFile file, string? displayFileName = null);
     Task<LandDocumentRequest> ReopenAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid requestId, string? note = null);
     Task CancelAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid requestId);
@@ -52,13 +52,16 @@ public class LandDocumentRequestService : ILandDocumentRequestService
             .ToListAsync();
     }
 
-    public async Task<LandDocumentRequest> CreateAsync(Guid workspaceId, Guid callerUserId, Guid landId, string title, string? description, DocumentCategory category, string? targetRole = null)
+    public async Task<LandDocumentRequest> CreateAsync(Guid workspaceId, Guid callerUserId, Guid landId, string title, string? description, DocumentCategory category, string? targetRole = null, string ownerType = "Land", Guid? ownerId = null)
     {
         await FindLandAsync(workspaceId, landId);
         await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
 
         if (string.IsNullOrWhiteSpace(title))
             throw new ValidationException("Title is required.");
+
+        var resolvedOwnerId = ownerId ?? landId;
+        await _documentService.EnsureOwnerBelongsToLandAsync(ownerType, resolvedOwnerId, landId);
 
         ValidateTargetRole(targetRole);
         var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
@@ -67,6 +70,8 @@ public class LandDocumentRequestService : ILandDocumentRequestService
         {
             Id = Guid.NewGuid(),
             LandId = landId,
+            OwnerType = ownerType,
+            OwnerId = resolvedOwnerId,
             Title = title.Trim(),
             Description = description,
             Category = category,
@@ -105,7 +110,7 @@ public class LandDocumentRequestService : ILandDocumentRequestService
         var attributedPersonId = await _access.ResolvePersonIdAsync(attributedUserAccountId);
         var previousDocumentId = request.FulfilledDocumentId;
 
-        var document = await _documentService.UploadOwnedDocumentForFulfillmentAsync(workspaceId, attributedUserAccountId, landId, "Land", landId, request.Category, file, displayFileName);
+        var document = await _documentService.UploadOwnedDocumentForFulfillmentAsync(workspaceId, attributedUserAccountId, landId, request.OwnerType, request.OwnerId, request.Category, file, displayFileName);
 
         request.FulfilledDocumentId = document.Id;
         request.FulfilledAt = DateTime.UtcNow;
@@ -230,7 +235,7 @@ public class LandDocumentRequestService : ILandDocumentRequestService
     {
         var previousDocumentId = request.FulfilledDocumentId;
 
-        var document = await _documentService.UploadOwnedDocumentForFulfillmentAsync(workspaceId, attributedUserAccountId, landId, "Land", landId, request.Category, file, displayFileName);
+        var document = await _documentService.UploadOwnedDocumentForFulfillmentAsync(workspaceId, attributedUserAccountId, landId, request.OwnerType, request.OwnerId, request.Category, file, displayFileName);
 
         request.FulfilledDocumentId = document.Id;
         request.FulfilledAt = DateTime.UtcNow;

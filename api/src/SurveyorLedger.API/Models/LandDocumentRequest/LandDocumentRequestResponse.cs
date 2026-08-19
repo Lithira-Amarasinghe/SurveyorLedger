@@ -6,6 +6,8 @@ public class LandDocumentRequestResponse
 {
     public Guid RequestId { get; set; }
     public Guid LandId { get; set; }
+    public required string OwnerType { get; set; }
+    public Guid OwnerId { get; set; }
     public required string Title { get; set; }
     public string? Description { get; set; }
     public DocumentCategory Category { get; set; }

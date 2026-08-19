@@ -8,6 +8,8 @@ import { environment } from '../../environments/environment';
 export interface LandDocumentRequest {
   requestId: string;
   landId: string;
+  ownerType: 'Land' | 'LandSurvey' | 'LandDeed';
+  ownerId: string;
   title: string;
   description: string | null;
   category: 'SurveyPlan' | 'LegalDocument' | 'Photo' | 'Other';
@@ -40,9 +42,12 @@ export class LandDocumentRequestService {
     return this.http.get<ApiResponse<LandDocumentRequest[]>>(this.base(workspaceId, landId)).pipe(map(res => res.data));
   }
 
-  create(workspaceId: string, landId: string, title: string, description: string | null, category: string, targetRole: string | null): Observable<LandDocumentRequest> {
+  create(
+    workspaceId: string, landId: string, title: string, description: string | null, category: string, targetRole: string | null,
+    ownerType: 'Land' | 'LandSurvey' | 'LandDeed' = 'Land', ownerId?: string
+  ): Observable<LandDocumentRequest> {
     return this.http
-      .post<ApiResponse<LandDocumentRequest>>(this.base(workspaceId, landId), { title, description, category, targetRole })
+      .post<ApiResponse<LandDocumentRequest>>(this.base(workspaceId, landId), { title, description, category, targetRole, ownerType, ownerId })
       .pipe(map(res => res.data));
   }
 

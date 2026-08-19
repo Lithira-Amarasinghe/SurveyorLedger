@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SurveyorLedger.API.Models.Land;
+using SurveyorLedger.API.Models.Document;
 using SurveyorLedger.API.Models.Responses;
 using SurveyorLedger.API.Services;
 using SurveyorLedger.Core;
@@ -179,7 +180,7 @@ namespace SurveyorLedger.API.Controllers
         }
 
         [HttpPatch("{id}/documents/{documentId}")]
-        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> RenameDocument(Guid workspaceId, Guid id, Guid documentId, [FromBody] RenamePhotoRequest request)
+        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> RenameDocument(Guid workspaceId, Guid id, Guid documentId, [FromBody] RenameDocumentRequest request)
         {
             var callerId = CallerId();
             var document = await _documentService.RenameOwnedDocumentAsync(workspaceId, callerId, id, "Land", id, documentId, request.FileName);
@@ -220,7 +221,7 @@ namespace SurveyorLedger.API.Controllers
         }
 
         [HttpPatch("{id}/surveys/{surveyId}/documents/{documentId}")]
-        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> RenameSurveyDocument(Guid workspaceId, Guid id, Guid surveyId, Guid documentId, [FromBody] RenamePhotoRequest request)
+        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> RenameSurveyDocument(Guid workspaceId, Guid id, Guid surveyId, Guid documentId, [FromBody] RenameDocumentRequest request)
         {
             var callerId = CallerId();
             var document = await _documentService.RenameOwnedDocumentAsync(workspaceId, callerId, id, "LandSurvey", surveyId, documentId, request.FileName);
@@ -293,7 +294,7 @@ namespace SurveyorLedger.API.Controllers
         }
 
         [HttpPatch("{id}/deeds/{deedId}/documents/{documentId}")]
-        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> RenameDeedDocument(Guid workspaceId, Guid id, Guid deedId, Guid documentId, [FromBody] RenamePhotoRequest request)
+        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> RenameDeedDocument(Guid workspaceId, Guid id, Guid deedId, Guid documentId, [FromBody] RenameDocumentRequest request)
         {
             var callerId = CallerId();
             var document = await _documentService.RenameOwnedDocumentAsync(workspaceId, callerId, id, "LandDeed", deedId, documentId, request.FileName);
@@ -393,7 +394,7 @@ namespace SurveyorLedger.API.Controllers
         }
 
         [HttpPatch("{id}/photos/{photoId}")]
-        public async Task<ActionResult<ApiResponse<LandPhotoResponse>>> RenamePhoto(Guid workspaceId, Guid id, Guid photoId, [FromBody] RenamePhotoRequest request)
+        public async Task<ActionResult<ApiResponse<LandPhotoResponse>>> RenamePhoto(Guid workspaceId, Guid id, Guid photoId, [FromBody] RenameDocumentRequest request)
         {
             var callerId = CallerId();
             var photo = await _documentService.RenameOwnedDocumentAsync(workspaceId, callerId, id, "LandPhoto", id, photoId, request.FileName);
