@@ -76,7 +76,19 @@ interface NominatimResult {
           </div>
         }
       }
-      <div #mapEl class="w-full rounded-md border border-neutral-200" [class]="heightClass"></div>
+      <div class="relative">
+        <div #mapEl class="w-full rounded-md border border-neutral-200" [class]="heightClass"></div>
+        @if (markers.length > 0) {
+          <button
+            type="button"
+            class="absolute top-sm right-sm z-[1000] bg-white shadow rounded-md px-sm py-xs text-xs text-neutral-700 hover:bg-neutral-50 border border-neutral-200"
+            title="Fit view to every point"
+            (click)="fitAllMarkers()"
+          >
+            ⤢ Fit all
+          </button>
+        }
+      </div>
       @if (!readonly) {
         <p class="text-xs text-neutral-500">Click the map (or pick a search result) to add a point. Drag an existing pin to move it.</p>
       }
@@ -168,11 +180,25 @@ export class LandLocationPickerComponent implements OnInit, OnChanges, OnDestroy
     this.map?.remove();
   }
 
-  /** Fits the view to every marker once markers first arrive (e.g. after an async fetch resolves) or whenever the count changes - not on every reference change, so panning/zooming by hand isn't fought on unrelated re-renders. */
+  /**
+   * Fits the view to every marker once, the first time markers arrive (e.g. after an async
+   * fetch resolves) - never again after that. Re-fitting on every later markers change (a
+   * marker being dragged to a new position, say) would yank the view out from under whatever
+   * the user is doing mid-drag. Once that first fit has happened, only an explicit "Fit all"
+   * click (fitAllMarkers) or the one-time post-mount size correction re-fits.
+   */
   private fitToMarkers(): void {
-    if (this.markers.length === 0) return;
-    if (this.hasFitBounds && this.initialLat !== null) return; // an explicit initial point already framed the view once; don't re-fight a manual pan after that.
+    if (this.markers.length === 0 || this.hasFitBounds) return;
+    this.applyFit();
+  }
 
+  /** Manual re-fit, triggered by the "Fit all" control - ignores hasFitBounds so it always works, even after the one-time auto-fit already happened. */
+  fitAllMarkers(): void {
+    if (this.markers.length === 0) return;
+    this.applyFit();
+  }
+
+  private applyFit(): void {
     if (this.markers.length === 1) {
       this.map.setView([this.markers[0].lat, this.markers[0].lng], 16);
     } else {
