@@ -69,9 +69,17 @@ export interface DocRow {
                     <button type="button" class="icon-btn" title="Rename" (click)="startRenameGroup(group)"><app-icon name="rename" /></button>
                   }
                   @if (renamingGroupId() !== group.batchId) {
-                    @if (group.rows[0].requestId) {
-                      <!-- A request-derived group is reopened, not deleted - matches the existing single-row rule (row.requestId shows Reopen instead of Delete), just applied to the whole group instead of one doc. -->
+                    @if (group.rows[0].requestId && group.rows[0].requestStatus === 'Fulfilled') {
+                      <!-- One reopen action for the whole request, not one per file - matches the existing single-row rule (row.requestId shows Reopen instead of Delete), just at the group's level instead of duplicated on every member. -->
                       <button type="button" class="icon-btn" title="Reopen request" (click)="requestReopen.emit(group.rows[0])"><app-icon name="reopen" /></button>
+                    } @else if (group.rows[0].requestId) {
+                      <!-- Reopened - back to the same "still waiting on more files" actions a pending request row offers: upload more, copy the link to resend, or give up and cancel. -->
+                      <label class="icon-btn cursor-pointer" title="Upload more files">
+                        <app-icon name="upload" />
+                        <input type="file" multiple class="hidden" (change)="onFulfillFilesSelected(group.rows[0], $event)" />
+                      </label>
+                      <button type="button" class="icon-btn" title="Copy share link" (click)="requestCopyShareLink.emit(group.rows[0])"><app-icon name="link" /></button>
+                      <button type="button" class="icon-btn text-primary-500" title="Cancel request" (click)="requestCancel.emit(group.rows[0])"><app-icon name="delete" /></button>
                     } @else if (confirmingRemoveGroupId() === group.batchId) {
                       <span class="text-xs text-neutral-600 whitespace-nowrap">
                         Remove all?
@@ -91,17 +99,17 @@ export interface DocRow {
             @if (isExpanded(group.batchId)) {
               <div class="pl-md pb-sm space-y-xs">
                 @for (row of group.rows; track row.key) {
-                  <ng-container *ngTemplateOutlet="rowTpl; context: { $implicit: row }"></ng-container>
+                  <ng-container *ngTemplateOutlet="rowTpl; context: { $implicit: row, insideGroup: true }"></ng-container>
                 }
               </div>
             }
           </div>
         } @else {
-          <ng-container *ngTemplateOutlet="rowTpl; context: { $implicit: group.rows[0] }"></ng-container>
+          <ng-container *ngTemplateOutlet="rowTpl; context: { $implicit: group.rows[0], insideGroup: false }"></ng-container>
         }
       }
     </div>
-    <ng-template #rowTpl let-row>
+    <ng-template #rowTpl let-row let-insideGroup="insideGroup">
       <div class="px-md py-sm rounded bg-neutral-50 text-sm">
         <div class="flex items-center gap-sm">
           @if (row.documentId && isPreviewable(row.contentType) && previewUrls[row.documentId]) {
@@ -161,9 +169,11 @@ export interface DocRow {
                   @if (allowRename) {
                     <button type="button" class="icon-btn" title="Rename" (click)="startRename(row)"><app-icon name="rename" /></button>
                   }
-                  @if (row.requestId) {
+                  @if (row.requestId && !insideGroup) {
+                    <!-- Standalone (ungrouped) request-fulfilled row - the group header doesn't exist here to hold the reopen action, so the row keeps it. -->
                     <button type="button" class="icon-btn" title="Reopen request" (click)="requestReopen.emit(row)"><app-icon name="reopen" /></button>
                   } @else {
+                    <!-- Inside a group, reopening is the group header's job (one action for the whole request, not per file) - a member row only ever removes itself. -->
                     <button type="button" class="icon-btn text-primary-500" title="Remove" (click)="confirmingRemoveKey.set(row.key)"><app-icon name="delete" /></button>
                   }
                 }
