@@ -202,6 +202,20 @@ export function formatArea(area: LandAreaValue): string {
   return parts.join(' ');
 }
 
+/**
+ * The backend rejects a write with more than one unit system populated ("Provide area in
+ * one unit system only") - but a Land fetched from GET always comes back with every unit
+ * populated (server fills all five for display). Sending that straight back on a save that
+ * never touched the area field trips that check. Strips down to just the A-R-P system
+ * (this app's canonical one) before every create/update call.
+ */
+export function toAreaRequest(area: LandAreaValue): Partial<LandAreaValue> {
+  if (area.acres === null && area.roods === null && area.perches === null) {
+    return { acres: null, roods: null, perches: null, squareMeters: null, hectares: null };
+  }
+  return { acres: area.acres, roods: area.roods, perches: area.perches, squareMeters: null, hectares: null };
+}
+
 @Injectable({ providedIn: 'root' })
 export class LandService {
   constructor(private http: HttpClient) {}

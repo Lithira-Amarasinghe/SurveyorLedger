@@ -2,7 +2,7 @@ import { Component, EventEmitter, Input, OnInit, Output, computed, signal } from
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
-import { Land, LandAddress, LandAreaValue, LandBoundary, LandDeed, LandMapPoint, LandPhoto, LandService, LandSurvey, OwnedDocument, telHref, whatsAppHref } from '../../../core/land.service';
+import { Land, LandAddress, LandAreaValue, LandBoundary, LandDeed, LandMapPoint, LandPhoto, LandService, LandSurvey, OwnedDocument, telHref, toAreaRequest, whatsAppHref } from '../../../core/land.service';
 import { LandDocumentRequest, LandDocumentRequestService } from '../../../core/land-document-request.service';
 import { OwnerPickerComponent, OwnerValue } from '../owner-picker/owner-picker.component';
 import { LandLocationPickerComponent } from '../../../shared/land-location-picker/land-location-picker.component';
@@ -837,7 +837,7 @@ export class LandDetailPanelComponent implements OnInit {
     this.landService
       .update(this.workspaceId, this.landId, {
         address,
-        area: this.area,
+        area: toAreaRequest(this.area),
         notes: this.notes.trim() || undefined,
         ...this.owner
       })
@@ -880,7 +880,7 @@ export class LandDetailPanelComponent implements OnInit {
     this.landService
       .create(this.workspaceId, {
         address,
-        area: this.area,
+        area: toAreaRequest(this.area),
         notes: this.notes.trim() || undefined,
         ...this.owner
       })
