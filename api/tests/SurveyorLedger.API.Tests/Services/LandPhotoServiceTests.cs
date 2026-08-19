@@ -68,6 +68,27 @@ public class LandPhotoServiceTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
+    public async Task UploadPhotoAsync_WithSharedBatchId_BothDocumentsCarryIt()
+    {
+        await SeedLandAsync();
+        var batchId = Guid.NewGuid();
+
+        var photo1 = await _documentService.UploadOwnedDocumentAsync(WorkspaceId, AdminId, _landId, "LandPhoto", _landId, DocumentCategory.Photo, MakePhoto("a.jpg"), batchId: batchId);
+        var photo2 = await _documentService.UploadOwnedDocumentAsync(WorkspaceId, AdminId, _landId, "LandPhoto", _landId, DocumentCategory.Photo, MakePhoto("b.jpg"), batchId: batchId);
+
+        Assert.Equal(batchId, photo1.UploadBatchId);
+        Assert.Equal(batchId, photo2.UploadBatchId);
+    }
+
+    [Fact]
+    public async Task UploadPhotoAsync_WithoutBatchId_LeavesItNull()
+    {
+        await SeedLandAsync();
+        var photo = await UploadPhotoAsync(AdminId, MakePhoto());
+        Assert.Null(photo.UploadBatchId);
+    }
+
+    [Fact]
     public async Task UploadPhotoAsync_RejectsDisallowedExtension()
     {
         await SeedLandAsync();
