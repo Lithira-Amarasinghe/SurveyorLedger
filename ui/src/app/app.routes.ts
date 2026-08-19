@@ -68,6 +68,9 @@ export const routes: Routes = [
           { path: 'jobs', component: JobListComponent },
           { path: 'jobs/:jobId', component: JobDetailComponent, canDeactivate: [unsavedChangesGuard] },
           { path: 'lands', component: LandListComponent },
+          // Order matters: 'new' must be matched before ':landId' or it'd be swallowed as a param.
+          // No canDeactivate here - an abandoned create form has nothing saved yet to warn about.
+          { path: 'lands/new', component: LandDetailComponent },
           { path: 'lands/:landId', component: LandDetailComponent, canDeactivate: [unsavedChangesGuard] },
           { path: 'billing/quotations', component: QuotationListComponent },
           { path: 'billing/invoices', component: InvoiceListComponent },

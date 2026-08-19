@@ -3,9 +3,8 @@ import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { Land, LandService, addressLine } from '../../core/land.service';
+import { Land, LandService, addressLine, formatArea } from '../../core/land.service';
 import { CurrentWorkspaceService } from '../../core/current-workspace.service';
-import { CreateLandModalComponent } from './create-land-modal/create-land-modal.component';
 
 interface LandRow {
   land: Land;
@@ -16,12 +15,12 @@ interface LandRow {
 @Component({
   selector: 'app-land-list',
   standalone: true,
-  imports: [CommonModule, CreateLandModalComponent],
+  imports: [CommonModule],
   template: `
     <div class="p-lg max-w-4xl mx-auto">
       <div class="flex items-center justify-between mb-lg">
         <h1 class="text-lg font-semibold text-neutral-900">Land</h1>
-        <button class="btn-primary" (click)="modalOpen.set(true)">New land</button>
+        <button class="btn-primary" (click)="createNew()">New land</button>
       </div>
 
       @if (loading()) {
@@ -39,7 +38,7 @@ interface LandRow {
             <thead class="bg-neutral-100 text-neutral-600 text-xs uppercase">
               <tr>
                 <th class="text-left px-lg py-sm font-medium">Address</th>
-                <th class="text-left px-lg py-sm font-medium">Size</th>
+                <th class="text-left px-lg py-sm font-medium">Area</th>
                 <th class="text-left px-lg py-sm font-medium">Deeds</th>
                 <th class="text-left px-lg py-sm font-medium">Surveys</th>
               </tr>
@@ -68,11 +67,7 @@ interface LandRow {
                     }
                   </td>
                   <td class="px-lg py-sm text-neutral-600">
-                    @if (row.land.size) {
-                      {{ row.land.size }} {{ row.land.sizeUnit }}
-                    } @else {
-                      —
-                    }
+                    {{ formatArea(row.land.area) }}
                   </td>
                   <td class="px-lg py-sm text-neutral-600">{{ row.deedCount }}</td>
                   <td class="px-lg py-sm text-neutral-600">{{ row.surveyCount }}</td>
@@ -83,10 +78,6 @@ interface LandRow {
         </div>
       }
     </div>
-
-    @if (modalOpen()) {
-      <app-create-land-modal [workspaceId]="workspaceId" (cancel)="modalOpen.set(false)" (created)="onCreated($event)" />
-    }
   `
 })
 export class LandListComponent implements OnInit {
@@ -94,9 +85,9 @@ export class LandListComponent implements OnInit {
   rows = signal<LandRow[]>([]);
   loading = signal(true);
   error = signal('');
-  modalOpen = signal(false);
 
   addressLine = addressLine;
+  formatArea = formatArea;
 
   constructor(
     private landService: LandService,
@@ -148,8 +139,7 @@ export class LandListComponent implements OnInit {
     this.router.navigate(['/app/workspace', this.workspaceId, 'lands', land.landId]);
   }
 
-  onCreated(land: Land): void {
-    this.modalOpen.set(false);
-    this.router.navigate(['/app/workspace', this.workspaceId, 'lands', land.landId]);
+  createNew(): void {
+    this.router.navigate(['/app/workspace', this.workspaceId, 'lands', 'new']);
   }
 }

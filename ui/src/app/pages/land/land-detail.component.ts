@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Observable, Subject } from 'rxjs';
 import { CurrentWorkspaceService } from '../../core/current-workspace.service';
+import { Land } from '../../core/land.service';
 import { LandDetailPanelComponent } from './land-detail-panel/land-detail-panel.component';
 import { HasUnsavedChanges } from '../../core/unsaved-changes.guard';
 
@@ -13,7 +14,7 @@ import { HasUnsavedChanges } from '../../core/unsaved-changes.guard';
   template: `
     <div class="p-lg max-w-3xl mx-auto">
       <div class="card">
-        <app-land-detail-panel #panel [workspaceId]="workspaceId" [landId]="landId" (deleted)="onDeleted()" />
+        <app-land-detail-panel #panel [workspaceId]="workspaceId" [landId]="landId" (deleted)="onDeleted()" (created)="onCreated($event)" />
       </div>
     </div>
 
@@ -53,6 +54,11 @@ export class LandDetailComponent implements OnInit, HasUnsavedChanges {
 
   onDeleted(): void {
     this.router.navigate(['/app/workspace', this.workspaceId, 'lands']);
+  }
+
+  /** The panel just created the record - swap this create-mode page for the new land's own URL, where the same panel re-inits in normal edit mode. */
+  onCreated(land: Land): void {
+    this.router.navigate(['/app/workspace', this.workspaceId, 'lands', land.landId], { replaceUrl: true });
   }
 
   confirmingLeave = signal(false);
