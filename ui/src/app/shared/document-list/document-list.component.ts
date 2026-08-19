@@ -49,7 +49,11 @@ export interface DocRow {
                 {{ group.rows.length }} files
               </div>
               <div class="min-w-0 flex-1">
-                <span class="text-neutral-900">{{ group.rows[0].requestTitle ?? (group.rows.length + ' files') }}</span>
+                @if (renamingGroupId() === group.batchId) {
+                  <input class="input-field text-xs px-xs py-xs" [(ngModel)]="renameValue" (keydown.enter)="confirmRenameGroup(group.rows[0])" (click)="$event.stopPropagation()" />
+                } @else {
+                  <span class="text-neutral-900">{{ groupName(group) }}</span>
+                }
                 @if (group.rows[0].requestStatus) {
                   <span class="text-xs px-sm py-xs rounded bg-amber-100 text-amber-700 ml-xs">{{ group.rows[0].requestStatus }}</span>
                 }
@@ -57,17 +61,26 @@ export interface DocRow {
               </div>
               <div class="flex items-center gap-xs flex-shrink-0" (click)="$event.stopPropagation()">
                 @if (!group.rows[0].readonly) {
-                  @if (group.rows[0].requestId) {
-                    <!-- A request-derived group is reopened, not deleted - matches the existing single-row rule (row.requestId shows Reopen instead of Delete), just applied to the whole group instead of one doc. -->
-                    <button type="button" class="icon-btn" title="Reopen request" (click)="requestReopen.emit(group.rows[0])"><app-icon name="reopen" /></button>
-                  } @else if (confirmingRemoveGroupId() === group.batchId) {
-                    <span class="text-xs text-neutral-600 whitespace-nowrap">
-                      Remove all?
-                      <button type="button" class="text-primary-500 font-medium ml-xs" (click)="confirmRemoveGroup(group.batchId)">Yes</button>
-                      <button type="button" class="text-neutral-500 ml-xs" (click)="confirmingRemoveGroupId.set(null)">No</button>
-                    </span>
-                  } @else {
-                    <button type="button" class="icon-btn text-primary-500" title="Remove all" (click)="confirmingRemoveGroupId.set(group.batchId)"><app-icon name="delete" /></button>
+                  @if (renamingGroupId() === group.batchId) {
+                    <button type="button" class="text-xs text-primary-600 font-medium" (click)="confirmRenameGroup(group.rows[0])">Save</button>
+                    <button type="button" class="text-xs text-neutral-500" (click)="renamingGroupId.set(null)">Cancel</button>
+                  } @else if (allowRename && !group.rows[0].requestId) {
+                    <!-- Naming the group renames its first file - the group has no name of its own to store, this is the one that shows in the header. -->
+                    <button type="button" class="icon-btn" title="Rename" (click)="startRenameGroup(group)"><app-icon name="rename" /></button>
+                  }
+                  @if (renamingGroupId() !== group.batchId) {
+                    @if (group.rows[0].requestId) {
+                      <!-- A request-derived group is reopened, not deleted - matches the existing single-row rule (row.requestId shows Reopen instead of Delete), just applied to the whole group instead of one doc. -->
+                      <button type="button" class="icon-btn" title="Reopen request" (click)="requestReopen.emit(group.rows[0])"><app-icon name="reopen" /></button>
+                    } @else if (confirmingRemoveGroupId() === group.batchId) {
+                      <span class="text-xs text-neutral-600 whitespace-nowrap">
+                        Remove all?
+                        <button type="button" class="text-primary-500 font-medium ml-xs" (click)="confirmRemoveGroup(group.batchId)">Yes</button>
+                        <button type="button" class="text-neutral-500 ml-xs" (click)="confirmingRemoveGroupId.set(null)">No</button>
+                      </span>
+                    } @else {
+                      <button type="button" class="icon-btn text-primary-500" title="Remove all" (click)="confirmingRemoveGroupId.set(group.batchId)"><app-icon name="delete" /></button>
+                    }
                   }
                 }
                 <app-icon [name]="isExpanded(group.batchId) ? 'chevronUp' : 'chevronDown'" />
@@ -192,11 +205,28 @@ export class DocumentListComponent {
   renameValue = '';
 
   confirmingRemoveGroupId = signal<string | null>(null);
+  renamingGroupId = signal<string | null>(null);
   /** Groups default expanded (multi-file uploads should be clearly visible right away) - this tracks the exceptions the user collapsed, not the exceptions expanded. */
   collapsedGroupIds = signal<Set<string>>(new Set());
 
   isExpanded(batchId: string): boolean {
     return !this.collapsedGroupIds().has(batchId);
+  }
+
+  /** The group has no name of its own to store - its header shows the request's title when it came from a request, otherwise its first file's name, falling back to a plain file count. */
+  groupName(group: { batchId: string | null; rows: DocRow[] }): string {
+    return group.rows[0].requestTitle ?? group.rows[0].fileName ?? `${group.rows.length} files`;
+  }
+
+  startRenameGroup(group: { batchId: string | null; rows: DocRow[] }): void {
+    this.renameValue = this.groupName(group);
+    this.renamingGroupId.set(group.batchId);
+  }
+
+  confirmRenameGroup(firstRow: DocRow): void {
+    if (!this.renameValue.trim()) return;
+    this.rename.emit({ row: firstRow, fileName: this.renameValue.trim() });
+    this.renamingGroupId.set(null);
   }
 
   /** Groups rows sharing a non-null batchId; a batch of exactly one member renders as a plain row (no group chrome) by reporting batchId: null for it. */
