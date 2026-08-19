@@ -272,6 +272,7 @@ import { RouterLink } from '@angular/router';
                       (view)="onOwnedDocView($event)"
                       (download)="onOwnedDocDownload($event)"
                       (remove)="onOwnedDocRemove($event)"
+                      (removeGroup)="onRemoveGroup($event)"
                       (rename)="onOwnedDocRename($event)"
                       (requestFulfill)="onFulfillDocRequest($event)"
                       (requestReopen)="reopenDocRequestRow($event)"
@@ -345,6 +346,7 @@ import { RouterLink } from '@angular/router';
                       (view)="onOwnedDocView($event)"
                       (download)="onOwnedDocDownload($event)"
                       (remove)="onOwnedDocRemove($event)"
+                      (removeGroup)="onRemoveGroup($event)"
                       (rename)="onOwnedDocRename($event)"
                       (requestFulfill)="onFulfillDocRequest($event)"
                       (requestReopen)="reopenDocRequestRow($event)"
@@ -433,13 +435,14 @@ import { RouterLink } from '@angular/router';
 
         <div>
           <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-sm">Documents</h3>
-          <p class="text-xs text-neutral-500 mb-sm">Photos, deeds/surveys attachments live in their own sections above - general uploads and requested documents (including photos added here) show below.</p>
+          <p class="text-xs text-neutral-500 mb-sm">Deeds/surveys attachments live in their own sections above; photos have their own Photos section below.</p>
           <app-document-list
             [rows]="documentRows()"
             [previewUrls]="previewUrls()"
             (view)="onOwnedDocView($event)"
             (download)="onOwnedDocDownload($event)"
             (remove)="onOwnedDocRemove($event)"
+            (removeGroup)="onRemoveGroup($event)"
             (rename)="onOwnedDocRename($event)"
             (requestFulfill)="onFulfillDocRequest($event)"
             (requestReopen)="reopenDocRequestRow($event)"
@@ -452,6 +455,34 @@ import { RouterLink } from '@angular/router';
             <div class="flex gap-md mt-sm">
               <app-document-upload-button (filesSelected)="onDocumentFilesSelected($event)" />
               <button type="button" class="text-sm text-primary-600" (click)="startOwnerRequest('land', landId)">+ Request document</button>
+            </div>
+          }
+          @if (documentError()) {
+            <p class="text-xs text-primary-500 mt-xs">{{ documentError() }}</p>
+          }
+        </div>
+
+        <div>
+          <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-sm">Photos</h3>
+          <app-document-list
+            [rows]="photoRows()"
+            [previewUrls]="previewUrls()"
+            (view)="onOwnedDocView($event)"
+            (download)="onOwnedDocDownload($event)"
+            (remove)="onOwnedDocRemove($event)"
+            (removeGroup)="onRemoveGroup($event)"
+            (rename)="onOwnedDocRename($event)"
+            (requestFulfill)="onFulfillDocRequest($event)"
+            (requestReopen)="reopenDocRequestRow($event)"
+            (requestCancel)="cancelDocRequestRow($event)"
+            (requestCopyShareLink)="copyDocRequestShareLinkRow($event)"
+          />
+          @if (isRequestFormTarget('landPhoto', landId)) {
+            <app-document-request-form (submitted)="submitDocRequest($event)" (cancelled)="requestFormTarget.set(null)" />
+          } @else {
+            <div class="flex gap-md mt-sm">
+              <app-document-upload-button label="+ Add photo" accept="image/*" (filesSelected)="onPhotoFilesSelected($event)" />
+              <button type="button" class="text-sm text-primary-600" (click)="startOwnerRequest('landPhoto', landId)">+ Request photo</button>
             </div>
           }
           @if (documentError()) {
@@ -523,7 +554,7 @@ export class LandDetailPanelComponent implements OnInit {
   documentRequests = signal<LandDocumentRequest[]>([]);
   documentError = signal('');
   /** Which owner's "+ Request document" form is open, if any - one signal shared by the general Documents section and every Survey/Deed row, since only one can be open at a time. */
-  requestFormTarget = signal<{ ownerType: 'Land' | 'LandSurvey' | 'LandDeed'; ownerId: string } | null>(null);
+  requestFormTarget = signal<{ ownerType: 'Land' | 'LandSurvey' | 'LandDeed' | 'LandPhoto'; ownerId: string } | null>(null);
   viewingDocument = signal<{ fileName: string; contentType: string } | null>(null);
   viewingBlobUrl = signal<string | null>(null);
 
@@ -531,39 +562,49 @@ export class LandDetailPanelComponent implements OnInit {
     land: 'Land', landSurvey: 'LandSurvey', landDeed: 'LandDeed', landPhoto: 'LandPhoto'
   };
 
-  startOwnerRequest(ownerType: 'land' | 'landSurvey' | 'landDeed', ownerId: string): void {
-    this.requestFormTarget.set({ ownerType: this.ownerTypeApi[ownerType] as 'Land' | 'LandSurvey' | 'LandDeed', ownerId });
+  startOwnerRequest(ownerType: 'land' | 'landSurvey' | 'landDeed' | 'landPhoto', ownerId: string): void {
+    this.requestFormTarget.set({ ownerType: this.ownerTypeApi[ownerType], ownerId });
   }
 
-  isRequestFormTarget(ownerType: 'land' | 'landSurvey' | 'landDeed', ownerId: string): boolean {
+  isRequestFormTarget(ownerType: 'land' | 'landSurvey' | 'landDeed' | 'landPhoto', ownerId: string): boolean {
     const target = this.requestFormTarget();
     return !!target && target.ownerType === this.ownerTypeApi[ownerType] && target.ownerId === ownerId;
   }
 
-  /** Photos merged into the same unified list as every other document - a fulfilled photo request row absorbs into its photo row exactly like any other request. */
+  /** Photos merged into the same unified list as every other document - a fulfilled photo request row absorbs into its photo row exactly like any other request. Adapts LandPhoto's shape into OwnedDocument so buildOwnerRows' request-merging/batch-grouping logic applies identically to photos, not a second hand-rolled code path. */
   photoRows = computed<DocRow[]>(() =>
-    this.photos().map(p => ({
-      key: p.photoId, ownerKind: 'landPhoto' as const, ownerId: this.landId, documentId: p.photoId,
-      fileName: p.fileName, contentType: p.contentType, uploadedByName: p.uploadedByName, createdAt: p.createdAt,
-      category: 'Photo'
-    }))
+    this.buildOwnerRows(
+      this.photos().map(p => ({
+        documentId: p.photoId, fileName: p.fileName, contentType: p.contentType, fileSizeBytes: p.fileSizeBytes,
+        uploadedByName: p.uploadedByName, createdAt: p.createdAt, uploadBatchId: p.batchId
+      })),
+      'landPhoto', 'LandPhoto', this.landId
+    )
   );
 
-  /** Merges an owner's plain uploaded documents with its pending/fulfilled document requests into one DocRow list - the one place every owner kind (general land, survey, deed) builds its rows, so request-fulfillment shows correctly everywhere. */
+  /**
+   * Merges an owner's plain uploaded documents with its pending/fulfilled document requests
+   * into one DocRow list - the one place every owner kind (general land, survey, deed, photo)
+   * builds its rows, so request-fulfillment shows correctly everywhere. A doc joins a
+   * request's group when its batch id matches the request's fulfilledBatchId - every file
+   * uploaded via that request's fulfill action, first time or after a reopen, shares it.
+   */
   private buildOwnerRows(docs: OwnedDocument[], ownerKind: DocRow['ownerKind'], apiOwnerType: string, ownerId: string, subId?: string): DocRow[] {
     const requests = this.documentRequests().filter(r => r.ownerType === apiOwnerType && r.ownerId === ownerId);
     const rows: DocRow[] = [];
 
     for (const doc of docs) {
-      const request = requests.find(r => r.fulfilledDocumentId === doc.documentId) ?? null;
+      const request = doc.uploadBatchId ? requests.find(r => r.fulfilledBatchId === doc.uploadBatchId) ?? null : null;
       rows.push({
         key: doc.documentId, ownerKind, ownerId, subId, documentId: doc.documentId,
         fileName: doc.fileName, contentType: doc.contentType, uploadedByName: doc.uploadedByName, createdAt: doc.createdAt,
+        batchId: doc.uploadBatchId ?? null,
         requestId: request?.requestId ?? null, requestTitle: request?.title ?? null, requestStatus: request?.status ?? null
       });
     }
     for (const request of requests) {
-      if (!docs.some(d => d.documentId === request.fulfilledDocumentId)) {
+      // Still-pending (never fulfilled) requests have no batch yet - render as the existing bare placeholder row.
+      if (!request.fulfilledBatchId) {
         rows.push({
           key: request.requestId, ownerKind, ownerId, subId, documentId: null,
           fileName: null, contentType: null, uploadedByName: null, createdAt: null,
@@ -579,10 +620,7 @@ export class LandDetailPanelComponent implements OnInit {
     return this.buildOwnerRows(docs, ownerKind, this.ownerTypeApi[ownerKind], subId, subId);
   }
 
-  documentRows = computed<DocRow[]>(() => [
-    ...this.buildOwnerRows(this.documents(), 'land', 'Land', this.landId),
-    ...this.photoRows()
-  ]);
+  documentRows = computed<DocRow[]>(() => this.buildOwnerRows(this.documents(), 'land', 'Land', this.landId));
 
   telHref = telHref;
   whatsAppHref = whatsAppHref;
@@ -1144,8 +1182,9 @@ export class LandDetailPanelComponent implements OnInit {
 
   onSurveyDocUpload(surveyId: string, files: File[]): void {
     this.error.set('');
+    const batchId = files.length > 1 ? crypto.randomUUID() : undefined;
     files.forEach(file =>
-      this.landService.uploadSurveyDocument(this.workspaceId, this.landId, surveyId, file).subscribe({
+      this.landService.uploadSurveyDocument(this.workspaceId, this.landId, surveyId, file, batchId).subscribe({
         next: (doc) => this.surveyDocuments.update(map => ({ ...map, [surveyId]: [doc, ...(map[surveyId] ?? [])] })),
         error: (err) => this.error.set(err.error?.message ?? 'Could not upload document.')
       })
@@ -1154,8 +1193,9 @@ export class LandDetailPanelComponent implements OnInit {
 
   onDeedDocUpload(deedId: string, files: File[]): void {
     this.error.set('');
+    const batchId = files.length > 1 ? crypto.randomUUID() : undefined;
     files.forEach(file =>
-      this.landService.uploadDeedDocument(this.workspaceId, this.landId, deedId, file).subscribe({
+      this.landService.uploadDeedDocument(this.workspaceId, this.landId, deedId, file, batchId).subscribe({
         next: (doc) => this.deedDocuments.update(map => ({ ...map, [deedId]: [doc, ...(map[deedId] ?? [])] })),
         error: (err) => this.error.set(err.error?.message ?? 'Could not upload document.')
       })
@@ -1181,6 +1221,10 @@ export class LandDetailPanelComponent implements OnInit {
 
   onOwnedDocDownload(row: DocRow): void {
     this.ownedDocBlob(row).subscribe(blob => this.triggerDownload(blob, row.fileName!));
+  }
+
+  onRemoveGroup(rows: DocRow[]): void {
+    rows.forEach(row => this.onOwnedDocRemove(row));
   }
 
   onOwnedDocRemove(row: DocRow): void {
@@ -1257,14 +1301,25 @@ export class LandDetailPanelComponent implements OnInit {
     });
   }
 
-  /** One upload path for every file, photos included - a photo is just a file whose content-type happens to be an image, category is auto-detected rather than needing its own trigger. */
+  /** General document upload - photos have their own card/upload path again (see onPhotoFilesSelected), so this always uploads as Category=Other. */
   onDocumentFilesSelected(files: File[]): void {
     this.documentError.set('');
+    const batchId = files.length > 1 ? crypto.randomUUID() : undefined;
     files.forEach(file => {
-      const category = file.type.startsWith('image/') ? 'Photo' : 'Other';
-      this.landService.uploadDocument(this.workspaceId, this.landId, file, category).subscribe({
+      this.landService.uploadDocument(this.workspaceId, this.landId, file, 'Other', batchId).subscribe({
         next: (doc) => this.documents.update(list => [doc, ...list]),
         error: (err) => this.documentError.set(err.error?.message ?? 'Could not upload document.')
+      });
+    });
+  }
+
+  onPhotoFilesSelected(files: File[]): void {
+    this.documentError.set('');
+    const batchId = files.length > 1 ? crypto.randomUUID() : undefined;
+    files.forEach(file => {
+      this.landService.uploadPhoto(this.workspaceId, this.landId, file, batchId).subscribe({
+        next: (photo) => this.photos.update(list => [photo, ...list]),
+        error: (err) => this.documentError.set(err.error?.message ?? 'Could not upload photo.')
       });
     });
   }
@@ -1284,12 +1339,14 @@ export class LandDetailPanelComponent implements OnInit {
       });
   }
 
-  onFulfillDocRequest(event: { row: DocRow; file: File }): void {
+  onFulfillDocRequest(event: { row: DocRow; files: File[] }): void {
     this.documentError.set('');
-    this.documentRequestService.fulfill(this.workspaceId, this.landId, event.row.requestId!, event.file).subscribe({
+    const batchId = event.row.batchId ?? crypto.randomUUID();
+    this.documentRequestService.fulfill(this.workspaceId, this.landId, event.row.requestId!, event.files, batchId).subscribe({
       next: (updated) => {
         this.documentRequests.update(list => list.map(r => (r.requestId === updated.requestId ? updated : r)));
         this.landService.getDocuments(this.workspaceId, this.landId).subscribe(docs => this.documents.set(docs));
+        this.landService.listPhotos(this.workspaceId, this.landId).subscribe(photos => this.photos.set(photos));
       },
       error: (err) => this.documentError.set(err.error?.message ?? 'Could not fulfill request.')
     });

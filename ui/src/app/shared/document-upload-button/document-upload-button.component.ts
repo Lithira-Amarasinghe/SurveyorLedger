@@ -11,13 +11,14 @@ import { IconComponent } from '../icon/icon.component';
     <label class="inline-flex items-center gap-xs text-sm text-primary-600 hover:text-primary-700 cursor-pointer">
       <app-icon name="upload" />
       {{ label }}
-      <input type="file" [multiple]="multiple" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" class="hidden" (change)="onFilesSelected($event)" />
+      <input type="file" [multiple]="multiple" [accept]="accept" class="hidden" (change)="onFilesSelected($event)" />
     </label>
   `
 })
 export class DocumentUploadButtonComponent {
   @Input() label = 'Upload document';
   @Input() multiple = true;
+  @Input() accept = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png';
   @Output() filesSelected = new EventEmitter<File[]>();
 
   onFilesSelected(event: Event): void {

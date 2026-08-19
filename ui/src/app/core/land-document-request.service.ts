@@ -8,7 +8,7 @@ import { environment } from '../../environments/environment';
 export interface LandDocumentRequest {
   requestId: string;
   landId: string;
-  ownerType: 'Land' | 'LandSurvey' | 'LandDeed';
+  ownerType: 'Land' | 'LandSurvey' | 'LandDeed' | 'LandPhoto';
   ownerId: string;
   title: string;
   description: string | null;
@@ -44,7 +44,7 @@ export class LandDocumentRequestService {
 
   create(
     workspaceId: string, landId: string, title: string, description: string | null, category: string, targetRole: string | null,
-    ownerType: 'Land' | 'LandSurvey' | 'LandDeed' = 'Land', ownerId?: string
+    ownerType: 'Land' | 'LandSurvey' | 'LandDeed' | 'LandPhoto' = 'Land', ownerId?: string
   ): Observable<LandDocumentRequest> {
     return this.http
       .post<ApiResponse<LandDocumentRequest>>(this.base(workspaceId, landId), { title, description, category, targetRole, ownerType, ownerId })
