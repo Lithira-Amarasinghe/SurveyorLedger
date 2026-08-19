@@ -7,8 +7,7 @@ public class LandResponse
 {
     public Guid LandId { get; set; }
     public AddressDto Address { get; set; } = new();
-    public decimal? Size { get; set; }
-    public string? SizeUnit { get; set; }
+    public AreaDto Area { get; set; } = new();
     public string? GpsCoordinates { get; set; }
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }

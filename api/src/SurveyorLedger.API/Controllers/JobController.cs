@@ -6,6 +6,7 @@ using SurveyorLedger.API.Models.Job;
 using SurveyorLedger.API.Models.Land;
 using SurveyorLedger.API.Models.Responses;
 using SurveyorLedger.API.Services;
+using SurveyorLedger.Core;
 using SurveyorLedger.Data.Entities;
 
 namespace SurveyorLedger.API.Controllers
@@ -213,12 +214,27 @@ namespace SurveyorLedger.API.Controllers
                 PostalCode = l.Address.PostalCode,
                 Country = l.Address.Country
             },
-            Size = l.Size,
-            SizeUnit = l.SizeUnit,
+            Area = ToAreaDto(l.AreaSquareMeters),
             GpsCoordinates = l.GpsCoordinates,
             Notes = l.Notes,
             CreatedAt = l.CreatedAt,
             UpdatedAt = l.UpdatedAt
         };
+
+        private static AreaDto ToAreaDto(decimal? squareMeters)
+        {
+            if (squareMeters is null)
+                return new AreaDto();
+
+            var (acres, roods, perches) = AreaConversion.ToAcresRoodsPerches(squareMeters.Value);
+            return new AreaDto
+            {
+                Acres = acres,
+                Roods = roods,
+                Perches = perches,
+                SquareMeters = squareMeters.Value,
+                Hectares = squareMeters.Value / AreaConversion.SquareMetersPerHectare
+            };
+        }
     }
 }

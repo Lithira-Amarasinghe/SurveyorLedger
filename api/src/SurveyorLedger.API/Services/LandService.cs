@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using SurveyorLedger.API.Models.Land;
+using SurveyorLedger.Core;
 using SurveyorLedger.Core.Exceptions;
 using SurveyorLedger.Data;
 using SurveyorLedger.Data.Entities;
@@ -69,8 +70,7 @@ public class LandService : ILandService
             Id = Guid.NewGuid(),
             WorkspaceId = workspaceId,
             Address = ToAddress(request.Address),
-            Size = request.Size,
-            SizeUnit = request.SizeUnit,
+            AreaSquareMeters = ToAreaSquareMeters(request.Area),
             GpsCoordinates = request.GpsCoordinates,
             Notes = request.Notes,
             OwnerId = request.OwnerId,
@@ -136,8 +136,7 @@ public class LandService : ILandService
         var land = await FindLandAsync(workspaceId, landId);
 
         land.Address = ToAddress(request.Address);
-        land.Size = request.Size;
-        land.SizeUnit = request.SizeUnit;
+        land.AreaSquareMeters = ToAreaSquareMeters(request.Area);
         land.GpsCoordinates = request.GpsCoordinates;
         land.Notes = request.Notes;
         land.OwnerId = request.OwnerId;
@@ -537,6 +536,34 @@ public class LandService : ILandService
     {
         return await _context.LandBoundaries.FirstOrDefaultAsync(b => b.Id == boundaryId && b.LandId == landId)
             ?? throw new NotFoundException("Boundary record not found");
+    }
+
+    /// <summary>
+    /// Exactly one unit system may be populated - Acres/Roods/Perches (any one implies
+    /// the others default to 0), or SquareMeters, or Hectares. Null/empty dto or all
+    /// fields null means "area unset."
+    /// </summary>
+    private static decimal? ToAreaSquareMeters(AreaDto? dto)
+    {
+        if (dto is null)
+            return null;
+
+        var hasArp = dto.Acres.HasValue || dto.Roods.HasValue || dto.Perches.HasValue;
+        var hasSquareMeters = dto.SquareMeters.HasValue;
+        var hasHectares = dto.Hectares.HasValue;
+
+        var systemCount = (hasArp ? 1 : 0) + (hasSquareMeters ? 1 : 0) + (hasHectares ? 1 : 0);
+        if (systemCount > 1)
+            throw new ValidationException("Provide area in one unit system only.");
+        if (systemCount == 0)
+            return null;
+
+        if (hasSquareMeters)
+            return dto.SquareMeters!.Value;
+        if (hasHectares)
+            return dto.Hectares!.Value * AreaConversion.SquareMetersPerHectare;
+
+        return AreaConversion.FromAcresRoodsPerches(dto.Acres ?? 0, dto.Roods ?? 0, dto.Perches ?? 0);
     }
 
     private static Address ToAddress(AddressDto? dto) => new()

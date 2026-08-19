@@ -9,11 +9,7 @@ public class LandRequest
 {
     public AddressDto? Address { get; set; }
 
-    [Range(0, double.MaxValue, ErrorMessage = "Size must be zero or greater.")]
-    public decimal? Size { get; set; }
-
-    [StringLength(20)]
-    public string? SizeUnit { get; set; }
+    public AreaDto? Area { get; set; }
 
     [StringLength(100)]
     public string? GpsCoordinates { get; set; }

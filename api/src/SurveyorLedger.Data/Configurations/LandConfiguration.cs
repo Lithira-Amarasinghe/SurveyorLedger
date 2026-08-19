@@ -9,8 +9,7 @@ public class LandConfiguration : IEntityTypeConfiguration<Land>
     public void Configure(EntityTypeBuilder<Land> builder)
     {
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Size).HasColumnType("decimal(18,2)");
-        builder.Property(x => x.SizeUnit).HasMaxLength(20);
+        builder.Property(x => x.AreaSquareMeters).HasColumnType("decimal(14,4)");
         builder.Property(x => x.GpsCoordinates).HasMaxLength(100);
         builder.Property(x => x.Latitude).HasColumnType("decimal(9,6)");
         builder.Property(x => x.Longitude).HasColumnType("decimal(9,6)");

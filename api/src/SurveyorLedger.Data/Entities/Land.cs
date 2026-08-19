@@ -5,8 +5,7 @@ public class Land
     public Guid Id { get; set; }
     public Guid WorkspaceId { get; set; }
     public Address Address { get; set; } = new();
-    public decimal? Size { get; set; }
-    public string? SizeUnit { get; set; }
+    public decimal? AreaSquareMeters { get; set; }
     public string? GpsCoordinates { get; set; }
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
