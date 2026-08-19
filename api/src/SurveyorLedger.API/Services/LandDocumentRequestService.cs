@@ -18,7 +18,7 @@ public interface ILandDocumentRequestService
     Task<LandDocumentRequest> GenerateShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid requestId);
     Task RevokeShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid requestId);
     Task<LandDocumentRequest> GetByShareTokenAsync(string token);
-    Task<LandDocumentRequest> UploadViaShareTokenAsync(string token, IFormFile file, string? displayFileName = null);
+    Task<LandDocumentRequest> UploadViaShareTokenAsync(string token, List<IFormFile> files, string? displayFileName = null);
 }
 
 /// <summary>
@@ -213,7 +213,7 @@ public class LandDocumentRequestService : ILandDocumentRequestService
         return request;
     }
 
-    public async Task<LandDocumentRequest> UploadViaShareTokenAsync(string token, IFormFile file, string? displayFileName = null)
+    public async Task<LandDocumentRequest> UploadViaShareTokenAsync(string token, List<IFormFile> files, string? displayFileName = null)
     {
         var request = await GetByShareTokenAsync(token);
         var land = await _context.Lands.FirstAsync(l => l.Id == request.LandId);
@@ -226,20 +226,22 @@ public class LandDocumentRequestService : ILandDocumentRequestService
             .Select(a => a.Id)
             .FirstOrDefaultAsync();
 
-        return await LinkFulfilledDocumentAsyncForToken(land.WorkspaceId, land.Id, request, file, requesterAccountId, request.RequestedBy, displayFileName);
+        return await LinkFulfilledDocumentAsyncForToken(land.WorkspaceId, land.Id, request, files, requesterAccountId, request.RequestedBy, displayFileName);
     }
 
     /// <summary>
     /// Anonymous-link variant of LinkFulfilledDocumentAsync - there is no authenticated caller,
     /// so both the access-check identity and the FulfilledBy record are derived from the
-    /// request's original requester instead. Still single-file (the public unauthenticated
-    /// upload form has no multi-file picker) but reuses the batch-id-reuse rule: a re-upload
+    /// request's original requester instead. Reuses the batch-id-reuse rule: a re-upload
     /// after Reopen joins the request's existing batch rather than starting a new one.
     /// </summary>
-    private async Task<LandDocumentRequest> LinkFulfilledDocumentAsyncForToken(Guid workspaceId, Guid landId, LandDocumentRequest request, IFormFile file, Guid attributedUserAccountId, Guid attributedPersonId, string? displayFileName)
+    private async Task<LandDocumentRequest> LinkFulfilledDocumentAsyncForToken(Guid workspaceId, Guid landId, LandDocumentRequest request, List<IFormFile> files, Guid attributedUserAccountId, Guid attributedPersonId, string? displayFileName)
     {
         var batchId = request.FulfilledBatchId ?? Guid.NewGuid();
-        await _documentService.UploadOwnedDocumentForFulfillmentAsync(workspaceId, attributedUserAccountId, landId, request.OwnerType, request.OwnerId, request.Category, file, displayFileName, batchId);
+        foreach (var file in files)
+        {
+            await _documentService.UploadOwnedDocumentForFulfillmentAsync(workspaceId, attributedUserAccountId, landId, request.OwnerType, request.OwnerId, request.Category, file, displayFileName, batchId);
+        }
 
         request.FulfilledBatchId = batchId;
         request.FulfilledAt = DateTime.UtcNow;

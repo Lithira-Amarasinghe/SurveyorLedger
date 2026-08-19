@@ -18,7 +18,7 @@ public interface IDocumentRequestService
     Task<DocumentRequest> GenerateShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId);
     Task RevokeShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId);
     Task<DocumentRequest> GetByShareTokenAsync(string token);
-    Task<DocumentRequest> UploadViaShareTokenAsync(string token, IFormFile file, string? displayFileName = null);
+    Task<DocumentRequest> UploadViaShareTokenAsync(string token, List<IFormFile> files, string? displayFileName = null);
 }
 
 /// <summary>
@@ -220,7 +220,7 @@ public class DocumentRequestService : IDocumentRequestService
         return request;
     }
 
-    public async Task<DocumentRequest> UploadViaShareTokenAsync(string token, IFormFile file, string? displayFileName = null)
+    public async Task<DocumentRequest> UploadViaShareTokenAsync(string token, List<IFormFile> files, string? displayFileName = null)
     {
         var request = await GetByShareTokenAsync(token);
         var job = await _context.Jobs.FirstAsync(j => j.Id == request.JobId);
@@ -237,7 +237,7 @@ public class DocumentRequestService : IDocumentRequestService
             .FirstOrDefaultAsync();
 
         var batchId = request.FulfilledBatchId ?? Guid.NewGuid();
-        return await LinkFulfilledDocumentAsync(job.WorkspaceId, job.Id, request, new List<IFormFile> { file }, DocumentVisibility.ClientVisible, requesterAccountId, request.RequestedBy, batchId, displayFileName);
+        return await LinkFulfilledDocumentAsync(job.WorkspaceId, job.Id, request, files, DocumentVisibility.ClientVisible, requesterAccountId, request.RequestedBy, batchId, displayFileName);
     }
 
     /// <summary>Shared by CreateAsync and UpdateTargetAsync - one place for the three targeting rules.</summary>

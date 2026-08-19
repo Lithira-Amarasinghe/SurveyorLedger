@@ -5,8 +5,9 @@ namespace SurveyorLedger.API.Models.LandDocumentRequest;
 
 public class LandDocumentRequestLinkUploadRequest
 {
-    [Required(ErrorMessage = "File is required.")]
-    public required IFormFile File { get; set; }
+    [Required(ErrorMessage = "At least one file is required.")]
+    [MinLength(1, ErrorMessage = "At least one file is required.")]
+    public required List<IFormFile> Files { get; set; }
 
     public string? DisplayFileName { get; set; }
 }

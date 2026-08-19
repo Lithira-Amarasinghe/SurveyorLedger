@@ -204,7 +204,7 @@ public class LandDocumentRequestServiceTests : WorkspaceIntegrationTestBase
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _landId, "Deed copy", null, DocumentCategory.LegalDocument);
         var withLink = await _requestService.GenerateShareLinkAsync(WorkspaceId, AdminId, _landId, request.Id);
 
-        var fulfilled = await _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, MakeFile());
+        var fulfilled = await _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, new List<IFormFile> { MakeFile() });
 
         Assert.Equal("Fulfilled", fulfilled.Status);
         Assert.Equal(AdminPersonId, fulfilled.FulfilledBy);
@@ -216,9 +216,9 @@ public class LandDocumentRequestServiceTests : WorkspaceIntegrationTestBase
         await SeedLandAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _landId, "Deed copy", null, DocumentCategory.LegalDocument);
         var withLink = await _requestService.GenerateShareLinkAsync(WorkspaceId, AdminId, _landId, request.Id);
-        await _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, MakeFile());
+        await _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, new List<IFormFile> { MakeFile() });
 
         await Assert.ThrowsAsync<ValidationException>(() =>
-            _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, MakeFile()));
+            _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, new List<IFormFile> { MakeFile() }));
     }
 }

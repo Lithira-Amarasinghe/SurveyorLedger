@@ -59,7 +59,7 @@ namespace SurveyorLedger.API.Controllers
         [RequestSizeLimit(DocumentService.MaxFileSizeBytes)]
         public async Task<IActionResult> Upload(string token, [FromForm] DocumentRequestLinkUploadRequest request)
         {
-            await _requestService.UploadViaShareTokenAsync(token, request.File, request.DisplayFileName);
+            await _requestService.UploadViaShareTokenAsync(token, request.Files, request.DisplayFileName);
             return NoContent();
         }
     }

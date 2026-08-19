@@ -387,7 +387,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
         var withLink = await _requestService.GenerateShareLinkAsync(WorkspaceId, AdminId, _jobAId, request.Id);
 
-        var fulfilled = await _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, MakeFile());
+        var fulfilled = await _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, new List<IFormFile> { MakeFile() });
 
         Assert.Equal("Fulfilled", fulfilled.Status);
         Assert.Equal(AdminPersonId, fulfilled.FulfilledBy); // RequestedBy in this seed is Admin
@@ -399,10 +399,10 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
         await SeedJobsAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
         var withLink = await _requestService.GenerateShareLinkAsync(WorkspaceId, AdminId, _jobAId, request.Id);
-        await _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, MakeFile());
+        await _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, new List<IFormFile> { MakeFile() });
 
         await Assert.ThrowsAsync<ValidationException>(() =>
-            _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, MakeFile()));
+            _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, new List<IFormFile> { MakeFile() }));
     }
 
     [Fact]
@@ -412,7 +412,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
         var withLink = await _requestService.GenerateShareLinkAsync(WorkspaceId, AdminId, _jobAId, request.Id);
 
-        var fulfilled = await _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, MakeFile());
+        var fulfilled = await _requestService.UploadViaShareTokenAsync(withLink.ShareToken!, new List<IFormFile> { MakeFile() });
 
         var documentService = GetService<IDocumentService>();
         var docs = await documentService.GetDocumentsAsync(WorkspaceId, ClientId, _jobAId);
