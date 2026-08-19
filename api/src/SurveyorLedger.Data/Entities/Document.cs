@@ -37,6 +37,9 @@ public class Document
     public DateTime UpdatedAt { get; set; }
     public bool IsActive { get; set; } = true;
 
+    /// <summary>Groups Documents uploaded together (direct multi-file select or a multi-file request fulfillment) into one unit for display/delete - null for a lone upload. Client-generated, not server-assigned.</summary>
+    public Guid? UploadBatchId { get; set; }
+
     public Job? Job { get; set; }
     public Person UploadedByUser { get; set; }
 }

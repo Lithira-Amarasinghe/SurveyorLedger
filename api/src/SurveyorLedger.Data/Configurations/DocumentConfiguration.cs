@@ -21,6 +21,7 @@ public class DocumentConfiguration : IEntityTypeConfiguration<Document>
 
         builder.HasIndex(x => x.JobId);
         builder.HasIndex(x => new { x.OwnerType, x.OwnerId });
+        builder.HasIndex(x => new { x.OwnerType, x.OwnerId, x.UploadBatchId });
 
         builder.HasOne(x => x.Job)
             .WithMany()
