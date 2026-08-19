@@ -83,7 +83,9 @@ export interface DocRow {
                     }
                   }
                 }
-                <app-icon [name]="isExpanded(group.batchId) ? 'chevronUp' : 'chevronDown'" />
+                <button type="button" class="icon-btn" title="Expand" (click)="toggleGroup(group.batchId)">
+                  <app-icon [name]="isExpanded(group.batchId) ? 'chevronUp' : 'chevronDown'" />
+                </button>
               </div>
             </div>
             @if (isExpanded(group.batchId)) {
