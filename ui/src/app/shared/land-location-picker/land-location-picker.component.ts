@@ -3,14 +3,18 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import * as L from 'leaflet';
 
-// Leaflet's default icon URLs are relative paths that don't resolve through Angular's
-// bundler. Vendored into ui/public/leaflet/ (copied from node_modules/leaflet/dist/images)
-// and served from the app's own origin - no external CDN dependency for a broken pointer
-// icon to depend on, no image request that a firewalled/offline client can't reach.
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'leaflet/marker-icon-2x.png',
-  iconUrl: 'leaflet/marker-icon.png',
-  shadowUrl: 'leaflet/marker-shadow.png'
+// An inline SVG divIcon instead of Leaflet's default raster marker - no image file to
+// fail to load (the previous fix vendored PNGs locally, but a drawn icon removes the
+// failure mode entirely: nothing to 404, nothing to flash as a broken-image placeholder
+// while it loads), and it stays crisp at any zoom/DPI.
+const pinIcon = L.divIcon({
+  className: 'land-location-pin',
+  html: `<svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
+    <path d="M16 0C7.16 0 0 7.16 0 16c0 11 16 26 16 26s16-15 16-26C32 7.16 24.84 0 16 0z" fill="#dc2626"/>
+    <circle cx="16" cy="16" r="6" fill="#ffffff"/>
+  </svg>`,
+  iconSize: [32, 42],
+  iconAnchor: [16, 42]
 });
 
 interface NominatimResult {
@@ -163,7 +167,7 @@ export class LandLocationPickerComponent implements OnInit, OnDestroy {
     if (this.marker) {
       this.marker.setLatLng([lat, lng]);
     } else {
-      this.marker = L.marker([lat, lng], { draggable: !this.readonly }).addTo(this.map);
+      this.marker = L.marker([lat, lng], { icon: pinIcon, draggable: !this.readonly }).addTo(this.map);
       if (!this.readonly) {
         this.marker.on('dragend', () => {
           const pos = this.marker!.getLatLng();
