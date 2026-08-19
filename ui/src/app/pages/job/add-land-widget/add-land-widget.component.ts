@@ -5,6 +5,7 @@ import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
 import { Land, LandAddress, LandAreaValue, LandService, addressLine, formatArea } from '../../../core/land.service';
 import { LandAreaInputComponent } from '../../../shared/land-area-input/land-area-input.component';
+import { ALL_DISTRICTS } from '../../../shared/sri-lanka-locations';
 
 @Component({
   selector: 'app-add-land-widget',
@@ -52,7 +53,12 @@ import { LandAreaInputComponent } from '../../../shared/land-area-input/land-are
         <div class="space-y-sm">
           <p class="text-sm font-medium text-neutral-900">New land</p>
           <input class="input-field" type="text" placeholder="Village" [(ngModel)]="village" />
-          <input class="input-field" type="text" placeholder="District (optional)" [(ngModel)]="district" />
+          <select class="input-field" [(ngModel)]="district">
+            <option value="">District (optional)</option>
+            @for (d of allDistricts; track d) {
+              <option [value]="d">{{ d }}</option>
+            }
+          </select>
           <app-land-area-input [value]="area" (valueChange)="onAreaChange($event)" />
           @if (error()) {
             <p class="text-xs text-primary-500">{{ error() }}</p>
@@ -78,6 +84,7 @@ export class AddLandWidgetComponent {
   creatingNew = signal(false);
   village = '';
   district = '';
+  allDistricts = ALL_DISTRICTS;
   area: LandAreaValue = { acres: null, roods: null, perches: null, squareMeters: null, hectares: null };
   creating = signal(false);
   error = signal('');

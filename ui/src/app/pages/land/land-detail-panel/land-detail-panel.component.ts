@@ -13,6 +13,7 @@ import { DocumentUploadButtonComponent } from '../../../shared/document-upload-b
 import { DocumentRequestFormComponent, DocumentRequestFormValue } from '../../../shared/document-request-form/document-request-form.component';
 import { DocumentViewerModalComponent } from '../../../shared/document-viewer-modal/document-viewer-modal.component';
 import { IconComponent } from '../../../shared/icon/icon.component';
+import { PROVINCES, DISTRICTS_BY_PROVINCE, provinceForDistrict } from '../../../shared/sri-lanka-locations';
 import { RouterLink } from '@angular/router';
 
 @Component({
@@ -83,8 +84,18 @@ import { RouterLink } from '@angular/router';
             <input class="input-field" placeholder="Pradeshiya Sabha" [(ngModel)]="pradeshiyaSabha" />
             <input class="input-field" placeholder="Korale" [(ngModel)]="korale" />
             <input class="input-field" placeholder="Hatpattu" [(ngModel)]="hatpattu" />
-            <input class="input-field" placeholder="District" [(ngModel)]="district" />
-            <input class="input-field" placeholder="Province" [(ngModel)]="province" />
+            <select class="input-field" [ngModel]="district" (ngModelChange)="onDistrictChange($event)">
+              <option value="">District</option>
+              @for (d of districtOptions; track d) {
+                <option [value]="d">{{ d }}</option>
+              }
+            </select>
+            <select class="input-field" [ngModel]="province" (ngModelChange)="onProvinceChange($event)">
+              <option value="">Province</option>
+              @for (p of provinces; track p) {
+                <option [value]="p">{{ p }}</option>
+              }
+            </select>
           </div>
           <div class="mt-sm">
             <app-land-area-input [value]="area" (valueChange)="onAreaChange($event)" />
@@ -636,6 +647,27 @@ export class LandDetailPanelComponent implements OnInit {
   hatpattu = '';
   district = '';
   province = '';
+  provinces = PROVINCES;
+
+  /** Only the selected province's districts once one is chosen - otherwise every district, so picking a district first still works (and auto-fills the province via onDistrictChange). */
+  get districtOptions(): string[] {
+    return this.province ? DISTRICTS_BY_PROVINCE[this.province] ?? [] : Object.values(DISTRICTS_BY_PROVINCE).flat();
+  }
+
+  onProvinceChange(newProvince: string): void {
+    this.province = newProvince;
+    if (this.district && !DISTRICTS_BY_PROVINCE[newProvince]?.includes(this.district)) {
+      this.district = '';
+    }
+  }
+
+  onDistrictChange(newDistrict: string): void {
+    this.district = newDistrict;
+    const owningProvince = provinceForDistrict(newDistrict);
+    if (owningProvince && owningProvince !== this.province) {
+      this.province = owningProvince;
+    }
+  }
   area: LandAreaValue = { acres: null, roods: null, perches: null, squareMeters: null, hectares: null };
   notes = '';
 
