@@ -28,14 +28,14 @@ describe('DocumentRequestLinkService', () => {
     req.flush({ success: true, data: preview });
   });
 
-  it('upload() posts FormData with File and optional DisplayFileName', () => {
+  it('upload() posts FormData with Files and optional DisplayFileName', () => {
     const file = new File(['bytes'], 'deed.pdf', { type: 'application/pdf' });
-    service.upload(token, file, 'Renamed.pdf').subscribe();
+    service.upload(token, [file], 'Renamed.pdf').subscribe();
     const req = httpMock.expectOne(`${base}/upload`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body instanceof FormData).toBe(true);
     const body = req.request.body as FormData;
-    expect(body.get('File')).toBe(file);
+    expect(body.get('Files')).toBe(file);
     expect(body.get('DisplayFileName')).toBe('Renamed.pdf');
     req.flush(null);
   });

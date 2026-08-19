@@ -37,9 +37,9 @@ export class DocumentRequestLinkService {
     return this.http.get<ApiResponse<DocumentRequestLinkPreview>>(this.base(token)).pipe(map(res => res.data));
   }
 
-  upload(token: string, file: File, displayFileName?: string): Observable<void> {
+  upload(token: string, files: File[], displayFileName?: string): Observable<void> {
     const form = new FormData();
-    form.append('File', file);
+    files.forEach(file => form.append('Files', file));
     if (displayFileName) form.append('DisplayFileName', displayFileName);
     return this.http.post<void>(`${this.base(token)}/upload`, form);
   }
