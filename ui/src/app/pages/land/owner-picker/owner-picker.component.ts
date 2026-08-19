@@ -24,9 +24,8 @@ export interface OwnerValue {
   imports: [CommonModule, FormsModule],
   template: `
     <div>
-      <label class="block text-xs font-medium text-neutral-700 mb-xs">Owner</label>
-
       @if (selectedAccount(); as account) {
+        <label class="block text-xs font-medium text-neutral-700 mb-xs">Owner</label>
         <div class="flex items-center justify-between px-md py-sm rounded bg-neutral-50">
           <div>
             <span class="text-sm text-neutral-900">{{ account.firstName }} {{ account.lastName }}</span>
@@ -37,6 +36,7 @@ export interface OwnerValue {
           <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="clear()">Change</button>
         </div>
       } @else if (manualMode()) {
+        <label class="block text-xs font-medium text-neutral-700 mb-xs">Owner</label>
         <div class="space-y-sm">
           <input class="input-field" placeholder="Owner name" [ngModel]="manualName" (ngModelChange)="onManualChange('name', $event)" name="ownerName" />
           <div class="grid grid-cols-2 gap-sm">
@@ -48,6 +48,12 @@ export interface OwnerValue {
           </button>
         </div>
       } @else {
+        <div class="flex items-center justify-between mb-xs">
+          <label class="block text-xs font-medium text-neutral-700">Owner</label>
+          <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="useManual()">
+            + New owner
+          </button>
+        </div>
         <input
           class="input-field"
           placeholder="Search people by name or email…"
@@ -76,10 +82,6 @@ export interface OwnerValue {
         } @else if (query.trim().length >= 2) {
           <p class="text-xs text-neutral-500 mt-xs">No match.</p>
         }
-
-        <button type="button" class="text-xs text-primary-500 hover:text-primary-600 mt-xs" (click)="useManual()">
-          Owner isn't in the system — enter details
-        </button>
       }
     </div>
   `
