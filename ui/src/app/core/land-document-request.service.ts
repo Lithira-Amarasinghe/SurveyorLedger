@@ -16,7 +16,7 @@ export interface LandDocumentRequest {
   targetRole: 'Admin' | 'Surveyor' | 'Client' | null;
   hasActiveShareLink: boolean;
   status: 'Pending' | 'Fulfilled' | 'Reopened';
-  fulfilledDocumentId: string | null;
+  fulfilledBatchId: string | null;
   fulfilledAt: string | null;
   fulfilledBy: string | null;
   requestedBy: string;
@@ -51,9 +51,10 @@ export class LandDocumentRequestService {
       .pipe(map(res => res.data));
   }
 
-  fulfill(workspaceId: string, landId: string, requestId: string, file: File, displayFileName?: string): Observable<LandDocumentRequest> {
+  fulfill(workspaceId: string, landId: string, requestId: string, files: File[], batchId: string, displayFileName?: string): Observable<LandDocumentRequest> {
     const form = new FormData();
-    form.append('File', file);
+    files.forEach(file => form.append('Files', file));
+    form.append('BatchId', batchId);
     if (displayFileName) form.append('DisplayFileName', displayFileName);
     return this.http
       .post<ApiResponse<LandDocumentRequest>>(`${this.base(workspaceId, landId)}/${requestId}/fulfill`, form)

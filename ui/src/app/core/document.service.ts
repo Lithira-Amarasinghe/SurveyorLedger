@@ -16,6 +16,7 @@ export interface Document {
   uploadedByName: string;
   createdAt: string;
   updatedAt: string;
+  uploadBatchId: string | null;
 }
 
 interface ApiResponse<T> {
@@ -36,12 +37,13 @@ export class DocumentService {
     return this.http.get<ApiResponse<Document[]>>(this.base(workspaceId, jobId)).pipe(map(res => res.data));
   }
 
-  upload(workspaceId: string, jobId: string, file: File, category: string, visibility: string, displayFileName?: string): Observable<Document> {
+  upload(workspaceId: string, jobId: string, file: File, category: string, visibility: string, displayFileName?: string, batchId?: string): Observable<Document> {
     const form = new FormData();
     form.append('File', file);
     form.append('Category', category);
     form.append('Visibility', visibility);
     if (displayFileName) form.append('DisplayFileName', displayFileName);
+    if (batchId) form.append('BatchId', batchId);
     return this.http.post<ApiResponse<Document>>(this.base(workspaceId, jobId), form).pipe(map(res => res.data));
   }
 

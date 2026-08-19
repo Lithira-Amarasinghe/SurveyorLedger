@@ -15,7 +15,7 @@ export interface DocumentRequest {
   targetUserName: string | null;
   hasActiveShareLink: boolean;
   status: 'Pending' | 'Fulfilled' | 'Reopened';
-  fulfilledDocumentId: string | null;
+  fulfilledBatchId: string | null;
   fulfilledAt: string | null;
   fulfilledBy: string | null;
   requestedBy: string;
@@ -47,9 +47,10 @@ export class DocumentRequestService {
       .pipe(map(res => res.data));
   }
 
-  fulfill(workspaceId: string, jobId: string, requestId: string, file: File, visibility: string, displayFileName?: string): Observable<DocumentRequest> {
+  fulfill(workspaceId: string, jobId: string, requestId: string, files: File[], batchId: string, visibility: string, displayFileName?: string): Observable<DocumentRequest> {
     const form = new FormData();
-    form.append('File', file);
+    files.forEach(file => form.append('Files', file));
+    form.append('BatchId', batchId);
     form.append('Visibility', visibility);
     if (displayFileName) form.append('DisplayFileName', displayFileName);
     return this.http

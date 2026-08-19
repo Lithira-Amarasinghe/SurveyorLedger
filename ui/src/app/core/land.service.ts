@@ -113,6 +113,7 @@ export interface LandPhoto {
   fileSizeBytes: number;
   uploadedByName: string;
   createdAt: string;
+  batchId: string | null;
 }
 
 export interface LandMapPoint {
@@ -138,6 +139,7 @@ export interface OwnedDocument {
   fileSizeBytes: number;
   uploadedByName: string;
   createdAt: string;
+  uploadBatchId: string | null;
 }
 
 interface ApiResponse<T> {
@@ -323,10 +325,12 @@ export class LandService {
     return this.http.get<ApiResponse<LandPhoto[]>>(`${this.base(workspaceId)}/${landId}/photos`).pipe(map(res => res.data));
   }
 
-  uploadPhoto(workspaceId: string, landId: string, file: File): Observable<LandPhoto> {
+  uploadPhoto(workspaceId: string, landId: string, file: File, batchId?: string): Observable<LandPhoto> {
     const form = new FormData();
     form.append('file', file);
-    return this.http.post<ApiResponse<LandPhoto>>(`${this.base(workspaceId)}/${landId}/photos`, form).pipe(map(res => res.data));
+    return this.http
+      .post<ApiResponse<LandPhoto>>(`${this.base(workspaceId)}/${landId}/photos`, form, { params: batchId ? { batchId } : {} })
+      .pipe(map(res => res.data));
   }
 
   /** Blob fetch, not a bare <img src> - the JWT rides an Authorization header the jwtInterceptor only attaches to HttpClient requests, same reasoning as DocumentService.getFileBlob. */
@@ -361,11 +365,13 @@ export class LandService {
     return this.http.get<ApiResponse<OwnedDocument[]>>(`${this.base(workspaceId)}/${landId}/documents`).pipe(map(res => res.data));
   }
 
-  uploadDocument(workspaceId: string, landId: string, file: File, category: string = 'Other'): Observable<OwnedDocument> {
+  uploadDocument(workspaceId: string, landId: string, file: File, category: string = 'Other', batchId?: string): Observable<OwnedDocument> {
     const form = new FormData();
     form.append('file', file);
+    const params: Record<string, string> = { category };
+    if (batchId) params['batchId'] = batchId;
     return this.http
-      .post<ApiResponse<OwnedDocument>>(`${this.base(workspaceId)}/${landId}/documents`, form, { params: { category } })
+      .post<ApiResponse<OwnedDocument>>(`${this.base(workspaceId)}/${landId}/documents`, form, { params })
       .pipe(map(res => res.data));
   }
 
@@ -389,11 +395,11 @@ export class LandService {
       .pipe(map(res => res.data));
   }
 
-  uploadSurveyDocument(workspaceId: string, landId: string, surveyId: string, file: File): Observable<OwnedDocument> {
+  uploadSurveyDocument(workspaceId: string, landId: string, surveyId: string, file: File, batchId?: string): Observable<OwnedDocument> {
     const form = new FormData();
     form.append('file', file);
     return this.http
-      .post<ApiResponse<OwnedDocument>>(`${this.base(workspaceId)}/${landId}/surveys/${surveyId}/documents`, form)
+      .post<ApiResponse<OwnedDocument>>(`${this.base(workspaceId)}/${landId}/surveys/${surveyId}/documents`, form, { params: batchId ? { batchId } : {} })
       .pipe(map(res => res.data));
   }
 
@@ -417,11 +423,11 @@ export class LandService {
       .pipe(map(res => res.data));
   }
 
-  uploadDeedDocument(workspaceId: string, landId: string, deedId: string, file: File): Observable<OwnedDocument> {
+  uploadDeedDocument(workspaceId: string, landId: string, deedId: string, file: File, batchId?: string): Observable<OwnedDocument> {
     const form = new FormData();
     form.append('file', file);
     return this.http
-      .post<ApiResponse<OwnedDocument>>(`${this.base(workspaceId)}/${landId}/deeds/${deedId}/documents`, form)
+      .post<ApiResponse<OwnedDocument>>(`${this.base(workspaceId)}/${landId}/deeds/${deedId}/documents`, form, { params: batchId ? { batchId } : {} })
       .pipe(map(res => res.data));
   }
 
