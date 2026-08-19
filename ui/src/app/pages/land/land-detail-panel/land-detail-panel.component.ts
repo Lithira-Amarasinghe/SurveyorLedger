@@ -85,13 +85,13 @@ import { RouterLink } from '@angular/router';
             <input class="input-field" placeholder="Korale" [(ngModel)]="korale" />
             <input class="input-field" placeholder="Hatpattu" [(ngModel)]="hatpattu" />
             <select class="input-field" [ngModel]="district" (ngModelChange)="onDistrictChange($event)">
-              <option value="">District</option>
+              <option value="">—</option>
               @for (d of districtOptions; track d) {
                 <option [value]="d">{{ d }}</option>
               }
             </select>
             <select class="input-field" [ngModel]="province" (ngModelChange)="onProvinceChange($event)">
-              <option value="">Province</option>
+              <option value="">—</option>
               @for (p of provinces; track p) {
                 <option [value]="p">{{ p }}</option>
               }
