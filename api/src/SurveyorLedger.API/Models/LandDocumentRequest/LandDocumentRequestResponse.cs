@@ -14,7 +14,7 @@ public class LandDocumentRequestResponse
     public string? TargetRole { get; set; }
     public bool HasActiveShareLink { get; set; }
     public required string Status { get; set; }
-    public Guid? FulfilledDocumentId { get; set; }
+    public Guid? FulfilledBatchId { get; set; }
     public DateTime? FulfilledAt { get; set; }
     public Guid? FulfilledBy { get; set; }
     public Guid RequestedBy { get; set; }

@@ -26,11 +26,6 @@ public class LandDocumentRequestConfiguration : IEntityTypeConfiguration<LandDoc
             .HasForeignKey(x => x.LandId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasOne(x => x.FulfilledDocument)
-            .WithMany()
-            .HasForeignKey(x => x.FulfilledDocumentId)
-            .OnDelete(DeleteBehavior.SetNull);
-
         builder.HasOne(x => x.RequestedByUser)
             .WithMany()
             .HasForeignKey(x => x.RequestedBy)

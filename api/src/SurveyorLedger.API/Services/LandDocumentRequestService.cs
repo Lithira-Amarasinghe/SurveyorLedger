@@ -11,7 +11,7 @@ public interface ILandDocumentRequestService
 {
     Task<List<LandDocumentRequest>> GetForLandAsync(Guid workspaceId, Guid callerUserId, Guid landId);
     Task<LandDocumentRequest> CreateAsync(Guid workspaceId, Guid callerUserId, Guid landId, string title, string? description, DocumentCategory category, string? targetRole = null, string ownerType = "Land", Guid? ownerId = null);
-    Task<LandDocumentRequest> FulfillAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid requestId, IFormFile file, string? displayFileName = null);
+    Task<LandDocumentRequest> FulfillAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid requestId, List<IFormFile> files, Guid batchId, string? displayFileName = null);
     Task<LandDocumentRequest> ReopenAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid requestId, string? note = null);
     Task CancelAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid requestId);
     Task<LandDocumentRequest> UpdateTargetAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid requestId, string? targetRole);
@@ -88,7 +88,7 @@ public class LandDocumentRequestService : ILandDocumentRequestService
         return request;
     }
 
-    public async Task<LandDocumentRequest> FulfillAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid requestId, IFormFile file, string? displayFileName = null)
+    public async Task<LandDocumentRequest> FulfillAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid requestId, List<IFormFile> files, Guid batchId, string? displayFileName = null)
     {
         await FindLandAsync(workspaceId, landId);
         await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "view");
@@ -102,31 +102,30 @@ public class LandDocumentRequestService : ILandDocumentRequestService
                 throw new ForbiddenException($"This request is for the {request.TargetRole} role.");
         }
 
-        return await LinkFulfilledDocumentAsync(workspaceId, landId, request, file, callerUserId, displayFileName);
+        return await LinkFulfilledDocumentAsync(workspaceId, landId, request, files, callerUserId, batchId, displayFileName);
     }
 
-    private async Task<LandDocumentRequest> LinkFulfilledDocumentAsync(Guid workspaceId, Guid landId, LandDocumentRequest request, IFormFile file, Guid attributedUserAccountId, string? displayFileName)
+    /// <summary>
+    /// Uploads every file in the batch and links them to the request. No more "supersede the
+    /// previous document" branch: with batching, re-fulfilling after a Reopen reuses the same
+    /// batchId the caller passes (see FulfillAsync's caller, which sends request.fulfilledBatchId
+    /// back if it's already set) so old and new files accumulate in one group instead of the old
+    /// one being replaced - matches the approved design ("keep old files, group goes back to pending").
+    /// </summary>
+    private async Task<LandDocumentRequest> LinkFulfilledDocumentAsync(Guid workspaceId, Guid landId, LandDocumentRequest request, List<IFormFile> files, Guid attributedUserAccountId, Guid batchId, string? displayFileName)
     {
         var attributedPersonId = await _access.ResolvePersonIdAsync(attributedUserAccountId);
-        var previousDocumentId = request.FulfilledDocumentId;
 
-        var document = await _documentService.UploadOwnedDocumentForFulfillmentAsync(workspaceId, attributedUserAccountId, landId, request.OwnerType, request.OwnerId, request.Category, file, displayFileName);
+        foreach (var file in files)
+        {
+            await _documentService.UploadOwnedDocumentForFulfillmentAsync(workspaceId, attributedUserAccountId, landId, request.OwnerType, request.OwnerId, request.Category, file, displayFileName, batchId);
+        }
 
-        request.FulfilledDocumentId = document.Id;
+        request.FulfilledBatchId = batchId;
         request.FulfilledAt = DateTime.UtcNow;
         request.FulfilledBy = attributedPersonId;
         request.Status = "Fulfilled";
         request.UpdatedAt = DateTime.UtcNow;
-
-        if (previousDocumentId.HasValue)
-        {
-            var previousDocument = await _context.Documents.FindAsync(previousDocumentId.Value);
-            if (previousDocument != null)
-            {
-                previousDocument.IsActive = false;
-                previousDocument.UpdatedAt = DateTime.UtcNow;
-            }
-        }
 
         await _context.SaveChangesAsync();
         return request;
@@ -230,28 +229,23 @@ public class LandDocumentRequestService : ILandDocumentRequestService
         return await LinkFulfilledDocumentAsyncForToken(land.WorkspaceId, land.Id, request, file, requesterAccountId, request.RequestedBy, displayFileName);
     }
 
-    /// <summary>Anonymous-link variant of LinkFulfilledDocumentAsync - there is no authenticated caller, so both the access-check identity and the FulfilledBy record are derived from the request's original requester instead.</summary>
+    /// <summary>
+    /// Anonymous-link variant of LinkFulfilledDocumentAsync - there is no authenticated caller,
+    /// so both the access-check identity and the FulfilledBy record are derived from the
+    /// request's original requester instead. Still single-file (the public unauthenticated
+    /// upload form has no multi-file picker) but reuses the batch-id-reuse rule: a re-upload
+    /// after Reopen joins the request's existing batch rather than starting a new one.
+    /// </summary>
     private async Task<LandDocumentRequest> LinkFulfilledDocumentAsyncForToken(Guid workspaceId, Guid landId, LandDocumentRequest request, IFormFile file, Guid attributedUserAccountId, Guid attributedPersonId, string? displayFileName)
     {
-        var previousDocumentId = request.FulfilledDocumentId;
+        var batchId = request.FulfilledBatchId ?? Guid.NewGuid();
+        await _documentService.UploadOwnedDocumentForFulfillmentAsync(workspaceId, attributedUserAccountId, landId, request.OwnerType, request.OwnerId, request.Category, file, displayFileName, batchId);
 
-        var document = await _documentService.UploadOwnedDocumentForFulfillmentAsync(workspaceId, attributedUserAccountId, landId, request.OwnerType, request.OwnerId, request.Category, file, displayFileName);
-
-        request.FulfilledDocumentId = document.Id;
+        request.FulfilledBatchId = batchId;
         request.FulfilledAt = DateTime.UtcNow;
         request.FulfilledBy = attributedPersonId;
         request.Status = "Fulfilled";
         request.UpdatedAt = DateTime.UtcNow;
-
-        if (previousDocumentId.HasValue)
-        {
-            var previousDocument = await _context.Documents.FindAsync(previousDocumentId.Value);
-            if (previousDocument != null)
-            {
-                previousDocument.IsActive = false;
-                previousDocument.UpdatedAt = DateTime.UtcNow;
-            }
-        }
 
         await _context.SaveChangesAsync();
         return request;

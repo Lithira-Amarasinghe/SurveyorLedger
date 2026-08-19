@@ -86,10 +86,10 @@ public class LandDocumentRequestServiceTests : WorkspaceIntegrationTestBase
         await SeedLandAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _landId, "Deed copy", null, DocumentCategory.LegalDocument);
 
-        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _landId, request.Id, MakeFile());
+        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _landId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid());
 
         Assert.Equal("Fulfilled", fulfilled.Status);
-        Assert.NotNull(fulfilled.FulfilledDocumentId);
+        Assert.NotNull(fulfilled.FulfilledBatchId);
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public class LandDocumentRequestServiceTests : WorkspaceIntegrationTestBase
         await SeedLandAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _landId, "Deed copy", null, DocumentCategory.LegalDocument, Constants.SystemRoles.Client);
 
-        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _landId, request.Id, MakeFile());
+        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _landId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid());
 
         Assert.Equal("Fulfilled", fulfilled.Status);
     }
@@ -110,7 +110,7 @@ public class LandDocumentRequestServiceTests : WorkspaceIntegrationTestBase
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _landId, "Deed copy", null, DocumentCategory.LegalDocument, Constants.SystemRoles.Admin);
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            _requestService.FulfillAsync(WorkspaceId, ClientId, _landId, request.Id, MakeFile()));
+            _requestService.FulfillAsync(WorkspaceId, ClientId, _landId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid()));
     }
 
     [Fact]
@@ -118,30 +118,47 @@ public class LandDocumentRequestServiceTests : WorkspaceIntegrationTestBase
     {
         await SeedLandAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _landId, "Deed copy", null, DocumentCategory.LegalDocument);
-        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _landId, request.Id, MakeFile());
+        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _landId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid());
 
         var reopened = await _requestService.ReopenAsync(WorkspaceId, AdminId, _landId, request.Id);
 
         Assert.Equal("Reopened", reopened.Status);
-        Assert.Equal(fulfilled.FulfilledDocumentId, reopened.FulfilledDocumentId);
+        Assert.Equal(fulfilled.FulfilledBatchId, reopened.FulfilledBatchId);
     }
 
     [Fact]
-    public async Task RefulfillingReopenedRequest_ReplacesPreviousDocument()
+    public async Task RefulfillingReopenedRequest_WithSameBatchId_AccumulatesFiles()
     {
         await SeedLandAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _landId, "Deed copy", null, DocumentCategory.LegalDocument);
-        var first = await _requestService.FulfillAsync(WorkspaceId, ClientId, _landId, request.Id, MakeFile("first.pdf"));
-        var firstDocumentId = first.FulfilledDocumentId!.Value;
+        var batchId = Guid.NewGuid();
+        var first = await _requestService.FulfillAsync(WorkspaceId, ClientId, _landId, request.Id, new List<IFormFile> { MakeFile("first.pdf") }, batchId);
         await _requestService.ReopenAsync(WorkspaceId, AdminId, _landId, request.Id);
 
-        var second = await _requestService.FulfillAsync(WorkspaceId, ClientId, _landId, request.Id, MakeFile("second.pdf"));
+        var second = await _requestService.FulfillAsync(WorkspaceId, ClientId, _landId, request.Id, new List<IFormFile> { MakeFile("second.pdf") }, first.FulfilledBatchId!.Value);
 
-        Assert.NotEqual(firstDocumentId, second.FulfilledDocumentId);
+        Assert.Equal(batchId, second.FulfilledBatchId);
 
         var documentService = GetService<IDocumentService>();
         var remaining = await documentService.GetOwnedDocumentsAsync(WorkspaceId, AdminId, _landId, "Land", _landId);
-        Assert.DoesNotContain(remaining, d => d.Id == firstDocumentId);
+        Assert.Equal(2, remaining.Count(d => d.UploadBatchId == batchId)); // both first.pdf and second.pdf stay, matching "keep old files, group goes back to pending"
+    }
+
+    [Fact]
+    public async Task FulfillAsync_WithMultipleFiles_AllShareTheBatchId()
+    {
+        await SeedLandAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _landId, "Deed copy", null, DocumentCategory.LegalDocument);
+        var batchId = Guid.NewGuid();
+
+        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _landId, request.Id, new List<IFormFile> { MakeFile("a.pdf"), MakeFile("b.pdf") }, batchId);
+
+        Assert.Equal(batchId, fulfilled.FulfilledBatchId);
+        Assert.Equal("Fulfilled", fulfilled.Status);
+
+        var documentService = GetService<IDocumentService>();
+        var docs = await documentService.GetOwnedDocumentsAsync(WorkspaceId, AdminId, _landId, "Land", _landId);
+        Assert.Equal(2, docs.Count(d => d.UploadBatchId == batchId));
     }
 
     [Fact]
@@ -161,7 +178,7 @@ public class LandDocumentRequestServiceTests : WorkspaceIntegrationTestBase
     {
         await SeedLandAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _landId, "Deed copy", null, DocumentCategory.LegalDocument);
-        await _requestService.FulfillAsync(WorkspaceId, ClientId, _landId, request.Id, MakeFile());
+        await _requestService.FulfillAsync(WorkspaceId, ClientId, _landId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid());
 
         await Assert.ThrowsAsync<ValidationException>(() =>
             _requestService.UpdateTargetAsync(WorkspaceId, AdminId, _landId, request.Id, Constants.SystemRoles.Client));

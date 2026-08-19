@@ -23,7 +23,8 @@ public class LandDocumentRequest
     public string? Description { get; set; }
     public DocumentCategory Category { get; set; }
     public string Status { get; set; } = "Pending";
-    public Guid? FulfilledDocumentId { get; set; }
+    /// <summary>Every Document with this UploadBatchId is a file this request was fulfilled with - set on first fulfillment, reused (not replaced) on every re-fulfillment after a Reopen, so old and new files accumulate in one group instead of the old file being replaced.</summary>
+    public Guid? FulfilledBatchId { get; set; }
     public DateTime? FulfilledAt { get; set; }
     public Guid? FulfilledBy { get; set; }
     public Guid RequestedBy { get; set; }
@@ -35,7 +36,6 @@ public class LandDocumentRequest
     public bool IsActive { get; set; } = true;
 
     public Land Land { get; set; } = null!;
-    public Document? FulfilledDocument { get; set; }
     public Person RequestedByUser { get; set; } = null!;
     public Person? FulfilledByUser { get; set; }
 }
