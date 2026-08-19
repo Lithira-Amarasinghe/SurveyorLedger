@@ -2,7 +2,7 @@ import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { forkJoin } from 'rxjs';
-import { Land, LandBoundary, LandDeed, LandPhoto, LandService, LandSurvey, addressLine, telHref, whatsAppHref } from '../../core/land.service';
+import { Land, LandBoundary, LandDeed, LandPhoto, LandService, LandSurvey, addressLine, formatArea, telHref, whatsAppHref } from '../../core/land.service';
 import { LandLocationQrComponent } from '../../shared/land-location-qr/land-location-qr.component';
 import { PhotoGridComponent } from '../../shared/photo-grid/photo-grid.component';
 
@@ -25,8 +25,8 @@ import { PhotoGridComponent } from '../../shared/photo-grid/photo-grid.component
         </div>
 
         <h1 class="text-xl font-semibold text-neutral-900">{{ addressLine(land) }}</h1>
-        @if (land.size) {
-          <p class="text-sm text-neutral-600">{{ land.size }} {{ land.sizeUnit }}</p>
+        @if (land.area.acres !== null || land.area.roods !== null || land.area.perches !== null) {
+          <p class="text-sm text-neutral-600">{{ formatArea(land.area) }}</p>
         }
 
         @if (land.ownerName) {
@@ -102,6 +102,7 @@ export class LandPrintComponent implements OnInit {
   photoUrls = signal<Record<string, string>>({});
 
   addressLine = addressLine;
+  formatArea = formatArea;
   telHref = telHref;
   whatsAppHref = whatsAppHref;
 

@@ -12,11 +12,18 @@ export interface Address {
   country: string | null;
 }
 
+export interface LandAreaValue {
+  acres: number | null;
+  roods: number | null;
+  perches: number | null;
+  squareMeters: number | null;
+  hectares: number | null;
+}
+
 export interface Land {
   landId: string;
   address: Address;
-  size: number | null;
-  sizeUnit: string | null;
+  area: LandAreaValue;
   gpsCoordinates: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -33,8 +40,7 @@ export interface Land {
 
 export interface LandRequest {
   address?: Address;
-  size?: number;
-  sizeUnit?: string;
+  area?: Partial<LandAreaValue>;
   gpsCoordinates?: string;
   notes?: string;
   /** Either ownerId (an existing account) or ownerName/-Phone/-Email - never both. */
@@ -123,6 +129,46 @@ export function telHref(phone: string): string {
 
 export function whatsAppHref(phone: string): string {
   return `https://wa.me/${phone.replace(/[^\d+]/g, '')}`;
+}
+
+const SQUARE_METERS_PER_PERCH = 25.29285264;
+const SQUARE_METERS_PER_ROOD = SQUARE_METERS_PER_PERCH * 40;
+const SQUARE_METERS_PER_ACRE = SQUARE_METERS_PER_ROOD * 4;
+const SQUARE_METERS_PER_HECTARE = 10000;
+
+/** Mirrors AreaConversion.FromAcresRoodsPerches server-side - used for the live client-side preview only, the server value on save is authoritative. */
+export function acresRoodsPerchesToSquareMeters(acres: number, roods: number, perches: number): number {
+  return acres * SQUARE_METERS_PER_ACRE + roods * SQUARE_METERS_PER_ROOD + perches * SQUARE_METERS_PER_PERCH;
+}
+
+/** Mirrors AreaConversion.ToAcresRoodsPerches server-side. */
+export function squareMetersToAcresRoodsPerches(squareMeters: number): { acres: number; roods: number; perches: number } {
+  const totalPerches = squareMeters / SQUARE_METERS_PER_PERCH;
+  const acres = Math.floor(totalPerches / 160);
+  const remainder = totalPerches - acres * 160;
+  const roods = Math.floor(remainder / 40);
+  const perches = Math.round((remainder - roods * 40) * 100) / 100;
+  return { acres, roods, perches };
+}
+
+export function squareMetersToHectares(squareMeters: number): number {
+  return squareMeters / SQUARE_METERS_PER_HECTARE;
+}
+
+export function hectaresToSquareMeters(hectares: number): number {
+  return hectares * SQUARE_METERS_PER_HECTARE;
+}
+
+/** Single source of truth for displaying a LandAreaValue - always formats from the A-R-P fields, which a Land response always has populated regardless of which unit it was entered in. */
+export function formatArea(area: LandAreaValue): string {
+  const { acres, roods, perches } = area;
+  if (acres === null && roods === null && perches === null) return '—';
+
+  const parts: string[] = [];
+  if (acres) parts.push(`${acres}A`);
+  if (roods) parts.push(`${roods}R`);
+  if (perches || parts.length === 0) parts.push(`${perches ?? 0}P`);
+  return parts.join(' ');
 }
 
 @Injectable({ providedIn: 'root' })

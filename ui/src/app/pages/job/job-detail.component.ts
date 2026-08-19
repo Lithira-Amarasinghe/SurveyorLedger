@@ -5,7 +5,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { Observable, Subject, forkJoin } from 'rxjs';
 import { Job, JobInvitation, JobParticipant, JobService } from '../../core/job.service';
-import { Land, addressLine } from '../../core/land.service';
+import { Land, addressLine, formatArea } from '../../core/land.service';
 import { AuthService } from '../../core/auth.service';
 import { InviteByEmail, PersonWithRole } from './add-job-person-modal/add-job-person-modal.component';
 import { Milestone, MilestoneService } from '../../core/milestone.service';
@@ -200,8 +200,8 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                       @if (l.ownerName) {
                         <span class="text-xs text-neutral-500 block">{{ l.ownerName }}</span>
                       }
-                      @if (l.size) {
-                        <span class="text-xs text-neutral-500 block">{{ l.size }} {{ l.sizeUnit }}</span>
+                      @if (l.area.acres !== null || l.area.roods !== null || l.area.perches !== null) {
+                        <span class="text-xs text-neutral-500 block">{{ formatArea(l.area) }}</span>
                       }
                     </div>
                     <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="confirmingRemoveLand.set(l); $event.stopPropagation()">
@@ -979,6 +979,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   confirmingRevokeInvite = signal<string | null>(null);
 
   addressLine = addressLine;
+  formatArea = formatArea;
   expandedLandId = signal<string | null>(null);
   confirmingLeave = signal(false);
   private leaveDecision: Subject<boolean> | null = null;

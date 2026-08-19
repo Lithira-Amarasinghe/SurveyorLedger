@@ -35,8 +35,8 @@ describe('LandService', () => {
   });
 
   it('create() posts the land request', () => {
-    const request = { address: { street: '123 Main St', city: 'Colombo', district: null, postalCode: null, country: null }, size: 10, sizeUnit: 'acres' };
-    const land = { landId: 'l1', address: request.address, size: 10, sizeUnit: 'acres', gpsCoordinates: null, notes: null, createdAt: '2026-01-01', updatedAt: '2026-01-01' };
+    const request = { address: { street: '123 Main St', city: 'Colombo', district: null, postalCode: null, country: null }, area: { acres: 10, roods: 0, perches: 0 } };
+    const land = { landId: 'l1', address: request.address, area: { acres: 10, roods: 0, perches: 0, squareMeters: 40468.564224, hectares: 4.0468564224 }, gpsCoordinates: null, notes: null, createdAt: '2026-01-01', updatedAt: '2026-01-01' };
     service.create(workspaceId, request).subscribe(result => expect(result).toEqual(land));
     const req = httpMock.expectOne(base);
     expect(req.request.method).toBe('POST');
@@ -45,7 +45,7 @@ describe('LandService', () => {
   });
 
   it('getById() gets a single land', () => {
-    const land = { landId: 'l1', address: { street: 'Main St', city: null, district: null, postalCode: null, country: null }, size: null, sizeUnit: null, gpsCoordinates: null, notes: null, createdAt: '2026-01-01', updatedAt: '2026-01-01' };
+    const land = { landId: 'l1', address: { street: 'Main St', city: null, district: null, postalCode: null, country: null }, area: { acres: null, roods: null, perches: null, squareMeters: null, hectares: null }, gpsCoordinates: null, notes: null, createdAt: '2026-01-01', updatedAt: '2026-01-01' };
     service.getById(workspaceId, 'l1').subscribe(result => expect(result).toEqual(land));
     const req = httpMock.expectOne(`${base}/l1`);
     expect(req.request.method).toBe('GET');
@@ -172,8 +172,7 @@ describe('addressLine', () => {
   const baseLand: Land = {
     landId: 'l1',
     address: { street: null, city: null, district: null, postalCode: null, country: null },
-    size: null,
-    sizeUnit: null,
+    area: { acres: null, roods: null, perches: null, squareMeters: null, hectares: null },
     gpsCoordinates: null,
     notes: null,
     createdAt: '2026-01-01',

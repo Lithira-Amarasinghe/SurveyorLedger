@@ -2,17 +2,18 @@ import { Component, EventEmitter, Input, OnInit, Output, signal } from '@angular
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
-import { Address, Land, LandBoundary, LandDeed, LandPhoto, LandService, LandSurvey, telHref, whatsAppHref } from '../../../core/land.service';
+import { Address, Land, LandAreaValue, LandBoundary, LandDeed, LandPhoto, LandService, LandSurvey, telHref, whatsAppHref } from '../../../core/land.service';
 import { OwnerPickerComponent, OwnerValue } from '../owner-picker/owner-picker.component';
 import { LandLocationPickerComponent } from '../../../shared/land-location-picker/land-location-picker.component';
 import { LandLocationQrComponent } from '../../../shared/land-location-qr/land-location-qr.component';
 import { PhotoGridComponent } from '../../../shared/photo-grid/photo-grid.component';
+import { LandAreaInputComponent } from '../../../shared/land-area-input/land-area-input.component';
 import { RouterLink } from '@angular/router';
 
 @Component({
   selector: 'app-land-detail-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule, OwnerPickerComponent, LandLocationPickerComponent, LandLocationQrComponent, PhotoGridComponent, RouterLink],
+  imports: [CommonModule, FormsModule, OwnerPickerComponent, LandLocationPickerComponent, LandLocationQrComponent, PhotoGridComponent, LandAreaInputComponent, RouterLink],
   template: `
     @if (loading()) {
       <p class="text-sm text-neutral-500">Loading…</p>
@@ -26,12 +27,14 @@ import { RouterLink } from '@angular/router';
         <div>
           <div class="flex items-center justify-between mb-sm gap-sm">
             <div class="flex items-center gap-sm">
-              <h3 class="text-xs font-semibold text-neutral-500 uppercase">Details</h3>
-              @if (detailsDirty()) {
+              <h3 class="text-xs font-semibold text-neutral-500 uppercase">{{ isCreateMode ? 'New land' : 'Details' }}</h3>
+              @if (!isCreateMode && detailsDirty()) {
                 <span class="text-xs text-amber-600">Unsaved changes</span>
               }
             </div>
-            @if (detailsDirty()) {
+            @if (isCreateMode) {
+              <!-- No dirty/delete/print controls yet - the record doesn't exist until Create land below succeeds. -->
+            } @else if (detailsDirty()) {
               <span class="flex items-center gap-sm">
                 @if (detailsError()) {
                   <span class="text-xs text-primary-500">{{ detailsError() }}</span>
@@ -69,9 +72,10 @@ import { RouterLink } from '@angular/router';
             <input class="input-field" placeholder="Street" [(ngModel)]="street" />
             <input class="input-field" placeholder="City" [(ngModel)]="city" />
             <input class="input-field" placeholder="District" [(ngModel)]="district" />
-            <input class="input-field" type="number" placeholder="Size" [(ngModel)]="size" />
-            <input class="input-field" placeholder="Unit" [(ngModel)]="sizeUnit" />
             <input class="input-field" placeholder="GPS coordinates" [(ngModel)]="gpsCoordinates" />
+          </div>
+          <div class="mt-sm">
+            <app-land-area-input [value]="area" (valueChange)="onAreaChange($event)" />
           </div>
           <textarea class="input-field mt-sm" rows="2" placeholder="Notes" [(ngModel)]="notes"></textarea>
 
@@ -92,7 +96,17 @@ import { RouterLink } from '@angular/router';
 
         <div>
           <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-sm">Location</h3>
-          @if (land()?.latitude !== null && land()?.latitude !== undefined) {
+          @if (isCreateMode) {
+            <app-land-location-picker
+              [initialLat]="pendingLat"
+              [initialLng]="pendingLng"
+              heightClass="h-56"
+              (locationChosen)="onPendingLocationChosen($event)"
+            />
+            <p class="text-xs text-neutral-500 mt-xs">
+              {{ pendingLat !== null ? 'Location set - it will be saved with the land record.' : 'Optional - pick a spot on the map, or set it later.' }}
+            </p>
+          } @else if (land()?.latitude !== null && land()?.latitude !== undefined) {
             <p class="text-sm text-neutral-900 mb-sm">{{ land()!.latitude }}, {{ land()!.longitude }}</p>
             <app-land-location-picker
               [initialLat]="land()!.latitude"
@@ -106,44 +120,58 @@ import { RouterLink } from '@angular/router';
           } @else {
             <p class="text-sm text-neutral-500">Not set</p>
           }
-          <div class="flex flex-wrap gap-sm mt-sm">
-            <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="pickerOpen.set(true)">
-              {{ land()?.latitude != null ? 'Update location' : 'Set location' }}
-            </button>
-            @if (land()?.latitude !== null && land()?.latitude !== undefined) {
-              <a
-                class="text-xs text-primary-600 hover:text-primary-700"
-                [href]="'https://www.google.com/maps?q=' + land()!.latitude + ',' + land()!.longitude"
-                target="_blank"
-                rel="noopener"
-              >
-                Open in Google Maps
-              </a>
-              <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyMapsLink()">
-                {{ mapsLinkCopied() ? 'Copied!' : 'Copy Google Maps link' }}
+          @if (!isCreateMode) {
+            <div class="flex flex-wrap gap-sm mt-sm">
+              <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="pickerOpen.set(true)">
+                {{ land()?.latitude != null ? 'Update location' : 'Set location' }}
               </button>
-            }
-            @if (land()?.hasActiveLocationShareLink) {
-              <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyShareLink()">
-                {{ shareLinkCopied() ? 'Copied!' : 'Copy share link' }}
-              </button>
-              <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="regenerateShareLink()">
-                Regenerate link
-              </button>
-              <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="revokeShareLink()">
-                Revoke link
-              </button>
-            } @else {
-              <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyShareLink()">
-                Copy share link (for client)
-              </button>
-            }
-          </div>
+              @if (land()?.latitude !== null && land()?.latitude !== undefined) {
+                <a
+                  class="text-xs text-primary-600 hover:text-primary-700"
+                  [href]="'https://www.google.com/maps?q=' + land()!.latitude + ',' + land()!.longitude"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  Open in Google Maps
+                </a>
+                <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyMapsLink()">
+                  {{ mapsLinkCopied() ? 'Copied!' : 'Copy Google Maps link' }}
+                </button>
+              }
+              @if (land()?.hasActiveLocationShareLink) {
+                <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyShareLink()">
+                  {{ shareLinkCopied() ? 'Copied!' : 'Copy share link' }}
+                </button>
+                <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="regenerateShareLink()">
+                  Regenerate link
+                </button>
+                <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="revokeShareLink()">
+                  Revoke link
+                </button>
+              } @else {
+                <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyShareLink()">
+                  Copy share link (for client)
+                </button>
+              }
+            </div>
+          }
           @if (locationError()) {
             <p class="text-xs text-primary-500 mt-xs">{{ locationError() }}</p>
           }
         </div>
 
+        @if (isCreateMode) {
+          <div>
+            @if (createError()) {
+              <p class="text-sm text-primary-500 mb-sm">{{ createError() }}</p>
+            }
+            <button type="button" class="btn-primary" [disabled]="!street.trim() || creating()" (click)="createLand()">
+              {{ creating() ? 'Creating…' : 'Create land' }}
+            </button>
+          </div>
+        }
+
+        @if (!isCreateMode) {
         <div>
           <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-sm">Surveys</h3>
           @if (surveys().length > 0) {
@@ -301,6 +329,7 @@ import { RouterLink } from '@angular/router';
             <p class="text-xs text-primary-500 mt-xs">{{ photoError() }}</p>
           }
         </div>
+        }
       </div>
     }
     @if (pickerOpen()) {
@@ -321,6 +350,17 @@ export class LandDetailPanelComponent implements OnInit {
   @Input() workspaceId = '';
   @Input() landId = '';
   @Output() deleted = new EventEmitter<void>();
+  /** Emitted once, right after a create-mode submit succeeds - the parent owns navigating to the new land's own URL. */
+  @Output() created = new EventEmitter<Land>();
+
+  /** True until a landId is routed to - drives which sections/controls render (see template). */
+  get isCreateMode(): boolean {
+    return !this.landId;
+  }
+  creating = signal(false);
+  createError = signal('');
+  pendingLat: number | null = null;
+  pendingLng: number | null = null;
 
   loading = signal(true);
   error = signal('');
@@ -349,8 +389,7 @@ export class LandDetailPanelComponent implements OnInit {
   street = '';
   city = '';
   district = '';
-  size: number | null = null;
-  sizeUnit = '';
+  area: LandAreaValue = { acres: null, roods: null, perches: null, squareMeters: null, hectares: null };
   gpsCoordinates = '';
   notes = '';
 
@@ -377,6 +416,13 @@ export class LandDetailPanelComponent implements OnInit {
   constructor(private landService: LandService) {}
 
   ngOnInit(): void {
+    if (this.isCreateMode) {
+      // Nothing to load - blank Details/Owner/Location form, storedDetails snapshotted
+      // now so detailsDirty() correctly reflects typing into a fresh create form.
+      this.loading.set(false);
+      this.storedDetails = this.snapshotDetails();
+      return;
+    }
     this.fetch();
   }
 
@@ -395,8 +441,7 @@ export class LandDetailPanelComponent implements OnInit {
         this.street = land.address.street ?? '';
         this.city = land.address.city ?? '';
         this.district = land.address.district ?? '';
-        this.size = land.size;
-        this.sizeUnit = land.sizeUnit ?? '';
+        this.area = land.area;
         this.gpsCoordinates = land.gpsCoordinates ?? '';
         this.notes = land.notes ?? '';
         this.owner = land.ownerId
@@ -438,7 +483,7 @@ export class LandDetailPanelComponent implements OnInit {
   private snapshotDetails(): string {
     return JSON.stringify({
       street: this.street, city: this.city, district: this.district,
-      size: this.size, sizeUnit: this.sizeUnit, gpsCoordinates: this.gpsCoordinates,
+      area: this.area, gpsCoordinates: this.gpsCoordinates,
       notes: this.notes, owner: this.owner
     });
   }
@@ -452,14 +497,17 @@ export class LandDetailPanelComponent implements OnInit {
     this.owner = value;
   }
 
+  onAreaChange(value: Partial<LandAreaValue>): void {
+    this.area = { acres: null, roods: null, perches: null, squareMeters: null, hectares: null, ...value };
+  }
+
   discardDetails(): void {
     const current = this.land();
     if (!current) return;
     this.street = current.address.street ?? '';
     this.city = current.address.city ?? '';
     this.district = current.address.district ?? '';
-    this.size = current.size;
-    this.sizeUnit = current.sizeUnit ?? '';
+    this.area = current.area;
     this.gpsCoordinates = current.gpsCoordinates ?? '';
     this.notes = current.notes ?? '';
     this.owner = current.ownerId
@@ -489,8 +537,7 @@ export class LandDetailPanelComponent implements OnInit {
     this.landService
       .update(this.workspaceId, this.landId, {
         address,
-        size: this.size ?? undefined,
-        sizeUnit: this.sizeUnit.trim() || undefined,
+        area: this.area,
         gpsCoordinates: this.gpsCoordinates.trim() || undefined,
         notes: this.notes.trim() || undefined,
         ...this.owner
@@ -506,6 +553,62 @@ export class LandDetailPanelComponent implements OnInit {
         error: (err) => {
           this.savingDetails.set(false);
           this.detailsError.set(err.error?.message ?? 'Could not save changes.');
+        }
+      });
+  }
+
+  onPendingLocationChosen(location: { lat: number; lng: number }): void {
+    this.pendingLat = location.lat;
+    this.pendingLng = location.lng;
+  }
+
+  createLand(): void {
+    if (!this.street.trim() || this.creating()) return;
+    this.createError.set('');
+    this.creating.set(true);
+
+    const address: Address = {
+      street: this.street.trim(),
+      city: this.city.trim() || null,
+      district: this.district.trim() || null,
+      postalCode: null,
+      country: null
+    };
+
+    this.landService
+      .create(this.workspaceId, {
+        address,
+        area: this.area,
+        gpsCoordinates: this.gpsCoordinates.trim() || undefined,
+        notes: this.notes.trim() || undefined,
+        ...this.owner
+      })
+      .subscribe({
+        next: (land) => {
+          if (this.pendingLat !== null && this.pendingLng !== null) {
+            // Location isn't part of LandRequest - one follow-up call on the new id,
+            // reusing the same endpoint the edit-mode picker already calls.
+            this.landService.setLocation(this.workspaceId, land.landId, { lat: this.pendingLat, lng: this.pendingLng }).subscribe({
+              next: (located) => {
+                this.creating.set(false);
+                this.created.emit(located);
+              },
+              error: (err) => {
+                // Land exists even though the location save failed - still navigate,
+                // rather than strand the user on a form for a record that now exists.
+                this.creating.set(false);
+                this.createError.set(err.error?.message ?? 'Land created, but the location could not be saved.');
+                this.created.emit(land);
+              }
+            });
+          } else {
+            this.creating.set(false);
+            this.created.emit(land);
+          }
+        },
+        error: (err) => {
+          this.creating.set(false);
+          this.createError.set(err.error?.message ?? 'Could not create land record.');
         }
       });
   }

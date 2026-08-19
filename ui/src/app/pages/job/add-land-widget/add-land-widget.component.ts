@@ -3,12 +3,13 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
-import { Address, Land, LandService, addressLine } from '../../../core/land.service';
+import { Address, Land, LandAreaValue, LandService, addressLine, formatArea } from '../../../core/land.service';
+import { LandAreaInputComponent } from '../../../shared/land-area-input/land-area-input.component';
 
 @Component({
   selector: 'app-add-land-widget',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, LandAreaInputComponent],
   template: `
     <div class="border border-neutral-200 rounded-md p-md">
       @if (!creatingNew()) {
@@ -31,8 +32,8 @@ import { Address, Land, LandService, addressLine } from '../../../core/land.serv
                 (click)="choose(land)"
               >
                 <span class="text-sm text-neutral-900">{{ addressLine(land) }}</span>
-                @if (land.size) {
-                  <span class="text-xs text-neutral-500 block">{{ land.size }} {{ land.sizeUnit }}</span>
+                @if (land.area.acres !== null || land.area.roods !== null || land.area.perches !== null) {
+                  <span class="text-xs text-neutral-500 block">{{ formatArea(land.area) }}</span>
                 }
               </button>
             }
@@ -53,10 +54,7 @@ import { Address, Land, LandService, addressLine } from '../../../core/land.serv
           <input class="input-field" type="text" placeholder="Street" [(ngModel)]="street" />
           <input class="input-field" type="text" placeholder="City" [(ngModel)]="city" />
           <input class="input-field" type="text" placeholder="District (optional)" [(ngModel)]="district" />
-          <div class="flex gap-sm">
-            <input class="input-field" type="number" placeholder="Size" [(ngModel)]="size" />
-            <input class="input-field" type="text" placeholder="Unit (e.g. acres)" [(ngModel)]="sizeUnit" />
-          </div>
+          <app-land-area-input [value]="area" (valueChange)="onAreaChange($event)" />
           @if (error()) {
             <p class="text-xs text-primary-500">{{ error() }}</p>
           }
@@ -82,12 +80,12 @@ export class AddLandWidgetComponent {
   street = '';
   city = '';
   district = '';
-  size: number | null = null;
-  sizeUnit = '';
+  area: LandAreaValue = { acres: null, roods: null, perches: null, squareMeters: null, hectares: null };
   creating = signal(false);
   error = signal('');
 
   addressLine = addressLine;
+  formatArea = formatArea;
 
   private queryChanged = new Subject<string>();
 
@@ -122,6 +120,10 @@ export class AddLandWidgetComponent {
     this.added.emit(land);
   }
 
+  onAreaChange(value: Partial<LandAreaValue>): void {
+    this.area = { acres: null, roods: null, perches: null, squareMeters: null, hectares: null, ...value };
+  }
+
   startCreate(): void {
     this.street = this.query.trim();
     this.creatingNew.set(true);
@@ -143,8 +145,7 @@ export class AddLandWidgetComponent {
     this.landService
       .create(this.workspaceId, {
         address,
-        size: this.size ?? undefined,
-        sizeUnit: this.sizeUnit.trim() || undefined
+        area: this.area
       })
       .subscribe({
         next: (land) => {
@@ -166,8 +167,7 @@ export class AddLandWidgetComponent {
     this.street = '';
     this.city = '';
     this.district = '';
-    this.size = null;
-    this.sizeUnit = '';
+    this.area = { acres: null, roods: null, perches: null, squareMeters: null, hectares: null };
     this.error.set('');
   }
 }
