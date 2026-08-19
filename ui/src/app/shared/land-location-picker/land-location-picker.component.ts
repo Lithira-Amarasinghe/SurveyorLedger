@@ -93,7 +93,7 @@ interface NominatimResult {
             Tap the map to place a point
           </div>
         }
-        @if (markers.length > 0) {
+        @if (markers.length > 0 || pendingPoint) {
           <button
             type="button"
             class="absolute top-sm right-sm z-[1000] bg-white shadow rounded-md px-sm py-xs text-xs text-neutral-700 hover:bg-neutral-50 border border-neutral-200"
@@ -123,6 +123,8 @@ export class LandLocationPickerComponent implements OnInit, OnChanges, OnDestroy
   @Input() pendingPoint: { lat: number; lng: number } | null = null;
   @Output() pointAdded = new EventEmitter<{ lat: number; lng: number }>();
   @Output() pointMoved = new EventEmitter<{ id: string; lat: number; lng: number }>();
+  /** Dragging the not-yet-saved pending pin to fine-tune it before naming/saving. */
+  @Output() pendingPointMoved = new EventEmitter<{ lat: number; lng: number }>();
 
   @ViewChild('mapEl', { static: true }) mapEl!: ElementRef<HTMLDivElement>;
 
@@ -215,17 +217,20 @@ export class LandLocationPickerComponent implements OnInit, OnChanges, OnDestroy
     this.applyFit();
   }
 
-  /** Manual re-fit, triggered by the "Fit all" control - ignores hasFitBounds so it always works, even after the one-time auto-fit already happened. */
+  /** Manual re-fit, triggered by the "Fit all" control - ignores hasFitBounds so it always works, even after the one-time auto-fit already happened. Includes the not-yet-saved pending point too, so it stays visible in the frame while the user is still placing/naming it. */
   fitAllMarkers(): void {
-    if (this.markers.length === 0) return;
+    if (this.markers.length === 0 && !this.pendingPoint) return;
     this.applyFit();
   }
 
   private applyFit(): void {
-    if (this.markers.length === 1) {
-      this.map.setView([this.markers[0].lat, this.markers[0].lng], 16);
+    const points = this.markers.map(m => ({ lat: m.lat, lng: m.lng }));
+    if (this.pendingPoint) points.push(this.pendingPoint);
+
+    if (points.length === 1) {
+      this.map.setView([points[0].lat, points[0].lng], 16);
     } else {
-      const bounds = L.latLngBounds(this.markers.map(m => [m.lat, m.lng] as [number, number]));
+      const bounds = L.latLngBounds(points.map(p => [p.lat, p.lng] as [number, number]));
       this.map.fitBounds(bounds, { padding: [24, 24] });
     }
     this.hasFitBounds = true;
@@ -235,7 +240,14 @@ export class LandLocationPickerComponent implements OnInit, OnChanges, OnDestroy
     this.pendingLayer?.remove();
     this.pendingLayer = null;
     if (this.pendingPoint) {
-      this.pendingLayer = L.marker([this.pendingPoint.lat, this.pendingPoint.lng], { icon: pendingIcon }).addTo(this.map);
+      const draggable = !this.readonly;
+      this.pendingLayer = L.marker([this.pendingPoint.lat, this.pendingPoint.lng], { icon: pendingIcon, draggable }).addTo(this.map);
+      if (draggable) {
+        this.pendingLayer.on('dragend', () => {
+          const pos = this.pendingLayer!.getLatLng();
+          this.pendingPointMoved.emit({ lat: pos.lat, lng: pos.lng });
+        });
+      }
     }
   }
 

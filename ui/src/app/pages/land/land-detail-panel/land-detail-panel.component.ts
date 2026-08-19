@@ -126,8 +126,10 @@ import { RouterLink } from '@angular/router';
             <app-land-location-picker
               [initialLat]="pendingLat"
               [initialLng]="pendingLng"
+              [pendingPoint]="pendingLat !== null ? { lat: pendingLat, lng: pendingLng! } : null"
               heightClass="h-56"
               (pointAdded)="onPendingLocationChosen($event)"
+              (pendingPointMoved)="onPendingLocationChosen($event)"
             />
             <p class="text-xs text-neutral-500 mt-xs">
               {{ pendingLat !== null ? 'Location set - it will be saved with the land record. Add named points once the record is created.' : 'Optional - click the map to place a pin, or set it later.' }}
@@ -139,6 +141,7 @@ import { RouterLink } from '@angular/router';
               [pendingPoint]="pendingNewPoint()"
               (pointAdded)="onMapClicked($event)"
               (pointMoved)="onMapPointMoved($event)"
+              (pendingPointMoved)="pendingNewPoint.set($event)"
             />
             @if (pendingNewPoint()) {
               <div class="flex gap-sm mt-sm">
