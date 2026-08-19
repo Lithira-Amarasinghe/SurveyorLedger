@@ -24,7 +24,7 @@ describe('DocumentRequestService', () => {
   const sample = {
     requestId: 'r1', jobId, title: 'Legal Deed', description: null, category: 'LegalDocument',
     targetRole: null, targetUserId: null, targetUserName: null, hasActiveShareLink: false,
-    status: 'Pending', fulfilledDocumentId: null, fulfilledAt: null, fulfilledBy: null,
+    status: 'Pending', fulfilledBatchId: null, fulfilledAt: null, fulfilledBy: null,
     requestedBy: 'u1', createdAt: '2026-01-01', updatedAt: '2026-01-01'
   };
 
@@ -45,8 +45,8 @@ describe('DocumentRequestService', () => {
 
   it('fulfill() posts FormData to /{id}/fulfill', () => {
     const file = new File(['bytes'], 'deed.pdf', { type: 'application/pdf' });
-    const fulfilled = { ...sample, status: 'Fulfilled', fulfilledDocumentId: 'd1' };
-    service.fulfill(workspaceId, jobId, 'r1', file, 'ClientVisible').subscribe(result => expect(result).toEqual(fulfilled));
+    const fulfilled = { ...sample, status: 'Fulfilled', fulfilledBatchId: 'batch-1' };
+    service.fulfill(workspaceId, jobId, 'r1', [file], 'batch-1', 'ClientVisible').subscribe(result => expect(result).toEqual(fulfilled));
     const req = httpMock.expectOne(`${base}/r1/fulfill`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body instanceof FormData).toBe(true);
