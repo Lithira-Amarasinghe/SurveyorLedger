@@ -746,6 +746,7 @@ export class LandDetailPanelComponent implements OnInit {
         this.documents.set(documents);
         this.documentRequests.set(documentRequests);
         this.loadPreviews(this.documentRows());
+        this.loadPreviews(this.photoRows());
         this.loading.set(false);
       },
       error: (err) => {
@@ -1350,7 +1351,10 @@ export class LandDetailPanelComponent implements OnInit {
     const batchId = files.length > 1 ? crypto.randomUUID() : undefined;
     files.forEach(file => {
       this.landService.uploadPhoto(this.workspaceId, this.landId, file, batchId).subscribe({
-        next: (photo) => this.photos.update(list => [photo, ...list]),
+        next: (photo) => {
+          this.photos.update(list => [photo, ...list]);
+          this.loadPreviews(this.photoRows());
+        },
         error: (err) => this.documentError.set(err.error?.message ?? 'Could not upload photo.')
       });
     });
@@ -1378,7 +1382,10 @@ export class LandDetailPanelComponent implements OnInit {
       next: (updated) => {
         this.documentRequests.update(list => list.map(r => (r.requestId === updated.requestId ? updated : r)));
         this.landService.getDocuments(this.workspaceId, this.landId).subscribe(docs => this.documents.set(docs));
-        this.landService.listPhotos(this.workspaceId, this.landId).subscribe(photos => this.photos.set(photos));
+        this.landService.listPhotos(this.workspaceId, this.landId).subscribe(photos => {
+          this.photos.set(photos);
+          this.loadPreviews(this.photoRows());
+        });
       },
       error: (err) => this.documentError.set(err.error?.message ?? 'Could not fulfill request.')
     });

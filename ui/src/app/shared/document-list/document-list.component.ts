@@ -70,10 +70,10 @@ export interface DocRow {
                     <button type="button" class="icon-btn text-primary-500" title="Remove all" (click)="confirmingRemoveGroupId.set(group.batchId)"><app-icon name="delete" /></button>
                   }
                 }
-                <app-icon [name]="expandedGroupId() === group.batchId ? 'chevronUp' : 'chevronDown'" />
+                <app-icon [name]="isExpanded(group.batchId) ? 'chevronUp' : 'chevronDown'" />
               </div>
             </div>
-            @if (expandedGroupId() === group.batchId) {
+            @if (isExpanded(group.batchId)) {
               <div class="pl-md pb-sm space-y-xs">
                 @for (row of group.rows; track row.key) {
                   <ng-container *ngTemplateOutlet="rowTpl; context: { $implicit: row }"></ng-container>
@@ -192,7 +192,12 @@ export class DocumentListComponent {
   renameValue = '';
 
   confirmingRemoveGroupId = signal<string | null>(null);
-  expandedGroupId = signal<string | null>(null);
+  /** Groups default expanded (multi-file uploads should be clearly visible right away) - this tracks the exceptions the user collapsed, not the exceptions expanded. */
+  collapsedGroupIds = signal<Set<string>>(new Set());
+
+  isExpanded(batchId: string): boolean {
+    return !this.collapsedGroupIds().has(batchId);
+  }
 
   /** Groups rows sharing a non-null batchId; a batch of exactly one member renders as a plain row (no group chrome) by reporting batchId: null for it. */
   get groups(): { batchId: string | null; rows: DocRow[] }[] {
@@ -210,7 +215,12 @@ export class DocumentListComponent {
   }
 
   toggleGroup(batchId: string): void {
-    this.expandedGroupId.update(current => (current === batchId ? null : batchId));
+    this.collapsedGroupIds.update(current => {
+      const next = new Set(current);
+      if (next.has(batchId)) next.delete(batchId);
+      else next.add(batchId);
+      return next;
+    });
   }
 
   confirmRemoveGroup(batchId: string): void {
