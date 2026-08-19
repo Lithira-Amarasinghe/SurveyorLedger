@@ -36,16 +36,18 @@ export interface OwnerValue {
           <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="clear()">Change</button>
         </div>
       } @else if (manualMode()) {
-        <label class="block text-xs font-medium text-neutral-700 mb-xs">Owner</label>
+        <div class="flex items-center justify-between mb-xs">
+          <label class="block text-xs font-medium text-neutral-700">Owner</label>
+          <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="useSearch()">
+            Search existing people
+          </button>
+        </div>
         <div class="space-y-sm">
           <input class="input-field" placeholder="Owner name" [ngModel]="manualName" (ngModelChange)="onManualChange('name', $event)" name="ownerName" />
           <div class="grid grid-cols-2 gap-sm">
             <input class="input-field" placeholder="Phone (optional)" [ngModel]="manualPhone" (ngModelChange)="onManualChange('phone', $event)" name="ownerPhone" />
             <input class="input-field" type="email" placeholder="Email (optional)" [ngModel]="manualEmail" (ngModelChange)="onManualChange('email', $event)" name="ownerEmail" />
           </div>
-          <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="useSearch()">
-            Search existing people instead
-          </button>
         </div>
       } @else {
         <div class="flex items-center justify-between mb-xs">
