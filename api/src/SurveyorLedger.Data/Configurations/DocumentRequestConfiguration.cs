@@ -18,19 +18,10 @@ public class DocumentRequestConfiguration : IEntityTypeConfiguration<DocumentReq
 
         builder.HasIndex(x => x.JobId);
 
-        // Restrict, not Cascade: SQL Server rejects multiple cascade paths to the same
-        // table (Job -> DocumentRequest directly, and Job -> Document -> DocumentRequest
-        // via FulfilledDocumentId's SetNull). Jobs are soft-deleted in this app, so a hard
-        // delete blocking on an active DocumentRequest is not a real-world concern.
         builder.HasOne(x => x.Job)
             .WithMany()
             .HasForeignKey(x => x.JobId)
             .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne(x => x.FulfilledDocument)
-            .WithMany()
-            .HasForeignKey(x => x.FulfilledDocumentId)
-            .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne(x => x.RequestedByUser)
             .WithMany()

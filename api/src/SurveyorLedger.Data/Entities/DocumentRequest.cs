@@ -15,7 +15,8 @@ public class DocumentRequest
     public string? Description { get; set; }
     public DocumentCategory Category { get; set; }
     public string Status { get; set; } = "Pending";
-    public Guid? FulfilledDocumentId { get; set; }
+    /// <summary>Every Document with this UploadBatchId is a file this request was fulfilled with - set on first fulfillment, reused on every re-fulfillment after a Reopen, so old and new files accumulate in one group.</summary>
+    public Guid? FulfilledBatchId { get; set; }
     public DateTime? FulfilledAt { get; set; }
     public Guid? FulfilledBy { get; set; }
     public Guid RequestedBy { get; set; }
@@ -28,7 +29,6 @@ public class DocumentRequest
     public bool IsActive { get; set; } = true;
 
     public Job Job { get; set; }
-    public Document? FulfilledDocument { get; set; }
     public Person RequestedByUser { get; set; }
     public Person? FulfilledByUser { get; set; }
     public Person? TargetUser { get; set; }

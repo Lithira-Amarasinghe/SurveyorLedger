@@ -38,7 +38,7 @@ namespace SurveyorLedger.API.Controllers
         [RequestSizeLimit(DocumentService.MaxFileSizeBytes)]
         public async Task<ActionResult<ApiResponse<DocumentRequestResponse>>> Fulfill(Guid workspaceId, Guid jobId, Guid id, [FromForm] DocumentRequestFulfillRequest request)
         {
-            var fulfilled = await _requestService.FulfillAsync(workspaceId, CallerId(), jobId, id, request.File, request.Visibility, request.DisplayFileName);
+            var fulfilled = await _requestService.FulfillAsync(workspaceId, CallerId(), jobId, id, request.Files, request.BatchId, request.Visibility, request.DisplayFileName);
             return Ok(ApiResponse<DocumentRequestResponse>.Ok(ToResponse(fulfilled)));
         }
 
@@ -95,7 +95,7 @@ namespace SurveyorLedger.API.Controllers
             TargetUserName = r.TargetUser != null ? $"{r.TargetUser.FirstName} {r.TargetUser.LastName}" : null,
             HasActiveShareLink = r.ShareToken != null && r.ShareTokenExpiresAt > DateTime.UtcNow,
             Status = r.Status,
-            FulfilledDocumentId = r.FulfilledDocumentId,
+            FulfilledBatchId = r.FulfilledBatchId,
             FulfilledAt = r.FulfilledAt,
             FulfilledBy = r.FulfilledBy,
             RequestedBy = r.RequestedBy,

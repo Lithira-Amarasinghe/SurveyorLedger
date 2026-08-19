@@ -80,10 +80,10 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
         await SeedJobsAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
 
-        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible);
+        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid(), DocumentVisibility.ClientVisible);
 
         Assert.Equal("Fulfilled", fulfilled.Status);
-        Assert.NotNull(fulfilled.FulfilledDocumentId);
+        Assert.NotNull(fulfilled.FulfilledBatchId);
         Assert.Equal(ClientPersonId, fulfilled.FulfilledBy);
     }
 
@@ -91,15 +91,15 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
     public async Task Reopen_KeepsPreviousDocumentLink_SetsStatusReopened()
     {
         // No versioning: the previous document and its "via request" link stay visible
-        // (FulfilledDocumentId not cleared) until a replacement is actually uploaded.
+        // (FulfilledBatchId not cleared) until a replacement is actually uploaded.
         await SeedJobsAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
-        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible);
+        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid(), DocumentVisibility.ClientVisible);
 
         var reopened = await _requestService.ReopenAsync(WorkspaceId, AdminId, _jobAId, request.Id);
 
         Assert.Equal("Reopened", reopened.Status);
-        Assert.Equal(fulfilled.FulfilledDocumentId, reopened.FulfilledDocumentId);
+        Assert.Equal(fulfilled.FulfilledBatchId, reopened.FulfilledBatchId);
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
     {
         await SeedJobsAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
-        await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible);
+        await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid(), DocumentVisibility.ClientVisible);
 
         var reopened = await _requestService.ReopenAsync(WorkspaceId, AdminId, _jobAId, request.Id, "Scan as PDF, both sides.");
 
@@ -115,22 +115,39 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
-    public async Task RefulfillingReopenedRequest_DeletesPreviousDocument()
+    public async Task RefulfillingReopenedRequest_WithSameBatchId_AccumulatesFiles()
     {
         await SeedJobsAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
-        var firstFulfill = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, MakeFile("first.pdf"), DocumentVisibility.ClientVisible);
-        var firstDocumentId = firstFulfill.FulfilledDocumentId!.Value;
+        var batchId = Guid.NewGuid();
+        var firstFulfill = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, new List<IFormFile> { MakeFile("first.pdf") }, batchId, DocumentVisibility.ClientVisible);
         await _requestService.ReopenAsync(WorkspaceId, AdminId, _jobAId, request.Id);
 
-        var secondFulfill = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, MakeFile("second.pdf"), DocumentVisibility.ClientVisible);
+        var secondFulfill = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, new List<IFormFile> { MakeFile("second.pdf") }, firstFulfill.FulfilledBatchId!.Value, DocumentVisibility.ClientVisible);
 
         Assert.Equal("Fulfilled", secondFulfill.Status);
-        Assert.NotEqual(firstDocumentId, secondFulfill.FulfilledDocumentId);
+        Assert.Equal(batchId, secondFulfill.FulfilledBatchId);
 
         var documentService = GetService<IDocumentService>();
         var remainingDocs = await documentService.GetDocumentsAsync(WorkspaceId, AdminId, _jobAId);
-        Assert.DoesNotContain(remainingDocs, d => d.Id == firstDocumentId);
+        Assert.Equal(2, remainingDocs.Count(d => d.UploadBatchId == batchId)); // both first.pdf and second.pdf stay, matching "keep old files, group goes back to pending"
+    }
+
+    [Fact]
+    public async Task FulfillAsync_WithMultipleFiles_AllShareTheBatchId()
+    {
+        await SeedJobsAsync();
+        var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
+        var batchId = Guid.NewGuid();
+
+        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, new List<IFormFile> { MakeFile("a.pdf"), MakeFile("b.pdf") }, batchId, DocumentVisibility.ClientVisible);
+
+        Assert.Equal(batchId, fulfilled.FulfilledBatchId);
+        Assert.Equal("Fulfilled", fulfilled.Status);
+
+        var documentService = GetService<IDocumentService>();
+        var docs = await documentService.GetDocumentsAsync(WorkspaceId, AdminId, _jobAId);
+        Assert.Equal(2, docs.Count(d => d.UploadBatchId == batchId));
     }
 
     [Fact]
@@ -138,7 +155,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
     {
         await SeedJobsAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
-        await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible);
+        await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid(), DocumentVisibility.ClientVisible);
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             _requestService.ReopenAsync(WorkspaceId, ClientId, _jobAId, request.Id));
@@ -174,7 +191,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument);
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            _requestService.FulfillAsync(WorkspaceId, AdminId, _jobBId, request.Id, MakeFile(), DocumentVisibility.ClientVisible));
+            _requestService.FulfillAsync(WorkspaceId, AdminId, _jobBId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid(), DocumentVisibility.ClientVisible));
     }
 
     [Fact]
@@ -203,7 +220,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, Constants.SystemRoles.Client, null);
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            _requestService.FulfillAsync(WorkspaceId, AdminId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible));
+            _requestService.FulfillAsync(WorkspaceId, AdminId, _jobAId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid(), DocumentVisibility.ClientVisible));
     }
 
     [Fact]
@@ -212,7 +229,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
         await SeedJobsAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, Constants.SystemRoles.Client, null);
 
-        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible);
+        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid(), DocumentVisibility.ClientVisible);
 
         Assert.Equal("Fulfilled", fulfilled.Status);
     }
@@ -224,7 +241,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, ClientPersonId);
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            _requestService.FulfillAsync(WorkspaceId, SurveyorId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible));
+            _requestService.FulfillAsync(WorkspaceId, SurveyorId, _jobAId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid(), DocumentVisibility.ClientVisible));
     }
 
     [Fact]
@@ -233,7 +250,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
         await SeedJobsAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, ClientPersonId);
 
-        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible);
+        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, ClientId, _jobAId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid(), DocumentVisibility.ClientVisible);
 
         Assert.Equal("Fulfilled", fulfilled.Status);
     }
@@ -245,7 +262,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
         await SeedJobsAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, null);
 
-        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, AdminId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible);
+        var fulfilled = await _requestService.FulfillAsync(WorkspaceId, AdminId, _jobAId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid(), DocumentVisibility.ClientVisible);
 
         Assert.Equal("Fulfilled", fulfilled.Status);
     }
@@ -267,7 +284,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
     {
         await SeedJobsAsync();
         var request = await _requestService.CreateAsync(WorkspaceId, AdminId, _jobAId, "Legal Deed", null, DocumentCategory.LegalDocument, null, null);
-        await _requestService.FulfillAsync(WorkspaceId, AdminId, _jobAId, request.Id, MakeFile(), DocumentVisibility.ClientVisible);
+        await _requestService.FulfillAsync(WorkspaceId, AdminId, _jobAId, request.Id, new List<IFormFile> { MakeFile() }, Guid.NewGuid(), DocumentVisibility.ClientVisible);
 
         await Assert.ThrowsAsync<ValidationException>(() =>
             _requestService.UpdateTargetAsync(WorkspaceId, AdminId, _jobAId, request.Id, Constants.SystemRoles.Client, null));
@@ -399,7 +416,7 @@ public class DocumentRequestServiceTests : WorkspaceIntegrationTestBase
 
         var documentService = GetService<IDocumentService>();
         var docs = await documentService.GetDocumentsAsync(WorkspaceId, ClientId, _jobAId);
-        var uploaded = Assert.Single(docs, d => d.Id == fulfilled.FulfilledDocumentId);
+        var uploaded = Assert.Single(docs, d => d.UploadBatchId == fulfilled.FulfilledBatchId);
         Assert.Equal(DocumentVisibility.ClientVisible, uploaded.Visibility);
     }
 

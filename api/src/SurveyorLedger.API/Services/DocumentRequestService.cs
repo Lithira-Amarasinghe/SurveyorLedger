@@ -11,7 +11,7 @@ public interface IDocumentRequestService
 {
     Task<List<DocumentRequest>> GetForJobAsync(Guid workspaceId, Guid callerUserId, Guid jobId);
     Task<DocumentRequest> CreateAsync(Guid workspaceId, Guid callerUserId, Guid jobId, string title, string? description, DocumentCategory category, string? targetRole = null, Guid? targetUserId = null);
-    Task<DocumentRequest> FulfillAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId, IFormFile file, DocumentVisibility visibility, string? displayFileName = null);
+    Task<DocumentRequest> FulfillAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId, List<IFormFile> files, Guid batchId, DocumentVisibility visibility, string? displayFileName = null);
     Task<DocumentRequest> ReopenAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId, string? note = null);
     Task CancelAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId);
     Task<DocumentRequest> UpdateTargetAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId, string? targetRole, Guid? targetUserId);
@@ -84,7 +84,7 @@ public class DocumentRequestService : IDocumentRequestService
         return request;
     }
 
-    public async Task<DocumentRequest> FulfillAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId, IFormFile file, DocumentVisibility visibility, string? displayFileName = null)
+    public async Task<DocumentRequest> FulfillAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid requestId, List<IFormFile> files, Guid batchId, DocumentVisibility visibility, string? displayFileName = null)
     {
         await FindJobAsync(workspaceId, jobId);
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
@@ -102,46 +102,32 @@ public class DocumentRequestService : IDocumentRequestService
                 throw new ForbiddenException($"This request is for the {request.TargetRole} role.");
         }
 
-        return await LinkFulfilledDocumentAsync(workspaceId, jobId, request, file, visibility, callerUserId, callerPersonId, displayFileName);
+        return await LinkFulfilledDocumentAsync(workspaceId, jobId, request, files, visibility, callerUserId, callerPersonId, batchId, displayFileName);
     }
 
     /// <summary>
     /// Shared by FulfillAsync (authenticated) and UploadViaShareTokenAsync (anonymous, via
-    /// link) - one implementation of "upload, replace-deletes-previous, link, mark Fulfilled"
-    /// regardless of which path got here. attributedUserAccountId is who IDocumentService
-    /// checks job access against (a UserAccount.Id); attributedPersonId is who gets recorded
-    /// as FulfilledBy (a Person.Id). For FulfillAsync both derive from the real caller; for
-    /// an anonymous link upload there is no caller, so both are derived from the request's
-    /// original requester instead.
+    /// link) - uploads every file in the batch and links them to the request. No more
+    /// "supersede the previous document" branch: with batching, re-fulfilling after a Reopen
+    /// reuses the same batchId the caller passes (request.fulfilledBatchId, if already set)
+    /// so old and new files accumulate in one group instead of the old one being replaced.
+    /// attributedUserAccountId is who IDocumentService checks job access against (a
+    /// UserAccount.Id); attributedPersonId is who gets recorded as FulfilledBy (a Person.Id).
+    /// For FulfillAsync both derive from the real caller; for an anonymous link upload there
+    /// is no caller, so both are derived from the request's original requester instead.
     /// </summary>
-    private async Task<DocumentRequest> LinkFulfilledDocumentAsync(Guid workspaceId, Guid jobId, DocumentRequest request, IFormFile file, DocumentVisibility visibility, Guid attributedUserAccountId, Guid attributedPersonId, string? displayFileName)
+    private async Task<DocumentRequest> LinkFulfilledDocumentAsync(Guid workspaceId, Guid jobId, DocumentRequest request, List<IFormFile> files, DocumentVisibility visibility, Guid attributedUserAccountId, Guid attributedPersonId, Guid batchId, string? displayFileName)
     {
-        // Reopening keeps the previous FulfilledDocumentId as a reference (not cleared) so
-        // the old file and the "via request" link stay visible until a replacement lands.
-        // No versioning support: once a replacement is uploaded, the old document is
-        // superseded and soft-deleted here rather than kept alongside it.
-        var previousDocumentId = request.FulfilledDocumentId;
+        foreach (var file in files)
+        {
+            await _documentService.UploadAsync(workspaceId, attributedUserAccountId, jobId, file, request.Category, visibility, displayFileName, batchId);
+        }
 
-        var document = await _documentService.UploadAsync(workspaceId, attributedUserAccountId, jobId, file, request.Category, visibility, displayFileName);
-
-        request.FulfilledDocumentId = document.Id;
+        request.FulfilledBatchId = batchId;
         request.FulfilledAt = DateTime.UtcNow;
         request.FulfilledBy = attributedPersonId;
         request.Status = "Fulfilled";
         request.UpdatedAt = DateTime.UtcNow;
-
-        if (previousDocumentId.HasValue)
-        {
-            // Not IDocumentService.DeleteAsync: that requires job.edit, but a Client (or an
-            // anonymous link uploader) fulfilling their own request must be able to trigger
-            // this - the access check already done by the caller is what actually authorizes it.
-            var previousDocument = await _context.Documents.FindAsync(previousDocumentId.Value);
-            if (previousDocument != null)
-            {
-                previousDocument.IsActive = false;
-                previousDocument.UpdatedAt = DateTime.UtcNow;
-            }
-        }
 
         await _context.SaveChangesAsync();
         return request;
@@ -250,7 +236,8 @@ public class DocumentRequestService : IDocumentRequestService
             .Select(a => a.Id)
             .FirstOrDefaultAsync();
 
-        return await LinkFulfilledDocumentAsync(job.WorkspaceId, job.Id, request, file, DocumentVisibility.ClientVisible, requesterAccountId, request.RequestedBy, displayFileName);
+        var batchId = request.FulfilledBatchId ?? Guid.NewGuid();
+        return await LinkFulfilledDocumentAsync(job.WorkspaceId, job.Id, request, new List<IFormFile> { file }, DocumentVisibility.ClientVisible, requesterAccountId, request.RequestedBy, batchId, displayFileName);
     }
 
     /// <summary>Shared by CreateAsync and UpdateTargetAsync - one place for the three targeting rules.</summary>
