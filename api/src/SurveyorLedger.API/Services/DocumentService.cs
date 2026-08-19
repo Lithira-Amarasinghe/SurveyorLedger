@@ -10,7 +10,7 @@ namespace SurveyorLedger.API.Services;
 public interface IDocumentService
 {
     Task<List<Document>> GetDocumentsAsync(Guid workspaceId, Guid callerUserId, Guid jobId);
-    Task<Document> UploadAsync(Guid workspaceId, Guid callerUserId, Guid jobId, IFormFile file, DocumentCategory category, DocumentVisibility visibility, string? displayFileName = null);
+    Task<Document> UploadAsync(Guid workspaceId, Guid callerUserId, Guid jobId, IFormFile file, DocumentCategory category, DocumentVisibility visibility, string? displayFileName = null, Guid? batchId = null);
     Task<(Document Document, Stream Content)> GetFileAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId);
     Task<Document> UpdateVisibilityAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId, DocumentVisibility visibility);
@@ -18,9 +18,9 @@ public interface IDocumentService
 
     /// <summary>ownerType is "LandSurvey" or "LandDeed"; landId gates the permission check (EnsureLandAccessAsync), ownerId is the survey/deed's own id.</summary>
     Task<List<Document>> GetOwnedDocumentsAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId);
-    Task<Document> UploadOwnedDocumentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, DocumentCategory category, IFormFile file, string? displayFileName = null);
+    Task<Document> UploadOwnedDocumentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, DocumentCategory category, IFormFile file, string? displayFileName = null, Guid? batchId = null);
     /// <summary>land.view-gated variant for LandDocumentRequestService.FulfillAsync - see implementation doc comment.</summary>
-    Task<Document> UploadOwnedDocumentForFulfillmentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, DocumentCategory category, IFormFile file, string? displayFileName = null);
+    Task<Document> UploadOwnedDocumentForFulfillmentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, DocumentCategory category, IFormFile file, string? displayFileName = null, Guid? batchId = null);
     Task<(Document Document, Stream Content)> GetOwnedDocumentFileAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, Guid documentId);
     Task DeleteOwnedDocumentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, Guid documentId);
     Task<Document> RenameOwnedDocumentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, Guid documentId, string fileName);
@@ -75,7 +75,7 @@ public class DocumentService : IDocumentService
         return documents.Where(d => IsVisible(d, callerRoles)).ToList();
     }
 
-    public async Task<Document> UploadAsync(Guid workspaceId, Guid callerUserId, Guid jobId, IFormFile file, DocumentCategory category, DocumentVisibility visibility, string? displayFileName = null)
+    public async Task<Document> UploadAsync(Guid workspaceId, Guid callerUserId, Guid jobId, IFormFile file, DocumentCategory category, DocumentVisibility visibility, string? displayFileName = null, Guid? batchId = null)
     {
         await FindJobAsync(workspaceId, jobId);
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
@@ -114,7 +114,8 @@ public class DocumentService : IDocumentService
             UploadedBy = callerPersonId,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            UpdatedAt = DateTime.UtcNow,
+            UploadBatchId = batchId
         };
 
         await _context.Documents.AddAsync(document);
@@ -195,8 +196,8 @@ public class DocumentService : IDocumentService
             .ToListAsync();
     }
 
-    public Task<Document> UploadOwnedDocumentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, DocumentCategory category, IFormFile file, string? displayFileName = null) =>
-        UploadOwnedDocumentCoreAsync(workspaceId, callerUserId, landId, ownerType, ownerId, category, file, "edit", displayFileName);
+    public Task<Document> UploadOwnedDocumentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, DocumentCategory category, IFormFile file, string? displayFileName = null, Guid? batchId = null) =>
+        UploadOwnedDocumentCoreAsync(workspaceId, callerUserId, landId, ownerType, ownerId, category, file, "edit", displayFileName, batchId);
 
     /// <summary>
     /// Same upload, gated by land.view instead of land.edit - used only by
@@ -205,10 +206,10 @@ public class DocumentService : IDocumentService
     /// land.edit (same asymmetry DocumentService.UploadAsync has for Job: job.view covers
     /// upload/fulfill, job.edit covers delete/manage).
     /// </summary>
-    public Task<Document> UploadOwnedDocumentForFulfillmentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, DocumentCategory category, IFormFile file, string? displayFileName = null) =>
-        UploadOwnedDocumentCoreAsync(workspaceId, callerUserId, landId, ownerType, ownerId, category, file, "view", displayFileName);
+    public Task<Document> UploadOwnedDocumentForFulfillmentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, DocumentCategory category, IFormFile file, string? displayFileName = null, Guid? batchId = null) =>
+        UploadOwnedDocumentCoreAsync(workspaceId, callerUserId, landId, ownerType, ownerId, category, file, "view", displayFileName, batchId);
 
-    private async Task<Document> UploadOwnedDocumentCoreAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, DocumentCategory category, IFormFile file, string requiredAction, string? displayFileName)
+    private async Task<Document> UploadOwnedDocumentCoreAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, DocumentCategory category, IFormFile file, string requiredAction, string? displayFileName, Guid? batchId = null)
     {
         await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, requiredAction);
         await EnsureOwnerBelongsToLandAsync(ownerType, ownerId, landId);
@@ -248,7 +249,8 @@ public class DocumentService : IDocumentService
             UploadedBy = callerPersonId,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            UpdatedAt = DateTime.UtcNow,
+            UploadBatchId = batchId
         };
 
         await _context.Documents.AddAsync(document);

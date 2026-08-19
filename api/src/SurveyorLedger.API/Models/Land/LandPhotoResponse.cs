@@ -8,4 +8,5 @@ public class LandPhotoResponse
     public long FileSizeBytes { get; set; }
     public string UploadedByName { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+    public Guid? BatchId { get; set; }
 }

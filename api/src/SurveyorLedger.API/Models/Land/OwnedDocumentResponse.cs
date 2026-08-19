@@ -10,4 +10,5 @@ public class OwnedDocumentResponse
     public Guid UploadedBy { get; set; }
     public required string UploadedByName { get; set; }
     public DateTime CreatedAt { get; set; }
+    public Guid? UploadBatchId { get; set; }
 }

@@ -156,10 +156,10 @@ namespace SurveyorLedger.API.Controllers
 
         [HttpPost("{id}/documents")]
         [RequestSizeLimit(DocumentService.MaxFileSizeBytes)]
-        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> UploadDocument(Guid workspaceId, Guid id, IFormFile file, [FromQuery] DocumentCategory category = DocumentCategory.Other)
+        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> UploadDocument(Guid workspaceId, Guid id, IFormFile file, [FromQuery] DocumentCategory category = DocumentCategory.Other, [FromQuery] Guid? batchId = null)
         {
             var callerId = CallerId();
-            var document = await _documentService.UploadOwnedDocumentAsync(workspaceId, callerId, id, "Land", id, category, file);
+            var document = await _documentService.UploadOwnedDocumentAsync(workspaceId, callerId, id, "Land", id, category, file, batchId: batchId);
             return Ok(ApiResponse<OwnedDocumentResponse>.Ok(ToOwnedDocumentResponse(document)));
         }
 
@@ -197,10 +197,10 @@ namespace SurveyorLedger.API.Controllers
 
         [HttpPost("{id}/surveys/{surveyId}/documents")]
         [RequestSizeLimit(DocumentService.MaxFileSizeBytes)]
-        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> UploadSurveyDocument(Guid workspaceId, Guid id, Guid surveyId, IFormFile file)
+        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> UploadSurveyDocument(Guid workspaceId, Guid id, Guid surveyId, IFormFile file, [FromQuery] Guid? batchId = null)
         {
             var callerId = CallerId();
-            var document = await _documentService.UploadOwnedDocumentAsync(workspaceId, callerId, id, "LandSurvey", surveyId, DocumentCategory.SurveyPlan, file);
+            var document = await _documentService.UploadOwnedDocumentAsync(workspaceId, callerId, id, "LandSurvey", surveyId, DocumentCategory.SurveyPlan, file, batchId: batchId);
             return Ok(ApiResponse<OwnedDocumentResponse>.Ok(ToOwnedDocumentResponse(document)));
         }
 
@@ -270,10 +270,10 @@ namespace SurveyorLedger.API.Controllers
 
         [HttpPost("{id}/deeds/{deedId}/documents")]
         [RequestSizeLimit(DocumentService.MaxFileSizeBytes)]
-        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> UploadDeedDocument(Guid workspaceId, Guid id, Guid deedId, IFormFile file)
+        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> UploadDeedDocument(Guid workspaceId, Guid id, Guid deedId, IFormFile file, [FromQuery] Guid? batchId = null)
         {
             var callerId = CallerId();
-            var document = await _documentService.UploadOwnedDocumentAsync(workspaceId, callerId, id, "LandDeed", deedId, DocumentCategory.LegalDocument, file);
+            var document = await _documentService.UploadOwnedDocumentAsync(workspaceId, callerId, id, "LandDeed", deedId, DocumentCategory.LegalDocument, file, batchId: batchId);
             return Ok(ApiResponse<OwnedDocumentResponse>.Ok(ToOwnedDocumentResponse(document)));
         }
 
@@ -378,10 +378,10 @@ namespace SurveyorLedger.API.Controllers
 
         [HttpPost("{id}/photos")]
         [RequestSizeLimit(DocumentService.MaxFileSizeBytes)]
-        public async Task<ActionResult<ApiResponse<LandPhotoResponse>>> UploadPhoto(Guid workspaceId, Guid id, IFormFile file)
+        public async Task<ActionResult<ApiResponse<LandPhotoResponse>>> UploadPhoto(Guid workspaceId, Guid id, IFormFile file, [FromQuery] Guid? batchId = null)
         {
             var callerId = CallerId();
-            var photo = await _documentService.UploadOwnedDocumentAsync(workspaceId, callerId, id, "LandPhoto", id, DocumentCategory.Photo, file);
+            var photo = await _documentService.UploadOwnedDocumentAsync(workspaceId, callerId, id, "LandPhoto", id, DocumentCategory.Photo, file, batchId: batchId);
             return Ok(ApiResponse<LandPhotoResponse>.Ok(ToPhotoResponse(photo)));
         }
 
@@ -467,7 +467,8 @@ namespace SurveyorLedger.API.Controllers
             FileSizeBytes = d.FileSizeBytes,
             UploadedBy = d.UploadedBy,
             UploadedByName = $"{d.UploadedByUser.FirstName} {d.UploadedByUser.LastName}",
-            CreatedAt = d.CreatedAt
+            CreatedAt = d.CreatedAt,
+            UploadBatchId = d.UploadBatchId
         };
 
         private static AreaDto ToAreaDto(decimal? squareMeters)
@@ -512,7 +513,8 @@ namespace SurveyorLedger.API.Controllers
             ContentType = d.ContentType,
             FileSizeBytes = d.FileSizeBytes,
             UploadedByName = $"{d.UploadedByUser.FirstName} {d.UploadedByUser.LastName}",
-            CreatedAt = d.CreatedAt
+            CreatedAt = d.CreatedAt,
+            BatchId = d.UploadBatchId
         };
     }
 }

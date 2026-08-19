@@ -31,7 +31,7 @@ namespace SurveyorLedger.API.Controllers
         [RequestSizeLimit(DocumentService.MaxFileSizeBytes)]
         public async Task<ActionResult<ApiResponse<DocumentResponse>>> Upload(Guid workspaceId, Guid jobId, [FromForm] DocumentUploadRequest request)
         {
-            var document = await _documentService.UploadAsync(workspaceId, CallerId(), jobId, request.File, request.Category, request.Visibility, request.DisplayFileName);
+            var document = await _documentService.UploadAsync(workspaceId, CallerId(), jobId, request.File, request.Category, request.Visibility, request.DisplayFileName, request.BatchId);
             return Ok(ApiResponse<DocumentResponse>.Ok(ToResponse(document)));
         }
 
@@ -80,7 +80,8 @@ namespace SurveyorLedger.API.Controllers
             UploadedBy = d.UploadedBy,
             UploadedByName = $"{d.UploadedByUser.FirstName} {d.UploadedByUser.LastName}",
             CreatedAt = d.CreatedAt,
-            UpdatedAt = d.UpdatedAt
+            UpdatedAt = d.UpdatedAt,
+            UploadBatchId = d.UploadBatchId
         };
     }
 }

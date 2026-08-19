@@ -20,4 +20,6 @@ public class DocumentUploadRequest
 
     [StringLength(260)]
     public string? DisplayFileName { get; set; }
+
+    public Guid? BatchId { get; set; }
 }
