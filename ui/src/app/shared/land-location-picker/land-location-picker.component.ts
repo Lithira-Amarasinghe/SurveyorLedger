@@ -1,21 +1,29 @@
-import { Component, ElementRef, EventEmitter, Input, OnDestroy, OnInit, Output, ViewChild, signal } from '@angular/core';
+import { Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, OnInit, Output, SimpleChanges, ViewChild, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import * as L from 'leaflet';
 
 // An inline SVG divIcon instead of Leaflet's default raster marker - no image file to
-// fail to load (the previous fix vendored PNGs locally, but a drawn icon removes the
-// failure mode entirely: nothing to 404, nothing to flash as a broken-image placeholder
-// while it loads), and it stays crisp at any zoom/DPI.
-const pinIcon = L.divIcon({
-  className: 'land-location-pin',
-  html: `<svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
-    <path d="M16 0C7.16 0 0 7.16 0 16c0 11 16 26 16 26s16-15 16-26C32 7.16 24.84 0 16 0z" fill="#dc2626"/>
+// fail to load, and it stays crisp at any zoom/DPI. Every point is equal (no "primary"
+// pin) so one icon covers all of them; a dashed gray pin marks a not-yet-named pending
+// point so it's visible the instant the map is clicked, before the name is saved.
+function pinSvg(fill: string): string {
+  return `<svg width="26" height="34" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
+    <path d="M16 0C7.16 0 0 7.16 0 16c0 11 16 26 16 26s16-15 16-26C32 7.16 24.84 0 16 0z" fill="${fill}"/>
     <circle cx="16" cy="16" r="6" fill="#ffffff"/>
-  </svg>`,
-  iconSize: [32, 42],
-  iconAnchor: [16, 42]
-});
+  </svg>`;
+}
+const pointIcon = L.divIcon({ className: 'land-map-point', html: pinSvg('#2563eb'), iconSize: [26, 34], iconAnchor: [13, 34] });
+const pendingIcon = L.divIcon({ className: 'land-map-pending-point', html: pinSvg('#9ca3af'), iconSize: [26, 34], iconAnchor: [13, 34] });
+
+export interface LandMapMarker {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  /** Defaults true (draggable when the picker itself isn't readonly). Set false for markers the caller never wants moved - e.g. the public link's already-set points, which are read-only even though the map still accepts new clicks. */
+  editable?: boolean;
+}
 
 interface NominatimResult {
   display_name: string;
@@ -24,9 +32,13 @@ interface NominatimResult {
 }
 
 /**
- * Leaflet + OpenStreetMap pin picker - no API key, no billing. Used both from the
- * authenticated land-detail-panel and the public unauthenticated set-location page,
- * so it owns no save/HTTP logic of its own - it only emits the chosen point.
+ * Leaflet + OpenStreetMap point picker - no API key, no billing. One map, click (or
+ * search) to add a point directly (a gray pending pin appears instantly, before it's
+ * named/saved), drag an existing point to move it. Auto-fits the view to every marker
+ * so the map always opens showing what's already there. Used both from the authenticated
+ * land-detail-panel and the public unauthenticated set-location/map-view pages, so it
+ * owns no save/HTTP logic of its own - it only emits what the user did, the caller
+ * persists it.
  */
 @Component({
   selector: 'app-land-location-picker',
@@ -39,7 +51,7 @@ interface NominatimResult {
           <input
             class="input-field flex-1"
             type="text"
-            placeholder="Search for an address…"
+            placeholder="Search for an address, or click the map to add a point…"
             [(ngModel)]="searchQuery"
             (keydown.enter)="search()"
           />
@@ -66,26 +78,24 @@ interface NominatimResult {
       }
       <div #mapEl class="w-full rounded-md border border-neutral-200" [class]="heightClass"></div>
       @if (!readonly) {
-        <p class="text-xs text-neutral-500">
-          {{ chosenLat !== null ? (chosenLat | number: '1.6-6') + ', ' + (chosenLng | number: '1.6-6') : 'Click the map or search to place the pin.' }}
-        </p>
-        <div class="flex justify-end">
-          <button type="button" class="btn-primary" [disabled]="chosenLat === null" (click)="confirm()">
-            Use this location
-          </button>
-        </div>
+        <p class="text-xs text-neutral-500">Click the map (or pick a search result) to add a point. Drag an existing pin to move it.</p>
       }
     </div>
   `
 })
-export class LandLocationPickerComponent implements OnInit, OnDestroy {
+export class LandLocationPickerComponent implements OnInit, OnChanges, OnDestroy {
   @Input() initialLat: number | null = null;
   @Input() initialLng: number | null = null;
-  /** View-only mode: pan/zoom the map, no search, no click/drag-to-place, no confirm button. */
+  /** View-only mode: pan/zoom the map, no search, no click-to-add, no drag. */
   @Input() readonly = false;
-  /** Tailwind height class for the map container - callers embedding a small inline preview vs. the full picker modal want different sizes. */
+  /** Tailwind height class for the map container - callers embedding a small inline preview vs. the full picker want different sizes. */
   @Input() heightClass = 'h-72';
-  @Output() locationChosen = new EventEmitter<{ lat: number; lng: number }>();
+  /** Every point to render - the caller owns the list (and persistence); this component only draws it and reports clicks/drags. */
+  @Input() markers: LandMapMarker[] = [];
+  /** A just-clicked, not-yet-named point - rendered as a distinct gray pin so the click feels instant instead of silently doing nothing until the name is saved. */
+  @Input() pendingPoint: { lat: number; lng: number } | null = null;
+  @Output() pointAdded = new EventEmitter<{ lat: number; lng: number }>();
+  @Output() pointMoved = new EventEmitter<{ id: string; lat: number; lng: number }>();
 
   @ViewChild('mapEl', { static: true }) mapEl!: ElementRef<HTMLDivElement>;
 
@@ -93,16 +103,17 @@ export class LandLocationPickerComponent implements OnInit, OnDestroy {
   searchResults = signal<NominatimResult[]>([]);
   searching = signal(false);
   searchError = signal('');
-  chosenLat: number | null = null;
-  chosenLng: number | null = null;
 
   private map!: L.Map;
-  private marker: L.Marker | null = null;
+  private markerLayers = new Map<string, L.Marker>();
+  private pendingLayer: L.Marker | null = null;
+  private hasFitBounds = false;
 
   ngOnInit(): void {
-    const startLat = this.initialLat ?? 7.8731; // Sri Lanka centroid - a reasonable default when no pin exists yet
-    const startLng = this.initialLng ?? 80.7718;
-    const startZoom = this.initialLat !== null ? 16 : 7;
+    const firstMarker = this.markers[0];
+    const startLat = this.initialLat ?? firstMarker?.lat ?? 7.8731; // Sri Lanka centroid - a reasonable default when nothing exists yet
+    const startLng = this.initialLng ?? firstMarker?.lng ?? 80.7718;
+    const startZoom = this.initialLat !== null || firstMarker ? 16 : 7;
 
     this.map = L.map(this.mapEl.nativeElement).setView([startLat, startLng], startZoom);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -110,19 +121,86 @@ export class LandLocationPickerComponent implements OnInit, OnDestroy {
       maxZoom: 19
     }).addTo(this.map);
 
-    if (this.initialLat !== null && this.initialLng !== null) {
-      this.placePin(this.initialLat, this.initialLng);
-    }
-
     if (!this.readonly) {
       this.map.on('click', (e: L.LeafletMouseEvent) => {
-        this.placePin(e.latlng.lat, e.latlng.lng);
+        this.pointAdded.emit({ lat: e.latlng.lat, lng: e.latlng.lng });
       });
+    }
+
+    this.renderMarkers();
+    this.renderPendingMarker();
+    this.fitToMarkers();
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (!this.map) return;
+    if (changes['markers']) {
+      this.renderMarkers();
+      this.fitToMarkers();
+    }
+    if (changes['pendingPoint']) {
+      this.renderPendingMarker();
     }
   }
 
   ngOnDestroy(): void {
     this.map?.remove();
+  }
+
+  /** Fits the view to every marker once markers first arrive (e.g. after an async fetch resolves) or whenever the count changes - not on every reference change, so panning/zooming by hand isn't fought on unrelated re-renders. */
+  private fitToMarkers(): void {
+    if (this.markers.length === 0) return;
+    if (this.hasFitBounds && this.initialLat !== null) return; // an explicit initial point already framed the view once; don't re-fight a manual pan after that.
+
+    if (this.markers.length === 1) {
+      this.map.setView([this.markers[0].lat, this.markers[0].lng], 16);
+    } else {
+      const bounds = L.latLngBounds(this.markers.map(m => [m.lat, m.lng] as [number, number]));
+      this.map.fitBounds(bounds, { padding: [24, 24] });
+    }
+    this.hasFitBounds = true;
+  }
+
+  private renderPendingMarker(): void {
+    this.pendingLayer?.remove();
+    this.pendingLayer = null;
+    if (this.pendingPoint) {
+      this.pendingLayer = L.marker([this.pendingPoint.lat, this.pendingPoint.lng], { icon: pendingIcon }).addTo(this.map);
+    }
+  }
+
+  private renderMarkers(): void {
+    const seenIds = new Set(this.markers.map(m => m.id));
+    for (const [id, layer] of this.markerLayers) {
+      if (!seenIds.has(id)) {
+        layer.remove();
+        this.markerLayers.delete(id);
+      }
+    }
+
+    for (const point of this.markers) {
+      const draggable = !this.readonly && point.editable !== false;
+
+      const existing = this.markerLayers.get(point.id);
+      if (existing) {
+        existing.setLatLng([point.lat, point.lng]);
+        existing.setTooltipContent(point.name);
+        continue;
+      }
+
+      const marker = L.marker([point.lat, point.lng], { icon: pointIcon, draggable })
+        .addTo(this.map)
+        .bindTooltip(point.name, { permanent: true, direction: 'top', className: 'land-map-label', offset: [0, -30] });
+
+      if (draggable) {
+        marker.on('dragend', () => {
+          const pos = marker.getLatLng();
+          this.pointMoved.emit({ id: point.id, lat: pos.lat, lng: pos.lng });
+        });
+      }
+
+      this.markerLayers.set(point.id, marker);
+    }
   }
 
   search(): void {
@@ -142,12 +220,12 @@ export class LandLocationPickerComponent implements OnInit, OnDestroy {
         this.searchResults.set(results);
         this.searching.set(false);
         if (results.length === 0) {
-          this.searchError.set('No results found — click the map to place the pin.');
+          this.searchError.set('No results found — click the map to add a point.');
         }
       })
       .catch(() => {
         this.searching.set(false);
-        this.searchError.set('Search unavailable — click the map to place the pin.');
+        this.searchError.set('Search unavailable — click the map to add a point.');
       });
   }
 
@@ -155,31 +233,8 @@ export class LandLocationPickerComponent implements OnInit, OnDestroy {
     const lat = parseFloat(r.lat);
     const lng = parseFloat(r.lon);
     this.map.setView([lat, lng], 16);
-    this.placePin(lat, lng);
+    this.pointAdded.emit({ lat, lng });
     this.searchResults.set([]);
     this.searchQuery = r.display_name;
-  }
-
-  private placePin(lat: number, lng: number): void {
-    this.chosenLat = lat;
-    this.chosenLng = lng;
-
-    if (this.marker) {
-      this.marker.setLatLng([lat, lng]);
-    } else {
-      this.marker = L.marker([lat, lng], { icon: pinIcon, draggable: !this.readonly }).addTo(this.map);
-      if (!this.readonly) {
-        this.marker.on('dragend', () => {
-          const pos = this.marker!.getLatLng();
-          this.chosenLat = pos.lat;
-          this.chosenLng = pos.lng;
-        });
-      }
-    }
-  }
-
-  confirm(): void {
-    if (this.chosenLat === null || this.chosenLng === null) return;
-    this.locationChosen.emit({ lat: this.chosenLat, lng: this.chosenLng });
   }
 }

@@ -7,12 +7,9 @@ namespace SurveyorLedger.API.Models.Land;
 /// </summary>
 public class LandRequest
 {
-    public AddressDto? Address { get; set; }
+    public LandAddressDto? Address { get; set; }
 
     public AreaDto? Area { get; set; }
-
-    [StringLength(100)]
-    public string? GpsCoordinates { get; set; }
 
     [StringLength(2000)]
     public string? Notes { get; set; }

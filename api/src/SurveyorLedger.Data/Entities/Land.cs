@@ -4,12 +4,12 @@ public class Land
 {
     public Guid Id { get; set; }
     public Guid WorkspaceId { get; set; }
-    public Address Address { get; set; } = new();
+    public LandAddress Address { get; set; } = new();
     public decimal? AreaSquareMeters { get; set; }
-    public string? GpsCoordinates { get; set; }
-    public decimal? Latitude { get; set; }
-    public decimal? Longitude { get; set; }
+    /// <summary>Add-a-point link - unauthenticated, add-only (see LandLocationLinkController).</summary>
     public string? LocationShareToken { get; set; }
+    /// <summary>View-map link - unauthenticated, read-only (see LandMapViewLinkController). Independent of LocationShareToken, revoked/regenerated separately.</summary>
+    public string? MapViewShareToken { get; set; }
     public string? Notes { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
@@ -30,5 +30,5 @@ public class Land
     public ICollection<LandSurvey> Surveys { get; set; } = new List<LandSurvey>();
     public ICollection<LandDeed> Deeds { get; set; } = new List<LandDeed>();
     public ICollection<LandBoundary> Boundaries { get; set; } = new List<LandBoundary>();
-    public ICollection<LandPhoto> Photos { get; set; } = new List<LandPhoto>();
+    public ICollection<LandMapPoint> MapPoints { get; set; } = new List<LandMapPoint>();
 }

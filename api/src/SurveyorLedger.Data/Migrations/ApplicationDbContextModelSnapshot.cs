@@ -188,8 +188,15 @@ namespace SurveyorLedger.Data.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
-                    b.Property<Guid>("JobId")
+                    b.Property<Guid?>("JobId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("OwnerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("OwnerType")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
 
                     b.Property<string>("StoredPath")
                         .IsRequired()
@@ -214,6 +221,8 @@ namespace SurveyorLedger.Data.Migrations
                     b.HasIndex("JobId");
 
                     b.HasIndex("UploadedBy");
+
+                    b.HasIndex("OwnerType", "OwnerId");
 
                     b.ToTable("Documents");
                 });
@@ -686,22 +695,16 @@ namespace SurveyorLedger.Data.Migrations
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
 
-                    b.Property<string>("GpsCoordinates")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
-
-                    b.Property<decimal?>("Latitude")
-                        .HasColumnType("decimal(9,6)");
 
                     b.Property<string>("LocationShareToken")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
-                    b.Property<decimal?>("Longitude")
-                        .HasColumnType("decimal(9,6)");
+                    b.Property<string>("MapViewShareToken")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Notes")
                         .HasMaxLength(2000)
@@ -737,6 +740,10 @@ namespace SurveyorLedger.Data.Migrations
                     b.HasIndex("LocationShareToken")
                         .IsUnique()
                         .HasFilter("[LocationShareToken] IS NOT NULL");
+
+                    b.HasIndex("MapViewShareToken")
+                        .IsUnique()
+                        .HasFilter("[MapViewShareToken] IS NOT NULL");
 
                     b.HasIndex("OwnerId");
 
@@ -813,48 +820,122 @@ namespace SurveyorLedger.Data.Migrations
                     b.ToTable("LandDeeds");
                 });
 
-            modelBuilder.Entity("SurveyorLedger.Data.Entities.LandPhoto", b =>
+            modelBuilder.Entity("SurveyorLedger.Data.Entities.LandDocumentRequest", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("ContentType")
+                    b.Property<string>("Category")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
 
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
-                    b.Property<long>("FileSizeBytes")
-                        .HasColumnType("bigint");
+                    b.Property<DateTime?>("FulfilledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("FulfilledBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("FulfilledDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
 
                     b.Property<Guid>("LandId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("StoredPath")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<Guid>("UploadedBy")
+                    b.Property<Guid>("RequestedBy")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ShareToken")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime?>("ShareTokenExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("TargetRole")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FulfilledBy");
+
+                    b.HasIndex("FulfilledDocumentId");
+
+                    b.HasIndex("LandId");
+
+                    b.HasIndex("RequestedBy");
+
+                    b.HasIndex("ShareToken")
+                        .IsUnique()
+                        .HasFilter("[ShareToken] IS NOT NULL");
+
+                    b.ToTable("LandDocumentRequests");
+                });
+
+            modelBuilder.Entity("SurveyorLedger.Data.Entities.LandMapPoint", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<Guid>("LandId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Latitude")
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<decimal>("Longitude")
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
 
                     b.HasKey("Id");
 
                     b.HasIndex("LandId");
 
-                    b.HasIndex("UploadedBy");
-
-                    b.ToTable("LandPhotos");
+                    b.ToTable("LandMapPoints");
                 });
 
             modelBuilder.Entity("SurveyorLedger.Data.Entities.LandSurvey", b =>
@@ -2430,8 +2511,7 @@ namespace SurveyorLedger.Data.Migrations
                     b.HasOne("SurveyorLedger.Data.Entities.Job", "Job")
                         .WithMany()
                         .HasForeignKey("JobId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.HasOne("SurveyorLedger.Data.Entities.Person", "UploadedByUser")
                         .WithMany()
@@ -2692,35 +2772,50 @@ namespace SurveyorLedger.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.OwnsOne("SurveyorLedger.Data.Entities.Address", "Address", b1 =>
+                    b.OwnsOne("SurveyorLedger.Data.Entities.LandAddress", "Address", b1 =>
                         {
                             b1.Property<Guid>("LandId")
                                 .HasColumnType("uniqueidentifier");
 
-                            b1.Property<string>("City")
-                                .HasMaxLength(100)
-                                .HasColumnType("nvarchar(100)")
-                                .HasColumnName("City");
-
-                            b1.Property<string>("Country")
-                                .HasMaxLength(100)
-                                .HasColumnType("nvarchar(100)")
-                                .HasColumnName("Country");
-
                             b1.Property<string>("District")
-                                .HasMaxLength(100)
-                                .HasColumnType("nvarchar(100)")
+                                .HasMaxLength(150)
+                                .HasColumnType("nvarchar(150)")
                                 .HasColumnName("District");
 
-                            b1.Property<string>("PostalCode")
-                                .HasMaxLength(20)
-                                .HasColumnType("nvarchar(20)")
-                                .HasColumnName("PostalCode");
+                            b1.Property<string>("DivisionalSecretariat")
+                                .HasMaxLength(150)
+                                .HasColumnType("nvarchar(150)")
+                                .HasColumnName("DivisionalSecretariat");
 
-                            b1.Property<string>("Street")
-                                .HasMaxLength(255)
-                                .HasColumnType("nvarchar(255)")
-                                .HasColumnName("Street");
+                            b1.Property<string>("GramaNiladhariDivision")
+                                .HasMaxLength(150)
+                                .HasColumnType("nvarchar(150)")
+                                .HasColumnName("GramaNiladhariDivision");
+
+                            b1.Property<string>("Hatpattu")
+                                .HasMaxLength(150)
+                                .HasColumnType("nvarchar(150)")
+                                .HasColumnName("Hatpattu");
+
+                            b1.Property<string>("Korale")
+                                .HasMaxLength(150)
+                                .HasColumnType("nvarchar(150)")
+                                .HasColumnName("Korale");
+
+                            b1.Property<string>("PradeshiyaSabha")
+                                .HasMaxLength(150)
+                                .HasColumnType("nvarchar(150)")
+                                .HasColumnName("PradeshiyaSabha");
+
+                            b1.Property<string>("Province")
+                                .HasMaxLength(150)
+                                .HasColumnType("nvarchar(150)")
+                                .HasColumnName("Province");
+
+                            b1.Property<string>("Village")
+                                .HasMaxLength(150)
+                                .HasColumnType("nvarchar(150)")
+                                .HasColumnName("Village");
 
                             b1.HasKey("LandId");
 
@@ -2760,23 +2855,48 @@ namespace SurveyorLedger.Data.Migrations
                     b.Navigation("Land");
                 });
 
-            modelBuilder.Entity("SurveyorLedger.Data.Entities.LandPhoto", b =>
+            modelBuilder.Entity("SurveyorLedger.Data.Entities.LandDocumentRequest", b =>
+                {
+                    b.HasOne("SurveyorLedger.Data.Entities.Person", "FulfilledByUser")
+                        .WithMany()
+                        .HasForeignKey("FulfilledBy")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SurveyorLedger.Data.Entities.Document", "FulfilledDocument")
+                        .WithMany()
+                        .HasForeignKey("FulfilledDocumentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SurveyorLedger.Data.Entities.Land", "Land")
+                        .WithMany()
+                        .HasForeignKey("LandId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SurveyorLedger.Data.Entities.Person", "RequestedByUser")
+                        .WithMany()
+                        .HasForeignKey("RequestedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("FulfilledByUser");
+
+                    b.Navigation("FulfilledDocument");
+
+                    b.Navigation("Land");
+
+                    b.Navigation("RequestedByUser");
+                });
+
+            modelBuilder.Entity("SurveyorLedger.Data.Entities.LandMapPoint", b =>
                 {
                     b.HasOne("SurveyorLedger.Data.Entities.Land", "Land")
-                        .WithMany("Photos")
+                        .WithMany("MapPoints")
                         .HasForeignKey("LandId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("SurveyorLedger.Data.Entities.Person", "UploadedByUser")
-                        .WithMany()
-                        .HasForeignKey("UploadedBy")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.Navigation("Land");
-
-                    b.Navigation("UploadedByUser");
                 });
 
             modelBuilder.Entity("SurveyorLedger.Data.Entities.LandSurvey", b =>
@@ -3048,7 +3168,7 @@ namespace SurveyorLedger.Data.Migrations
 
                     b.Navigation("Deeds");
 
-                    b.Navigation("Photos");
+                    b.Navigation("MapPoints");
 
                     b.Navigation("Surveys");
                 });

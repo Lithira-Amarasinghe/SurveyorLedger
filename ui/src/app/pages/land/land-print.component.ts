@@ -2,7 +2,7 @@ import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { forkJoin } from 'rxjs';
-import { Land, LandBoundary, LandDeed, LandPhoto, LandService, LandSurvey, addressLine, formatArea, telHref, whatsAppHref } from '../../core/land.service';
+import { Land, LandBoundary, LandDeed, LandMapPoint, LandPhoto, LandService, LandSurvey, addressLine, formatArea, telHref, whatsAppHref } from '../../core/land.service';
 import { LandLocationQrComponent } from '../../shared/land-location-qr/land-location-qr.component';
 import { PhotoGridComponent } from '../../shared/photo-grid/photo-grid.component';
 
@@ -43,15 +43,20 @@ import { PhotoGridComponent } from '../../shared/photo-grid/photo-grid.component
           </div>
         }
 
-        @if (land.latitude !== null && land.longitude !== null) {
+        @if (mapPoints().length > 0) {
           <div class="mt-md">
             <h2 class="text-xs font-semibold text-neutral-500 uppercase mb-xs">Location</h2>
-            <img
-              [src]="'https://staticmap.openstreetmap.de/staticmap.php?center=' + land.latitude + ',' + land.longitude + '&zoom=16&size=600x300&markers=' + land.latitude + ',' + land.longitude + ',red-pushpin'"
-              alt="Map of land location"
-              class="w-full max-w-md rounded-md border border-neutral-200"
-            />
-            <app-land-location-qr [lat]="land.latitude" [lng]="land.longitude" [sizePx]="120" />
+            @for (p of mapPoints(); track p.id) {
+              <div class="mb-sm">
+                <p class="text-sm text-neutral-900">{{ p.name }}</p>
+                <img
+                  [src]="'https://staticmap.openstreetmap.de/staticmap.php?center=' + p.latitude + ',' + p.longitude + '&zoom=16&size=600x300&markers=' + p.latitude + ',' + p.longitude + ',red-pushpin'"
+                  [alt]="'Map of ' + p.name"
+                  class="w-full max-w-md rounded-md border border-neutral-200"
+                />
+                <app-land-location-qr [lat]="p.latitude" [lng]="p.longitude" [sizePx]="120" />
+              </div>
+            }
           </div>
         }
 
@@ -98,6 +103,7 @@ export class LandPrintComponent implements OnInit {
   surveys = signal<LandSurvey[]>([]);
   deeds = signal<LandDeed[]>([]);
   boundaries = signal<LandBoundary[]>([]);
+  mapPoints = signal<LandMapPoint[]>([]);
   photos = signal<LandPhoto[]>([]);
   photoUrls = signal<Record<string, string>>({});
 
@@ -120,12 +126,14 @@ export class LandPrintComponent implements OnInit {
       surveys: this.landService.getSurveys(this.workspaceId, this.landId),
       deeds: this.landService.getDeeds(this.workspaceId, this.landId),
       boundaries: this.landService.getBoundaries(this.workspaceId, this.landId),
+      mapPoints: this.landService.getMapPoints(this.workspaceId, this.landId),
       photos: this.landService.listPhotos(this.workspaceId, this.landId)
-    }).subscribe(({ land, surveys, deeds, boundaries, photos }) => {
+    }).subscribe(({ land, surveys, deeds, boundaries, mapPoints, photos }) => {
       this.land.set(land);
       this.surveys.set(surveys);
       this.deeds.set(deeds);
       this.boundaries.set(boundaries);
+      this.mapPoints.set(mapPoints);
       this.photos.set(photos);
       photos.forEach(photo => {
         this.landService.getPhotoBlob(this.workspaceId, this.landId, photo.photoId).subscribe(blob => {

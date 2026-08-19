@@ -4,8 +4,9 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { Observable, Subject, forkJoin } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { Job, JobInvitation, JobParticipant, JobService } from '../../core/job.service';
-import { Land, addressLine, formatArea } from '../../core/land.service';
+import { Land, LandService, addressLine, formatArea } from '../../core/land.service';
 import { AuthService } from '../../core/auth.service';
 import { InviteByEmail, PersonWithRole } from './add-job-person-modal/add-job-person-modal.component';
 import { Milestone, MilestoneService } from '../../core/milestone.service';
@@ -19,8 +20,10 @@ import { JobBudget, JobBudgetService } from '../../core/job-budget.service';
 import { AddJobPersonModalComponent } from './add-job-person-modal/add-job-person-modal.component';
 import { AddLandWidgetComponent } from './add-land-widget/add-land-widget.component';
 import { LandDetailPanelComponent } from '../land/land-detail-panel/land-detail-panel.component';
-import { DocumentUploadWidgetComponent } from './document-upload-widget/document-upload-widget.component';
-import { DocumentViewerModalComponent } from './document-viewer-modal/document-viewer-modal.component';
+import { DocumentListComponent, DocRow } from '../../shared/document-list/document-list.component';
+import { DocumentUploadButtonComponent } from '../../shared/document-upload-button/document-upload-button.component';
+import { DocumentRequestFormComponent, DocumentRequestFormValue } from '../../shared/document-request-form/document-request-form.component';
+import { DocumentViewerModalComponent } from '../../shared/document-viewer-modal/document-viewer-modal.component';
 import { InvoiceFormModalComponent } from '../billing/invoices/invoice-form-modal/invoice-form-modal.component';
 import { QuotationFormModalComponent } from '../billing/quotations/quotation-form-modal/quotation-form-modal.component';
 import { ExpenseFormModalComponent } from './expense-form-modal/expense-form-modal.component';
@@ -41,7 +44,9 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
     AddJobPersonModalComponent,
     AddLandWidgetComponent,
     LandDetailPanelComponent,
-    DocumentUploadWidgetComponent,
+    DocumentListComponent,
+    DocumentUploadButtonComponent,
+    DocumentRequestFormComponent,
     DocumentViewerModalComponent,
     InvoiceFormModalComponent,
     QuotationFormModalComponent,
@@ -185,18 +190,6 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                   <div class="flex items-center justify-between px-md py-sm cursor-pointer" (click)="toggleLand(l.landId)">
                     <div>
                       <span class="text-sm text-neutral-900">{{ addressLine(l) }}</span>
-                      @if (l.latitude !== null) {
-                        <a
-                          class="text-xs text-primary-600 ml-xs"
-                          [href]="'https://www.google.com/maps?q=' + l.latitude + ',' + l.longitude"
-                          target="_blank"
-                          rel="noopener"
-                          title="Open in Google Maps"
-                          (click)="$event.stopPropagation()"
-                        >📍</a>
-                      } @else {
-                        <span class="text-xs text-neutral-300 ml-xs" title="Location not set">📍</span>
-                      }
                       @if (l.ownerName) {
                         <span class="text-xs text-neutral-500 block">{{ l.ownerName }}</span>
                       }
@@ -494,159 +487,41 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
 
         <div class="card">
           <h2 class="text-sm font-semibold text-neutral-900 mb-md">Documents</h2>
-          @if (documentRows().length > 0) {
-            <div class="space-y-xs mb-md">
-              @for (row of documentRows(); track (row.request?.requestId ?? row.document?.documentId)) {
-                @if (row.kind === 'request' && (row.request!.status === 'Pending' || row.request!.status === 'Reopened')) {
-                  <div class="rounded border border-dashed border-neutral-300">
-                    <div class="flex items-center justify-between gap-sm px-md py-sm">
-                      <div class="min-w-0">
-                        <span class="text-sm text-neutral-900 truncate block">
-                          {{ row.request!.status === 'Reopened' ? 'Needs re-upload: ' : 'Requested: ' }}{{ row.request!.title }}
-                        </span>
-                        @if (row.request!.description) {
-                          <span class="text-xs text-neutral-500 block">{{ row.request!.description }}</span>
-                        }
-                        <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600 mr-xs">{{ row.request!.category }}</span>
-                        @if (row.request!.targetRole) {
-                          <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">for {{ row.request!.targetRole }}</span>
-                        } @else if (row.request!.targetUserName; as targetName) {
-                          <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">for {{ targetName }}</span>
-                        }
-                      </div>
-                      <div class="flex items-center gap-sm flex-shrink-0 whitespace-nowrap">
-                        <input #fulfillInput type="file" class="hidden" (change)="fulfillRequest(row.request!, fulfillInput.files); fulfillInput.value = ''" />
-                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="fulfillInput.click()">Upload</button>
-                        @if (!isClient()) {
-                          <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="startEditTarget(row.request!)">Edit target</button>
-                          <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="copyShareLink(row.request!)">Copy link</button>
-                          @if (row.request!.hasActiveShareLink) {
-                            <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="revokeShareLink(row.request!)">Revoke link</button>
-                          }
-                          <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="cancelRequest(row.request!)">Cancel</button>
-                        }
-                      </div>
-                    </div>
-                    @if (editingRequestTarget() === row.request!.requestId) {
-                      <div class="px-md pb-md space-y-sm border-t border-neutral-200 pt-sm">
-                        <select class="input-field text-sm" [(ngModel)]="requestTargetKind">
-                          <option value="anyone">Anyone</option>
-                          <option value="role">By role</option>
-                          <option value="person">Specific person</option>
-                        </select>
-                        @if (requestTargetKind === 'role') {
-                          <select class="input-field text-sm" [(ngModel)]="requestTargetRoleDraft">
-                            <option value="Admin">Admin</option>
-                            <option value="Surveyor">Surveyor</option>
-                            <option value="Client">Client</option>
-                          </select>
-                        } @else if (requestTargetKind === 'person') {
-                          <select class="input-field text-sm" [(ngModel)]="requestTargetUserIdDraft">
-                            <option value="" disabled>Select a person</option>
-                            @for (p of participants(); track p.userId) {
-                              <option [value]="p.userId">{{ p.firstName }} {{ p.lastName }}</option>
-                            }
-                          </select>
-                        }
-                        <div class="flex items-center justify-end gap-sm">
-                          <button type="button" class="btn-secondary text-xs" (click)="cancelEditTarget()">Cancel</button>
-                          <button type="button" class="btn-primary text-xs" (click)="submitTargetEdit(row.request!)">Save</button>
-                        </div>
-                      </div>
-                    }
-                  </div>
-                } @else if (row.document; as d) {
-                  <div class="flex items-center justify-between gap-sm px-md py-sm rounded bg-neutral-50">
-                    <div class="min-w-0">
-                      <span class="text-sm text-neutral-900 truncate block">{{ d.fileName }}</span>
-                      <span class="text-xs text-neutral-500 block">
-                        {{ d.uploadedByName }} · {{ d.createdAt | date: 'mediumDate' }} · {{ formatFileSize(d.fileSizeBytes) }}
-                      </span>
-                      <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600 mr-xs">{{ documentIcon(d.contentType) }}</span>
-                      <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600 mr-xs">{{ d.category }}</span>
-                      @if (!isClient()) {
-                        <button
-                          type="button"
-                          class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600 hover:bg-neutral-200 mr-xs"
-                          (click)="toggleVisibility(d)"
-                        >
-                          {{ d.visibility }}
-                        </button>
-                      }
-                      @if (row.request) {
-                        <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">via request: {{ row.request!.title }}</span>
-                      }
-                    </div>
-                    <div class="flex items-center gap-sm flex-shrink-0 whitespace-nowrap">
-                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="viewDocument(d)">View</button>
-                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="downloadDocument(d)">Download</button>
-                      @if (!isClient() && row.request) {
-                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="reopenRequest(row.request!)">Reopen</button>
-                      }
-                      @if (!isClient() && !row.request) {
-                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="confirmingDeleteDocument.set(d)">Remove</button>
-                      }
-                    </div>
-                  </div>
-                }
-              }
-            </div>
-          }
+          <app-document-list
+            [rows]="documentRows()"
+            [allowRename]="false"
+            (view)="onJobDocView($event)"
+            (download)="onJobDocDownload($event)"
+            (remove)="onJobDocRemove($event)"
+            (toggleVisibility)="onJobDocToggleVisibility($event)"
+            (requestFulfill)="onFulfillDocRequest($event)"
+            (requestReopen)="reopenRequestRow($event)"
+            (requestCancel)="cancelRequestRow($event)"
+            (requestCopyShareLink)="copyShareLinkRow($event)"
+          />
           @if (documentError()) {
             <p class="text-xs text-primary-500 mb-sm">{{ documentError() }}</p>
           }
-          <div class="flex flex-wrap items-center gap-md">
-            <app-document-upload-widget
-              [workspaceId]="workspaceId"
-              [jobId]="jobId"
-              [isClient]="isClient()"
-              (added)="onDocumentAdded($event)"
-            />
-            @if (!isClient()) {
+          @if (!isClient()) {
+            <div class="flex flex-wrap items-center gap-md mt-sm">
+              <app-document-upload-button (filesSelected)="onDocumentFilesSelected($event)" />
               @if (!requestingDocument()) {
                 <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="requestingDocument.set(true)">
                   + Request document
                 </button>
               }
+            </div>
+            @if (requestError()) {
+              <p class="text-xs text-primary-500 mt-sm">{{ requestError() }}</p>
             }
-          </div>
-          @if (requestError()) {
-            <p class="text-xs text-primary-500 mt-sm">{{ requestError() }}</p>
-          }
-          @if (!isClient()) {
             @if (requestingDocument()) {
-              <div class="rounded bg-neutral-50 p-md space-y-sm mt-sm">
-                <input class="input-field text-sm" placeholder="What do you need? (e.g. Legal Deed)" [(ngModel)]="requestTitleDraft" />
-                <textarea class="input-field text-sm" rows="2" placeholder="Description (optional)" [(ngModel)]="requestDescriptionDraft"></textarea>
-                <select class="input-field text-sm" [(ngModel)]="requestCategoryDraft">
-                  <option value="SurveyPlan">SurveyPlan</option>
-                  <option value="LegalDocument">LegalDocument</option>
-                  <option value="Photo">Photo</option>
-                  <option value="Other">Other</option>
-                </select>
-                <select class="input-field text-sm" [(ngModel)]="requestTargetKind">
-                  <option value="anyone">Anyone</option>
-                  <option value="role">By role</option>
-                  <option value="person">Specific person</option>
-                </select>
-                @if (requestTargetKind === 'role') {
-                  <select class="input-field text-sm" [(ngModel)]="requestTargetRoleDraft">
-                    <option value="Admin">Admin</option>
-                    <option value="Surveyor">Surveyor</option>
-                    <option value="Client">Client</option>
-                  </select>
-                } @else if (requestTargetKind === 'person') {
-                  <select class="input-field text-sm" [(ngModel)]="requestTargetUserIdDraft">
-                    <option value="" disabled>Select a person</option>
-                    @for (p of uniqueParticipants(); track p.userId) {
-                      <option [value]="p.userId">{{ p.firstName }} {{ p.lastName }}</option>
-                    }
-                  </select>
-                }
-                <div class="flex items-center justify-end gap-sm">
-                  <button type="button" class="btn-secondary text-xs" (click)="cancelAddRequest()">Cancel</button>
-                  <button type="button" class="btn-primary text-xs" (click)="submitRequest()">Request</button>
-                </div>
+              <div class="mt-sm">
+                <app-document-request-form
+                  [allowPersonTarget]="true"
+                  [personOptions]="personOptions()"
+                  (submitted)="submitRequest($event)"
+                  (cancelled)="requestingDocument.set(false)"
+                />
               </div>
             }
           }
@@ -687,21 +562,6 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
         (cancel)="showExpenseModal.set(false); editingExpense.set(null)"
         (saved)="onExpenseSaved()"
       />
-    }
-
-    @if (confirmingDeleteDocument(); as doc) {
-      <div class="fixed inset-0 z-50 bg-neutral-900/40 flex items-center justify-center px-lg">
-        <div class="card w-full max-w-sm">
-          <h2 class="text-base font-semibold text-neutral-900">Remove document?</h2>
-          <p class="text-sm text-neutral-600 mt-xs">
-            "{{ doc.fileName }}" will be removed. This can't be undone from here.
-          </p>
-          <div class="flex items-center justify-end gap-sm mt-lg">
-            <button type="button" class="btn-secondary text-xs" (click)="confirmingDeleteDocument.set(null)">Cancel</button>
-            <button type="button" class="btn-primary text-xs" (click)="deleteDocument(doc)">Remove</button>
-          </div>
-        </div>
-      </div>
     }
 
     @if (confirmingRemoveRole(); as item) {
@@ -801,6 +661,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     const seen = new Set<string>();
     return this.participants().filter(p => (seen.has(p.userId) ? false : (seen.add(p.userId), true)));
   });
+  personOptions = computed(() => this.uniqueParticipants().map(p => ({ id: p.userId, name: `${p.firstName} ${p.lastName}` })));
   /**
    * One row per person, merging their direct job roles (removable, per-role) and any
    * workspace-wide access (read-only badge, e.g. Admin) - the same person can hold both if
@@ -823,9 +684,8 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   milestones = signal<Milestone[]>([]);
   milestoneStatuses = MILESTONE_STATUSES;
   documents = signal<Document[]>([]);
-  viewingDocument = signal<Document | null>(null);
+  viewingDocument = signal<{ fileName: string; contentType: string } | null>(null);
   viewingBlobUrl = signal<string | null>(null);
-  confirmingDeleteDocument = signal<Document | null>(null);
   documentError = signal('');
   documentRequests = signal<DocumentRequest[]>([]);
   jobInvoices = signal<Invoice[]>([]);
@@ -932,32 +792,34 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     });
   }
   requestingDocument = signal(false);
-  requestTitleDraft = '';
-  requestDescriptionDraft = '';
-  requestCategoryDraft = 'Other';
-  requestTargetKind: 'anyone' | 'role' | 'person' = 'anyone';
-  requestTargetRoleDraft = 'Client';
-  requestTargetUserIdDraft = '';
   requestError = signal('');
-  editingRequestTarget = signal<string | null>(null);
-  shareLinkTokens = signal<Record<string, string>>({});
+  landDocumentRows = signal<DocRow[]>([]);
 
-  documentRows = computed(() => {
+  /** Job's own documents+requests merged into DocRow, plus every linked land's general documents tagged read-only - same DocRow shape land-detail-panel.component.ts builds, one shared component renders both. */
+  documentRows = computed<DocRow[]>(() => {
     const requests = this.documentRequests();
-    const linkedDocIds = new Set(requests.filter(r => r.fulfilledDocumentId).map(r => r.fulfilledDocumentId));
+    const rows: DocRow[] = [];
 
-    const plainDocRows = this.documents()
-      .filter(d => !linkedDocIds.has(d.documentId))
-      .map(d => ({ kind: 'document' as const, document: d, request: null as DocumentRequest | null, createdAt: d.createdAt }));
-
-    const requestRows = requests.map(r => ({
-      kind: 'request' as const,
-      document: r.fulfilledDocumentId ? this.documents().find(d => d.documentId === r.fulfilledDocumentId) ?? null : null,
-      request: r,
-      createdAt: r.createdAt
-    }));
-
-    return [...plainDocRows, ...requestRows].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    for (const d of this.documents()) {
+      const request = requests.find(r => r.fulfilledDocumentId === d.documentId) ?? null;
+      rows.push({
+        key: d.documentId, ownerKind: 'job', ownerId: this.jobId, documentId: d.documentId,
+        fileName: d.fileName, contentType: d.contentType, uploadedByName: d.uploadedByName, createdAt: d.createdAt,
+        category: d.category, visibility: d.visibility,
+        requestId: request?.requestId ?? null, requestTitle: request?.title ?? null, requestStatus: request?.status ?? null
+      });
+    }
+    for (const r of requests) {
+      if (!this.documents().some(d => d.documentId === r.fulfilledDocumentId)) {
+        rows.push({
+          key: r.requestId, ownerKind: 'job', ownerId: this.jobId, documentId: null,
+          fileName: null, contentType: null, uploadedByName: null, createdAt: null,
+          requestId: r.requestId, requestTitle: r.title, requestStatus: r.status,
+          requestDescription: r.description, hasActiveShareLink: r.hasActiveShareLink
+        });
+      }
+    }
+    return [...rows, ...this.landDocumentRows()];
   });
   addingMilestone = signal(false);
   milestoneTitleDraft = '';
@@ -993,6 +855,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     private milestoneService: MilestoneService,
     private documentService: DocumentService,
     private documentRequestService: DocumentRequestService,
+    private landService: LandService,
     private invoiceService: InvoiceService,
     private quotationService: QuotationService,
     private expenseService: ExpenseService,
@@ -1052,6 +915,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
         this.effectiveParticipants.set(effectiveParticipants);
         this.pendingInvitations.set(pendingInvitations);
         this.lands.set(lands);
+        this.loadLandDocuments(lands);
         this.milestones.set(milestones);
         this.documents.set(documents);
         this.documentRequests.set(documentRequests);
@@ -1241,7 +1105,10 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
 
   onLandAdded(land: Land): void {
     this.jobService.addLand(this.workspaceId, this.jobId, land.landId).subscribe({
-      next: () => this.lands.update(list => (list.some(l => l.landId === land.landId) ? list : [...list, land])),
+      next: () => {
+        this.lands.update(list => (list.some(l => l.landId === land.landId) ? list : [...list, land]));
+        this.loadLandDocuments(this.lands());
+      },
       error: (err) => this.error.set(err.error?.message ?? 'Could not attach land.')
     });
   }
@@ -1251,10 +1118,32 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     this.jobService.removeLand(this.workspaceId, this.jobId, land.landId).subscribe({
       next: () => {
         this.lands.update(list => list.filter(l => l.landId !== land.landId));
+        // Unlinked land's documents disappear immediately, not just on next full refetch.
+        this.landDocumentRows.update(rows => rows.filter(r => r.ownerId !== land.landId));
         this.personMessage.set('Land unlinked.');
       },
       error: (err) => this.error.set(err.error?.message ?? 'Could not remove land.')
     });
+  }
+
+  /** Every linked land's general documents, surfaced read-only in this job's Documents card - survey/deed attachments stay reachable by expanding that land's own row (LandDetailPanelComponent), avoiding an N-lands x N-surveys/deeds fetch fan-out here. */
+  private loadLandDocuments(lands: Land[]): void {
+    if (lands.length === 0) {
+      this.landDocumentRows.set([]);
+      return;
+    }
+    forkJoin(lands.map(land => this.landService.getDocuments(this.workspaceId, land.landId).pipe(map(docs => ({ land, docs })))))
+      .subscribe(results => {
+        this.landDocumentRows.set(
+          results.flatMap(({ land, docs }) =>
+            docs.map(d => ({
+              key: d.documentId, ownerKind: 'land' as const, ownerId: land.landId, documentId: d.documentId,
+              fileName: d.fileName, contentType: d.contentType, uploadedByName: d.uploadedByName, createdAt: d.createdAt,
+              sourceLabel: addressLine(land), readonly: true
+            }))
+          )
+        );
+      });
   }
 
   /** The land record itself was deleted (not just unlinked) - drop it locally, no separate unlink call needed. */
@@ -1332,15 +1221,27 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     });
   }
 
-  onDocumentAdded(doc: Document): void {
-    this.documents.update(list => [doc, ...list]);
+  onDocumentFilesSelected(files: File[]): void {
+    this.documentError.set('');
+    const visibility = this.isClient() ? 'ClientVisible' : 'Internal';
+    files.forEach(file =>
+      this.documentService.upload(this.workspaceId, this.jobId, file, 'Other', visibility).subscribe({
+        next: (doc) => this.documents.update(list => [doc, ...list]),
+        error: (err) => this.documentError.set(err.error?.message ?? 'Could not upload document.')
+      })
+    );
   }
 
-  viewDocument(doc: Document): void {
+  private jobDocBlob(row: DocRow) {
+    return this.documentService.getFileBlob(this.workspaceId, this.jobId, row.documentId!);
+  }
+
+  onJobDocView(row: DocRow): void {
+    if (row.ownerKind !== 'job') return; // Land-sourced rows are read-only reference, viewed via that land's own panel.
     this.documentError.set('');
-    this.documentService.getFileBlob(this.workspaceId, this.jobId, doc.documentId).subscribe({
+    this.jobDocBlob(row).subscribe({
       next: (blob) => {
-        this.viewingDocument.set(doc);
+        this.viewingDocument.set({ fileName: row.fileName!, contentType: row.contentType! });
         this.viewingBlobUrl.set(URL.createObjectURL(blob));
       },
       error: (err) => this.documentError.set(err.error?.message ?? 'Could not open document.')
@@ -1354,14 +1255,15 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     this.viewingBlobUrl.set(null);
   }
 
-  downloadDocument(doc: Document): void {
+  onJobDocDownload(row: DocRow): void {
+    if (row.ownerKind !== 'job') return;
     this.documentError.set('');
-    this.documentService.getFileBlob(this.workspaceId, this.jobId, doc.documentId).subscribe({
+    this.jobDocBlob(row).subscribe({
       next: (blob) => {
         const url = URL.createObjectURL(blob);
         const link = window.document.createElement('a');
         link.href = url;
-        link.download = doc.fileName;
+        link.download = row.fileName!;
         link.click();
         URL.revokeObjectURL(url);
       },
@@ -1369,155 +1271,40 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     });
   }
 
-  deleteDocument(doc: Document): void {
-    this.documentService.delete(this.workspaceId, this.jobId, doc.documentId).subscribe({
-      next: () => {
-        this.documents.update(list => list.filter(d => d.documentId !== doc.documentId));
-        this.confirmingDeleteDocument.set(null);
-      },
-      error: (err) => {
-        this.documentError.set(err.error?.message ?? 'Could not remove document.');
-        this.confirmingDeleteDocument.set(null);
-      }
+  onJobDocRemove(row: DocRow): void {
+    if (row.ownerKind !== 'job') return;
+    this.documentService.delete(this.workspaceId, this.jobId, row.documentId!).subscribe({
+      next: () => this.documents.update(list => list.filter(d => d.documentId !== row.documentId)),
+      error: (err) => this.documentError.set(err.error?.message ?? 'Could not remove document.')
     });
   }
 
-  submitRequest(): void {
-    if (!this.requestTitleDraft.trim()) {
-      this.requestError.set('Title is required.');
-      return;
-    }
-    if (this.requestTargetKind === 'person' && !this.requestTargetUserIdDraft) {
-      this.requestError.set('Select a person to target, or switch to Anyone/By role.');
-      return;
-    }
-    this.requestError.set('');
-
-    const targetRole = this.requestTargetKind === 'role' ? this.requestTargetRoleDraft : null;
-    const targetUserId = this.requestTargetKind === 'person' ? this.requestTargetUserIdDraft : null;
-
-    this.documentRequestService
-      .create(this.workspaceId, this.jobId, this.requestTitleDraft.trim(), this.requestDescriptionDraft.trim() || null, this.requestCategoryDraft, targetRole, targetUserId)
-      .subscribe({
-        next: (request) => {
-          this.documentRequests.update(list => [request, ...list]);
-          this.cancelAddRequest();
-        },
-        error: (err) => this.requestError.set(err.error?.message ?? 'Could not create request.')
-      });
-  }
-
-  cancelAddRequest(): void {
-    this.requestingDocument.set(false);
-    this.requestTitleDraft = '';
-    this.requestDescriptionDraft = '';
-    this.requestCategoryDraft = 'Other';
-    this.requestTargetKind = 'anyone';
-    this.requestTargetRoleDraft = 'Client';
-    this.requestTargetUserIdDraft = '';
-    this.requestError.set('');
-  }
-
-  copyShareLink(request: DocumentRequest): void {
-    // Reuse the cached token if we already have one for this request - a second click on
-    // "Copy link" should just re-copy the same URL, not silently mint a new one and
-    // invalidate whatever was already shared. Only regenerate when we have no token in
-    // hand (first click, or the page was reloaded since the last generate).
-    const cached = this.shareLinkTokens()[request.requestId];
-    if (cached) {
-      navigator.clipboard.writeText(`${window.location.origin}/document-upload/${cached}`);
-      return;
-    }
-
-    this.documentRequestService.generateShareLink(this.workspaceId, this.jobId, request.requestId).subscribe({
-      next: ({ token }) => {
-        this.shareLinkTokens.update(map => ({ ...map, [request.requestId]: token }));
-        this.documentRequests.update(list => list.map(r => (r.requestId === request.requestId ? { ...r, hasActiveShareLink: true } : r)));
-        navigator.clipboard.writeText(`${window.location.origin}/document-upload/${token}`);
-        this.requestError.set('');
-      },
-      error: (err) => this.requestError.set(err.error?.message ?? 'Could not generate link.')
-    });
-  }
-
-  revokeShareLink(request: DocumentRequest): void {
-    this.documentRequestService.revokeShareLink(this.workspaceId, this.jobId, request.requestId).subscribe({
-      next: () => {
-        this.shareLinkTokens.update(map => {
-          const { [request.requestId]: _removed, ...rest } = map;
-          return rest;
-        });
-        this.documentRequests.update(list => list.map(r => (r.requestId === request.requestId ? { ...r, hasActiveShareLink: false } : r)));
-      },
-      error: (err) => this.requestError.set(err.error?.message ?? 'Could not revoke link.')
-    });
-  }
-
-  startEditTarget(request: DocumentRequest): void {
-    this.requestTargetKind = request.targetRole ? 'role' : request.targetUserId ? 'person' : 'anyone';
-    this.requestTargetRoleDraft = request.targetRole ?? 'Client';
-    this.requestTargetUserIdDraft = request.targetUserId ?? '';
-    this.requestError.set('');
-    this.editingRequestTarget.set(request.requestId);
-  }
-
-  cancelEditTarget(): void {
-    this.editingRequestTarget.set(null);
-    this.requestTargetKind = 'anyone';
-    this.requestTargetRoleDraft = 'Client';
-    this.requestTargetUserIdDraft = '';
-    this.requestError.set('');
-  }
-
-  submitTargetEdit(request: DocumentRequest): void {
-    if (this.requestTargetKind === 'person' && !this.requestTargetUserIdDraft) {
-      this.requestError.set('Select a person to target, or switch to Anyone/By role.');
-      return;
-    }
-    const targetRole = this.requestTargetKind === 'role' ? this.requestTargetRoleDraft : null;
-    const targetUserId = this.requestTargetKind === 'person' ? this.requestTargetUserIdDraft : null;
-
-    this.requestError.set('');
-    this.documentRequestService.updateTarget(this.workspaceId, this.jobId, request.requestId, targetRole, targetUserId).subscribe({
-      next: (updated) => {
-        this.documentRequests.update(list => list.map(r => (r.requestId === updated.requestId ? updated : r)));
-        this.cancelEditTarget();
-      },
-      error: (err) => this.requestError.set(err.error?.message ?? 'Could not update target.')
-    });
-  }
-
-  formatFileSize(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  documentIcon(contentType: string): string {
-    if (contentType === 'application/pdf') return 'PDF';
-    if (contentType.startsWith('image/')) return 'IMG';
-    if (contentType.includes('word')) return 'DOC';
-    if (contentType.includes('sheet') || contentType.includes('excel')) return 'XLS';
-    return 'FILE';
-  }
-
-  toggleVisibility(doc: Document): void {
-    const next = doc.visibility === 'Internal' ? 'ClientVisible' : 'Internal';
+  onJobDocToggleVisibility(row: DocRow): void {
+    const next = row.visibility === 'Internal' ? 'ClientVisible' : 'Internal';
     this.documentError.set('');
-    this.documentService.updateVisibility(this.workspaceId, this.jobId, doc.documentId, next).subscribe({
+    this.documentService.updateVisibility(this.workspaceId, this.jobId, row.documentId!, next).subscribe({
       next: (updated) => this.documents.update(list => list.map(d => (d.documentId === updated.documentId ? updated : d))),
       error: (err) => this.documentError.set(err.error?.message ?? 'Could not update visibility.')
     });
   }
 
-  fulfillRequest(request: DocumentRequest, files: FileList | null): void {
-    const file = files?.item(0);
-    if (!file) return;
-    const visibility = this.isClient() ? 'ClientVisible' : 'Internal';
-    const displayFileName = prompt('File name', file.name) ?? undefined;
+  submitRequest(value: DocumentRequestFormValue): void {
+    this.requestError.set('');
+    this.documentRequestService
+      .create(this.workspaceId, this.jobId, value.title, value.description, value.category, value.targetRole, value.targetUserId)
+      .subscribe({
+        next: (request) => {
+          this.documentRequests.update(list => [request, ...list]);
+          this.requestingDocument.set(false);
+        },
+        error: (err) => this.requestError.set(err.error?.message ?? 'Could not create request.')
+      });
+  }
 
+  onFulfillDocRequest(event: { row: DocRow; file: File }): void {
+    const visibility = this.isClient() ? 'ClientVisible' : 'Internal';
     this.documentError.set('');
-    this.documentRequestService.fulfill(this.workspaceId, this.jobId, request.requestId, file, visibility, displayFileName).subscribe({
+    this.documentRequestService.fulfill(this.workspaceId, this.jobId, event.row.requestId!, event.file, visibility).subscribe({
       next: (fulfilled) => {
         this.documentRequests.update(list => list.map(r => (r.requestId === fulfilled.requestId ? fulfilled : r)));
         this.documentService.list(this.workspaceId, this.jobId).subscribe(documents => this.documents.set(documents));
@@ -1526,20 +1313,27 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     });
   }
 
-  reopenRequest(request: DocumentRequest): void {
-    const note = prompt('Note for the re-upload (optional)', request.description ?? '');
-    if (note === null) return;
-
-    this.documentRequestService.reopen(this.workspaceId, this.jobId, request.requestId, note).subscribe({
+  reopenRequestRow(row: DocRow): void {
+    this.documentRequestService.reopen(this.workspaceId, this.jobId, row.requestId!).subscribe({
       next: (reopened) => this.documentRequests.update(list => list.map(r => (r.requestId === reopened.requestId ? reopened : r))),
       error: (err) => this.documentError.set(err.error?.message ?? 'Could not reopen request.')
     });
   }
 
-  cancelRequest(request: DocumentRequest): void {
-    this.documentRequestService.cancel(this.workspaceId, this.jobId, request.requestId).subscribe({
-      next: () => this.documentRequests.update(list => list.filter(r => r.requestId !== request.requestId)),
+  cancelRequestRow(row: DocRow): void {
+    this.documentRequestService.cancel(this.workspaceId, this.jobId, row.requestId!).subscribe({
+      next: () => this.documentRequests.update(list => list.filter(r => r.requestId !== row.requestId)),
       error: (err) => this.documentError.set(err.error?.message ?? 'Could not cancel request.')
+    });
+  }
+
+  copyShareLinkRow(row: DocRow): void {
+    this.documentRequestService.generateShareLink(this.workspaceId, this.jobId, row.requestId!).subscribe({
+      next: ({ token }) => {
+        navigator.clipboard.writeText(`${window.location.origin}/document-upload/${token}`);
+        this.documentRequests.update(list => list.map(r => (r.requestId === row.requestId ? { ...r, hasActiveShareLink: true } : r)));
+      },
+      error: (err) => this.documentError.set(err.error?.message ?? 'Could not generate link.')
     });
   }
 }

@@ -1,7 +1,12 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
-import { Document } from '../../../core/document.service';
+
+/** Minimal shape needed to render a preview - both job Document and land OwnedDocument satisfy it. */
+export interface PreviewableDocument {
+  fileName: string;
+  contentType: string;
+}
 
 @Component({
   selector: 'app-document-viewer-modal',
@@ -30,7 +35,7 @@ import { Document } from '../../../core/document.service';
   `
 })
 export class DocumentViewerModalComponent {
-  @Input() document!: Document;
+  @Input() document!: PreviewableDocument;
   @Input() blobUrl!: string;
   @Output() closed = new EventEmitter<void>();
 

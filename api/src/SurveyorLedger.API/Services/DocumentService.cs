@@ -14,6 +14,18 @@ public interface IDocumentService
     Task<(Document Document, Stream Content)> GetFileAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId);
     Task<Document> UpdateVisibilityAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid documentId, DocumentVisibility visibility);
+
+    /// <summary>ownerType is "LandSurvey" or "LandDeed"; landId gates the permission check (EnsureLandAccessAsync), ownerId is the survey/deed's own id.</summary>
+    Task<List<Document>> GetOwnedDocumentsAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId);
+    Task<Document> UploadOwnedDocumentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, DocumentCategory category, IFormFile file, string? displayFileName = null);
+    /// <summary>land.view-gated variant for LandDocumentRequestService.FulfillAsync - see implementation doc comment.</summary>
+    Task<Document> UploadOwnedDocumentForFulfillmentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, DocumentCategory category, IFormFile file, string? displayFileName = null);
+    Task<(Document Document, Stream Content)> GetOwnedDocumentFileAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, Guid documentId);
+    Task DeleteOwnedDocumentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, Guid documentId);
+    Task<Document> RenameOwnedDocumentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, Guid documentId, string fileName);
+
+    /// <summary>Hard-deletes every Document row (and its stored file) for one owner - called by LandService when a LandSurvey/LandDeed itself is deleted, so attachments don't outlive their owner.</summary>
+    Task DeleteAllForOwnerAsync(string ownerType, Guid ownerId);
 }
 
 /// <summary>
@@ -150,6 +162,158 @@ public class DocumentService : IDocumentService
         document.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
         return document;
+    }
+
+    public async Task<List<Document>> GetOwnedDocumentsAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "view");
+        await EnsureOwnerBelongsToLandAsync(ownerType, ownerId, landId);
+
+        return await _context.Documents.Include(d => d.UploadedByUser)
+            .Where(d => d.OwnerType == ownerType && d.OwnerId == ownerId && d.IsActive)
+            .OrderByDescending(d => d.CreatedAt)
+            .ToListAsync();
+    }
+
+    public Task<Document> UploadOwnedDocumentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, DocumentCategory category, IFormFile file, string? displayFileName = null) =>
+        UploadOwnedDocumentCoreAsync(workspaceId, callerUserId, landId, ownerType, ownerId, category, file, "edit", displayFileName);
+
+    /// <summary>
+    /// Same upload, gated by land.view instead of land.edit - used only by
+    /// LandDocumentRequestService.FulfillAsync, whose own targeting check already decided
+    /// whether this caller may fulfill. A Client fulfilling their own request never holds
+    /// land.edit (same asymmetry DocumentService.UploadAsync has for Job: job.view covers
+    /// upload/fulfill, job.edit covers delete/manage).
+    /// </summary>
+    public Task<Document> UploadOwnedDocumentForFulfillmentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, DocumentCategory category, IFormFile file, string? displayFileName = null) =>
+        UploadOwnedDocumentCoreAsync(workspaceId, callerUserId, landId, ownerType, ownerId, category, file, "view", displayFileName);
+
+    private async Task<Document> UploadOwnedDocumentCoreAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, DocumentCategory category, IFormFile file, string requiredAction, string? displayFileName)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, requiredAction);
+        await EnsureOwnerBelongsToLandAsync(ownerType, ownerId, landId);
+
+        var extension = Path.GetExtension(file.FileName);
+        if (!AllowedExtensions.Contains(extension))
+            throw new ValidationException($"File type '{extension}' is not allowed. Allowed types: {string.Join(", ", AllowedExtensions)}.");
+        if (file.Length > MaxFileSizeBytes)
+            throw new ValidationException("File exceeds the 25 MB size limit.");
+
+        var fileName = string.IsNullOrWhiteSpace(displayFileName) ? file.FileName : displayFileName.Trim();
+        if (!fileName.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+            fileName += extension;
+
+        var storedRelativePath = $"{workspaceId}/land-{ownerType.ToLowerInvariant()}/{ownerId}/{Guid.NewGuid():N}_{fileName}";
+
+        await using (var stream = file.OpenReadStream())
+        {
+            await _fileStorageService.SaveAsync(stream, storedRelativePath, CancellationToken.None);
+        }
+
+        var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
+
+        var document = new Document
+        {
+            Id = Guid.NewGuid(),
+            OwnerType = ownerType,
+            OwnerId = ownerId,
+            FileName = fileName,
+            StoredPath = storedRelativePath,
+            ContentType = file.ContentType,
+            FileSizeBytes = file.Length,
+            Category = category,
+            // Land-owned documents have no Client-hiding concept the way Job documents do -
+            // access is already gated by land.view/land.view_all, not a per-document flag.
+            Visibility = DocumentVisibility.ClientVisible,
+            UploadedBy = callerPersonId,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        await _context.Documents.AddAsync(document);
+        await _context.SaveChangesAsync();
+
+        document.UploadedByUser = await _context.People.FindAsync(callerPersonId)
+            ?? throw new NotFoundException("Uploading person not found");
+
+        _logger.LogInformation("Document {DocumentId} uploaded for {OwnerType} {OwnerId} by {UserId}", document.Id, ownerType, ownerId, callerUserId);
+        return document;
+    }
+
+    public async Task<(Document Document, Stream Content)> GetOwnedDocumentFileAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, Guid documentId)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "view");
+        await EnsureOwnerBelongsToLandAsync(ownerType, ownerId, landId);
+
+        var document = await FindOwnedDocumentAsync(ownerType, ownerId, documentId);
+        var content = await _fileStorageService.OpenAsync(document.StoredPath, CancellationToken.None);
+        return (document, content);
+    }
+
+    public async Task DeleteOwnedDocumentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, Guid documentId)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
+        await EnsureOwnerBelongsToLandAsync(ownerType, ownerId, landId);
+
+        var document = await FindOwnedDocumentAsync(ownerType, ownerId, documentId);
+        document.IsActive = false;
+        document.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+    }
+
+    /// <summary>Renames the display filename only - StoredPath/extension untouched, same as LandService.RenamePhotoAsync.</summary>
+    public async Task<Document> RenameOwnedDocumentAsync(Guid workspaceId, Guid callerUserId, Guid landId, string ownerType, Guid ownerId, Guid documentId, string fileName)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
+        await EnsureOwnerBelongsToLandAsync(ownerType, ownerId, landId);
+
+        if (string.IsNullOrWhiteSpace(fileName))
+            throw new ValidationException("File name is required.");
+        if (fileName.Length > 255)
+            throw new ValidationException("File name must be 255 characters or fewer.");
+
+        var document = await FindOwnedDocumentAsync(ownerType, ownerId, documentId);
+        document.FileName = fileName.Trim();
+        document.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return document;
+    }
+
+    /// <summary>Hard delete, not soft - called when the owner record itself (LandSurvey/LandDeed) is being hard-deleted, matching that existing "mis-entered record" reasoning.</summary>
+    public async Task DeleteAllForOwnerAsync(string ownerType, Guid ownerId)
+    {
+        var documents = await _context.Documents.Where(d => d.OwnerType == ownerType && d.OwnerId == ownerId && d.IsActive).ToListAsync();
+        foreach (var document in documents)
+        {
+            await _fileStorageService.DeleteAsync(document.StoredPath, CancellationToken.None);
+            _context.Documents.Remove(document);
+        }
+        await _context.SaveChangesAsync();
+    }
+
+    /// <summary>Defense in depth: confirms the caller-supplied landId actually owns this survey/deed, so a mismatched (landId, ownerId) pair can't be used to read/write another land's documents once EnsureLandAccessAsync has passed for the (wrong) landId.</summary>
+    private async Task EnsureOwnerBelongsToLandAsync(string ownerType, Guid ownerId, Guid landId)
+    {
+        var belongs = ownerType switch
+        {
+            "LandSurvey" => await _context.LandSurveys.AnyAsync(s => s.Id == ownerId && s.LandId == landId),
+            "LandDeed" => await _context.LandDeeds.AnyAsync(d => d.Id == ownerId && d.LandId == landId),
+            // General/request-driven land documents - the "owner" is the land itself, so ownerId == landId.
+            "Land" => ownerId == landId,
+            // Site photos - same "owner is the land itself" shape as "Land".
+            "LandPhoto" => ownerId == landId,
+            _ => throw new ValidationException($"Unknown document owner type '{ownerType}'.")
+        };
+        if (!belongs)
+            throw new NotFoundException($"{ownerType} not found on this land");
+    }
+
+    private async Task<Document> FindOwnedDocumentAsync(string ownerType, Guid ownerId, Guid documentId)
+    {
+        return await _context.Documents.Include(d => d.UploadedByUser)
+            .FirstOrDefaultAsync(d => d.Id == documentId && d.OwnerType == ownerType && d.OwnerId == ownerId && d.IsActive)
+            ?? throw new NotFoundException("Document not found");
     }
 
     private static bool IsVisible(Document document, List<string> callerRoles) =>

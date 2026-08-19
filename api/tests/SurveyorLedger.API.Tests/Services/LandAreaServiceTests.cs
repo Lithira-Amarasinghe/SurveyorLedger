@@ -15,6 +15,7 @@ public class LandAreaServiceTests : WorkspaceIntegrationTestBase
     protected override void ConfigureServices(IServiceCollection services)
     {
         services.AddScoped<ILandService, LandService>();
+        services.AddScoped<IDocumentService, DocumentService>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddSingleton<IConfiguration>(
             new ConfigurationBuilder()
@@ -27,7 +28,7 @@ public class LandAreaServiceTests : WorkspaceIntegrationTestBase
 
     private LandRequest BaseRequest(AreaDto? area) => new()
     {
-        Address = new AddressDto { Street = "123 Main St", City = "Colombo" },
+        Address = new LandAddressDto { Village = "123 Main St", District = "Colombo" },
         Area = area
     };
 

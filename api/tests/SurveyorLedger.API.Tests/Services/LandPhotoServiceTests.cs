@@ -4,20 +4,24 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Models.Land;
 using SurveyorLedger.API.Services;
+using SurveyorLedger.Core;
 using SurveyorLedger.Core.Exceptions;
 using SurveyorLedger.Data.Entities;
 using Xunit;
 
 namespace SurveyorLedger.API.Tests.Services;
 
+/// <summary>Land photos are Documents (OwnerType="LandPhoto") - these tests go through IDocumentService's owned-document methods, same as survey/deed attachments.</summary>
 public class LandPhotoServiceTests : WorkspaceIntegrationTestBase
 {
     private ILandService _landService = null!;
+    private IDocumentService _documentService = null!;
     private Guid _landId;
 
     protected override void ConfigureServices(IServiceCollection services)
     {
         services.AddScoped<ILandService, LandService>();
+        services.AddScoped<IDocumentService, DocumentService>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddSingleton<IConfiguration>(
             new ConfigurationBuilder()
@@ -31,9 +35,10 @@ public class LandPhotoServiceTests : WorkspaceIntegrationTestBase
     private async Task SeedLandAsync()
     {
         _landService = GetService<ILandService>();
+        _documentService = GetService<IDocumentService>();
         var land = await _landService.CreateAsync(WorkspaceId, AdminId, new LandRequest
         {
-            Address = new AddressDto { Street = "123 Main St", City = "Colombo" }
+            Address = new LandAddressDto { Village = "123 Main St", District = "Colombo" }
         });
         _landId = land.Id;
     }
@@ -45,14 +50,20 @@ public class LandPhotoServiceTests : WorkspaceIntegrationTestBase
         return new FormFile(stream, 0, bytes.Length, "file", name) { Headers = new HeaderDictionary(), ContentType = contentType };
     }
 
+    private Task<Document> UploadPhotoAsync(Guid callerId, IFormFile file) =>
+        _documentService.UploadOwnedDocumentAsync(WorkspaceId, callerId, _landId, "LandPhoto", _landId, DocumentCategory.Photo, file);
+
+    private Task<List<Document>> GetPhotosAsync(Guid callerId) =>
+        _documentService.GetOwnedDocumentsAsync(WorkspaceId, callerId, _landId, "LandPhoto", _landId);
+
     [Fact]
     public async Task UploadPhotoAsync_PersistsPhoto()
     {
         await SeedLandAsync();
-        var photo = await _landService.UploadPhotoAsync(WorkspaceId, AdminId, _landId, MakePhoto());
+        var photo = await UploadPhotoAsync(AdminId, MakePhoto());
         Assert.Equal("site.jpg", photo.FileName);
 
-        var photos = await _landService.GetPhotosAsync(WorkspaceId, AdminId, _landId);
+        var photos = await GetPhotosAsync(AdminId);
         Assert.Single(photos);
     }
 
@@ -61,7 +72,7 @@ public class LandPhotoServiceTests : WorkspaceIntegrationTestBase
     {
         await SeedLandAsync();
         await Assert.ThrowsAsync<ValidationException>(
-            () => _landService.UploadPhotoAsync(WorkspaceId, AdminId, _landId, MakePhoto("plan.pdf", "application/pdf")));
+            () => UploadPhotoAsync(AdminId, MakePhoto("virus.exe", "application/octet-stream")));
     }
 
     [Fact]
@@ -69,17 +80,17 @@ public class LandPhotoServiceTests : WorkspaceIntegrationTestBase
     {
         await SeedLandAsync();
         await Assert.ThrowsAsync<ForbiddenException>(
-            () => _landService.UploadPhotoAsync(WorkspaceId, ClientId, _landId, MakePhoto()));
+            () => UploadPhotoAsync(ClientId, MakePhoto()));
     }
 
     [Fact]
     public async Task DeletePhotoAsync_RemovesPhoto()
     {
         await SeedLandAsync();
-        var photo = await _landService.UploadPhotoAsync(WorkspaceId, AdminId, _landId, MakePhoto());
-        await _landService.DeletePhotoAsync(WorkspaceId, AdminId, _landId, photo.Id);
+        var photo = await UploadPhotoAsync(AdminId, MakePhoto());
+        await _documentService.DeleteOwnedDocumentAsync(WorkspaceId, AdminId, _landId, "LandPhoto", _landId, photo.Id);
 
-        var photos = await _landService.GetPhotosAsync(WorkspaceId, AdminId, _landId);
+        var photos = await GetPhotosAsync(AdminId);
         Assert.Empty(photos);
     }
 
@@ -87,8 +98,8 @@ public class LandPhotoServiceTests : WorkspaceIntegrationTestBase
     public async Task GetPhotoFileAsync_ReturnsUploadedContent()
     {
         await SeedLandAsync();
-        var photo = await _landService.UploadPhotoAsync(WorkspaceId, AdminId, _landId, MakePhoto());
-        var (found, content) = await _landService.GetPhotoFileAsync(WorkspaceId, AdminId, _landId, photo.Id);
+        var photo = await UploadPhotoAsync(AdminId, MakePhoto());
+        var (found, content) = await _documentService.GetOwnedDocumentFileAsync(WorkspaceId, AdminId, _landId, "LandPhoto", _landId, photo.Id);
 
         Assert.Equal(photo.Id, found.Id);
         using var reader = new StreamReader(content);
@@ -99,7 +110,7 @@ public class LandPhotoServiceTests : WorkspaceIntegrationTestBase
     public async Task UploadPhotoAsync_SetsUploadedByUser_AsPersonNotUserAccount()
     {
         await SeedLandAsync();
-        var photo = await _landService.UploadPhotoAsync(WorkspaceId, AdminId, _landId, MakePhoto());
+        var photo = await UploadPhotoAsync(AdminId, MakePhoto());
 
         Assert.IsType<Person>(photo.UploadedByUser);
         Assert.Equal("Admin", photo.UploadedByUser.FirstName);

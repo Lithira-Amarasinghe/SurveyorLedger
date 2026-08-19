@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
-import { Address, Land, LandAreaValue, LandService, addressLine, formatArea } from '../../../core/land.service';
+import { Land, LandAddress, LandAreaValue, LandService, addressLine, formatArea } from '../../../core/land.service';
 import { LandAreaInputComponent } from '../../../shared/land-area-input/land-area-input.component';
 
 @Component({
@@ -51,8 +51,7 @@ import { LandAreaInputComponent } from '../../../shared/land-area-input/land-are
       } @else {
         <div class="space-y-sm">
           <p class="text-sm font-medium text-neutral-900">New land</p>
-          <input class="input-field" type="text" placeholder="Street" [(ngModel)]="street" />
-          <input class="input-field" type="text" placeholder="City" [(ngModel)]="city" />
+          <input class="input-field" type="text" placeholder="Village" [(ngModel)]="village" />
           <input class="input-field" type="text" placeholder="District (optional)" [(ngModel)]="district" />
           <app-land-area-input [value]="area" (valueChange)="onAreaChange($event)" />
           @if (error()) {
@@ -60,7 +59,7 @@ import { LandAreaInputComponent } from '../../../shared/land-area-input/land-are
           }
           <div class="flex justify-end gap-sm">
             <button type="button" class="btn-secondary" (click)="reset()">Cancel</button>
-            <button type="button" class="btn-primary" [disabled]="!street.trim() || creating()" (click)="createAndAdd()">
+            <button type="button" class="btn-primary" [disabled]="!village.trim() || creating()" (click)="createAndAdd()">
               {{ creating() ? 'Creating…' : 'Create & attach' }}
             </button>
           </div>
@@ -77,8 +76,7 @@ export class AddLandWidgetComponent {
   results = signal<Land[]>([]);
   searching = signal(false);
   creatingNew = signal(false);
-  street = '';
-  city = '';
+  village = '';
   district = '';
   area: LandAreaValue = { acres: null, roods: null, perches: null, squareMeters: null, hectares: null };
   creating = signal(false);
@@ -125,21 +123,18 @@ export class AddLandWidgetComponent {
   }
 
   startCreate(): void {
-    this.street = this.query.trim();
+    this.village = this.query.trim();
     this.creatingNew.set(true);
   }
 
   createAndAdd(): void {
-    if (!this.street.trim()) return;
+    if (!this.village.trim()) return;
     this.error.set('');
     this.creating.set(true);
 
-    const address: Address = {
-      street: this.street.trim(),
-      city: this.city.trim() || null,
-      district: this.district.trim() || null,
-      postalCode: null,
-      country: null
+    const address: Partial<LandAddress> = {
+      village: this.village.trim(),
+      district: this.district.trim() || null
     };
 
     this.landService
@@ -164,8 +159,7 @@ export class AddLandWidgetComponent {
     this.query = '';
     this.results.set([]);
     this.creatingNew.set(false);
-    this.street = '';
-    this.city = '';
+    this.village = '';
     this.district = '';
     this.area = { acres: null, roods: null, perches: null, squareMeters: null, hectares: null };
     this.error.set('');

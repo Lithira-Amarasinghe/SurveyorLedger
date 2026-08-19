@@ -27,24 +27,34 @@ namespace SurveyorLedger.API.Controllers
         public async Task<ActionResult<ApiResponse<LandLocationLinkPreviewResponse>>> Preview(string token)
         {
             var land = await _landService.GetByLocationShareTokenAsync(token);
+            var points = await _landService.GetMapPointsForShareTokenAsync(token);
             return Ok(ApiResponse<LandLocationLinkPreviewResponse>.Ok(new LandLocationLinkPreviewResponse
             {
                 AddressLine = FormatAddressLine(land),
-                Latitude = land.Latitude,
-                Longitude = land.Longitude
+                Points = points.Select(ToResponse).ToList()
             }));
         }
 
-        [HttpPut("{token}")]
-        public async Task<IActionResult> SetLocation(string token, [FromBody] LandLocationRequest request)
+        [HttpPost("{token}/points")]
+        public async Task<ActionResult<ApiResponse<LandMapPointResponse>>> AddPoint(string token, [FromBody] LandMapPointRequest request)
         {
-            await _landService.SetLocationViaShareTokenAsync(token, request);
-            return NoContent();
+            var point = await _landService.AddMapPointViaShareTokenAsync(token, request);
+            return Ok(ApiResponse<LandMapPointResponse>.Ok(ToResponse(point)));
         }
+
+        private static LandMapPointResponse ToResponse(Data.Entities.LandMapPoint p) => new()
+        {
+            Id = p.Id,
+            LandId = p.LandId,
+            Name = p.Name,
+            Latitude = p.Latitude,
+            Longitude = p.Longitude,
+            CreatedAt = p.CreatedAt
+        };
 
         private static string FormatAddressLine(Data.Entities.Land land)
         {
-            var parts = new[] { land.Address.Street, land.Address.City }.Where(p => !string.IsNullOrWhiteSpace(p));
+            var parts = new[] { land.Address.Village, land.Address.DivisionalSecretariat, land.Address.District }.Where(p => !string.IsNullOrWhiteSpace(p));
             var line = string.Join(", ", parts);
             return string.IsNullOrEmpty(line) ? "Unnamed land record" : line;
         }

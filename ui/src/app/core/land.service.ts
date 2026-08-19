@@ -12,6 +12,18 @@ export interface Address {
   country: string | null;
 }
 
+/** Sri Lankan land administrative-division address - distinct from the generic Address type Person/User use. */
+export interface LandAddress {
+  village: string | null;
+  gramaNiladhariDivision: string | null;
+  divisionalSecretariat: string | null;
+  pradeshiyaSabha: string | null;
+  korale: string | null;
+  hatpattu: string | null;
+  district: string | null;
+  province: string | null;
+}
+
 export interface LandAreaValue {
   acres: number | null;
   roods: number | null;
@@ -22,12 +34,10 @@ export interface LandAreaValue {
 
 export interface Land {
   landId: string;
-  address: Address;
+  address: LandAddress;
   area: LandAreaValue;
-  gpsCoordinates: string | null;
-  latitude: number | null;
-  longitude: number | null;
   hasActiveLocationShareLink: boolean;
+  hasActiveMapViewShareLink: boolean;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -39,20 +49,14 @@ export interface Land {
 }
 
 export interface LandRequest {
-  address?: Address;
+  address?: Partial<LandAddress>;
   area?: Partial<LandAreaValue>;
-  gpsCoordinates?: string;
   notes?: string;
   /** Either ownerId (an existing account) or ownerName/-Phone/-Email - never both. */
   ownerId?: string;
   ownerName?: string;
   ownerPhone?: string;
   ownerEmail?: string;
-}
-
-export interface LandLocation {
-  lat: number;
-  lng: number;
 }
 
 export interface LandSurvey {
@@ -111,6 +115,31 @@ export interface LandPhoto {
   createdAt: string;
 }
 
+export interface LandMapPoint {
+  id: string;
+  landId: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  createdAt: string;
+}
+
+export interface LandMapPointRequest {
+  name: string;
+  latitude: number;
+  longitude: number;
+}
+
+/** A Document row attached to a LandSurvey/LandDeed via OwnerType/OwnerId - same Document table/pipeline Job documents use. */
+export interface OwnedDocument {
+  documentId: string;
+  fileName: string;
+  contentType: string;
+  fileSizeBytes: number;
+  uploadedByName: string;
+  createdAt: string;
+}
+
 interface ApiResponse<T> {
   success: boolean;
   data: T;
@@ -119,7 +148,7 @@ interface ApiResponse<T> {
 
 /** Single source of truth for formatting a Land's address into a display line. */
 export function addressLine(land: Land): string {
-  return [land.address.street, land.address.city].filter(Boolean).join(', ') || 'Unnamed land record';
+  return [land.address.village, land.address.divisionalSecretariat, land.address.district].filter(Boolean).join(', ') || 'Unnamed land record';
 }
 
 /** tel:/wa.me hrefs from free-text OwnerPhone - strips formatting for the link only, display text is untouched. Malformed numbers simply won't resolve on tap; no validation is added (matches OwnerPhone staying unvalidated free text). */
@@ -196,12 +225,6 @@ export class LandService {
     return this.http.put<ApiResponse<Land>>(`${this.base(workspaceId)}/${landId}`, request).pipe(map(res => res.data));
   }
 
-  setLocation(workspaceId: string, landId: string, location: LandLocation): Observable<Land> {
-    return this.http
-      .put<ApiResponse<Land>>(`${this.base(workspaceId)}/${landId}/location`, { latitude: location.lat, longitude: location.lng })
-      .pipe(map(res => res.data));
-  }
-
   generateLocationShareLink(workspaceId: string, landId: string): Observable<string> {
     return this.http
       .post<ApiResponse<{ token: string }>>(`${this.base(workspaceId)}/${landId}/location-share-link`, {})
@@ -216,6 +239,22 @@ export class LandService {
 
   revokeLocationShareLink(workspaceId: string, landId: string): Observable<void> {
     return this.http.delete<void>(`${this.base(workspaceId)}/${landId}/location-share-link`);
+  }
+
+  generateMapViewShareLink(workspaceId: string, landId: string): Observable<string> {
+    return this.http
+      .post<ApiResponse<{ token: string }>>(`${this.base(workspaceId)}/${landId}/map-view-share-link`, {})
+      .pipe(map(res => res.data.token));
+  }
+
+  regenerateMapViewShareLink(workspaceId: string, landId: string): Observable<string> {
+    return this.http
+      .post<ApiResponse<{ token: string }>>(`${this.base(workspaceId)}/${landId}/map-view-share-link/regenerate`, {})
+      .pipe(map(res => res.data.token));
+  }
+
+  revokeMapViewShareLink(workspaceId: string, landId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base(workspaceId)}/${landId}/map-view-share-link`);
   }
 
   getSurveys(workspaceId: string, landId: string): Observable<LandSurvey[]> {
@@ -293,6 +332,117 @@ export class LandService {
   /** Blob fetch, not a bare <img src> - the JWT rides an Authorization header the jwtInterceptor only attaches to HttpClient requests, same reasoning as DocumentService.getFileBlob. */
   getPhotoBlob(workspaceId: string, landId: string, photoId: string): Observable<Blob> {
     return this.http.get(`${this.base(workspaceId)}/${landId}/photos/${photoId}`, { responseType: 'blob' });
+  }
+
+  getMapPoints(workspaceId: string, landId: string): Observable<LandMapPoint[]> {
+    return this.http.get<ApiResponse<LandMapPoint[]>>(`${this.base(workspaceId)}/${landId}/map-points`).pipe(map(res => res.data));
+  }
+
+  addMapPoint(workspaceId: string, landId: string, request: LandMapPointRequest): Observable<LandMapPoint> {
+    return this.http.post<ApiResponse<LandMapPoint>>(`${this.base(workspaceId)}/${landId}/map-points`, request).pipe(map(res => res.data));
+  }
+
+  updateMapPoint(workspaceId: string, landId: string, pointId: string, request: LandMapPointRequest): Observable<LandMapPoint> {
+    return this.http
+      .put<ApiResponse<LandMapPoint>>(`${this.base(workspaceId)}/${landId}/map-points/${pointId}`, request)
+      .pipe(map(res => res.data));
+  }
+
+  deleteMapPoint(workspaceId: string, landId: string, pointId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base(workspaceId)}/${landId}/map-points/${pointId}`);
+  }
+
+  /** Same Google Maps deep-link format used by the QR component and land-list pin. */
+  googleMapsUrl(lat: number, lng: number): string {
+    return `https://www.google.com/maps?q=${lat},${lng}`;
+  }
+
+  getDocuments(workspaceId: string, landId: string): Observable<OwnedDocument[]> {
+    return this.http.get<ApiResponse<OwnedDocument[]>>(`${this.base(workspaceId)}/${landId}/documents`).pipe(map(res => res.data));
+  }
+
+  uploadDocument(workspaceId: string, landId: string, file: File, category: string = 'Other'): Observable<OwnedDocument> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http
+      .post<ApiResponse<OwnedDocument>>(`${this.base(workspaceId)}/${landId}/documents`, form, { params: { category } })
+      .pipe(map(res => res.data));
+  }
+
+  getDocumentBlob(workspaceId: string, landId: string, documentId: string): Observable<Blob> {
+    return this.http.get(`${this.base(workspaceId)}/${landId}/documents/${documentId}`, { responseType: 'blob' });
+  }
+
+  deleteDocument(workspaceId: string, landId: string, documentId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base(workspaceId)}/${landId}/documents/${documentId}`);
+  }
+
+  renameDocument(workspaceId: string, landId: string, documentId: string, fileName: string): Observable<OwnedDocument> {
+    return this.http
+      .patch<ApiResponse<OwnedDocument>>(`${this.base(workspaceId)}/${landId}/documents/${documentId}`, { fileName })
+      .pipe(map(res => res.data));
+  }
+
+  getSurveyDocuments(workspaceId: string, landId: string, surveyId: string): Observable<OwnedDocument[]> {
+    return this.http
+      .get<ApiResponse<OwnedDocument[]>>(`${this.base(workspaceId)}/${landId}/surveys/${surveyId}/documents`)
+      .pipe(map(res => res.data));
+  }
+
+  uploadSurveyDocument(workspaceId: string, landId: string, surveyId: string, file: File): Observable<OwnedDocument> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http
+      .post<ApiResponse<OwnedDocument>>(`${this.base(workspaceId)}/${landId}/surveys/${surveyId}/documents`, form)
+      .pipe(map(res => res.data));
+  }
+
+  getSurveyDocumentBlob(workspaceId: string, landId: string, surveyId: string, documentId: string): Observable<Blob> {
+    return this.http.get(`${this.base(workspaceId)}/${landId}/surveys/${surveyId}/documents/${documentId}`, { responseType: 'blob' });
+  }
+
+  deleteSurveyDocument(workspaceId: string, landId: string, surveyId: string, documentId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base(workspaceId)}/${landId}/surveys/${surveyId}/documents/${documentId}`);
+  }
+
+  renameSurveyDocument(workspaceId: string, landId: string, surveyId: string, documentId: string, fileName: string): Observable<OwnedDocument> {
+    return this.http
+      .patch<ApiResponse<OwnedDocument>>(`${this.base(workspaceId)}/${landId}/surveys/${surveyId}/documents/${documentId}`, { fileName })
+      .pipe(map(res => res.data));
+  }
+
+  getDeedDocuments(workspaceId: string, landId: string, deedId: string): Observable<OwnedDocument[]> {
+    return this.http
+      .get<ApiResponse<OwnedDocument[]>>(`${this.base(workspaceId)}/${landId}/deeds/${deedId}/documents`)
+      .pipe(map(res => res.data));
+  }
+
+  uploadDeedDocument(workspaceId: string, landId: string, deedId: string, file: File): Observable<OwnedDocument> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http
+      .post<ApiResponse<OwnedDocument>>(`${this.base(workspaceId)}/${landId}/deeds/${deedId}/documents`, form)
+      .pipe(map(res => res.data));
+  }
+
+  getDeedDocumentBlob(workspaceId: string, landId: string, deedId: string, documentId: string): Observable<Blob> {
+    return this.http.get(`${this.base(workspaceId)}/${landId}/deeds/${deedId}/documents/${documentId}`, { responseType: 'blob' });
+  }
+
+  deleteDeedDocument(workspaceId: string, landId: string, deedId: string, documentId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base(workspaceId)}/${landId}/deeds/${deedId}/documents/${documentId}`);
+  }
+
+  renameDeedDocument(workspaceId: string, landId: string, deedId: string, documentId: string, fileName: string): Observable<OwnedDocument> {
+    return this.http
+      .patch<ApiResponse<OwnedDocument>>(`${this.base(workspaceId)}/${landId}/deeds/${deedId}/documents/${documentId}`, { fileName })
+      .pipe(map(res => res.data));
+  }
+
+  renamePhoto(workspaceId: string, landId: string, photoId: string, fileName: string): Observable<LandPhoto> {
+    return this.http
+      .patch<ApiResponse<LandPhoto>>(`${this.base(workspaceId)}/${landId}/photos/${photoId}`, { fileName })
+      .pipe(map(res => res.data));
   }
 
   deletePhoto(workspaceId: string, landId: string, photoId: string): Observable<void> {

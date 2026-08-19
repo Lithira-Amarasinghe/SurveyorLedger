@@ -26,6 +26,7 @@ public class LandAccessScopingTests : WorkspaceIntegrationTestBase
     protected override void ConfigureServices(IServiceCollection services)
     {
         services.AddScoped<ILandService, LandService>();
+        services.AddScoped<IDocumentService, DocumentService>();
         services.AddScoped<IJobService, JobService>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddScoped<IInvitationService, InvitationService>();
@@ -53,11 +54,11 @@ public class LandAccessScopingTests : WorkspaceIntegrationTestBase
 
         var landOnA = await _landService.CreateAsync(WorkspaceId, AdminId, new LandRequest
         {
-            Address = new AddressDto { Street = "1 Land A Street" }
+            Address = new LandAddressDto { Village = "1 Land A Street" }
         });
         var landOnB = await _landService.CreateAsync(WorkspaceId, AdminId, new LandRequest
         {
-            Address = new AddressDto { Street = "2 Land B Street" }
+            Address = new LandAddressDto { Village = "2 Land B Street" }
         });
         _landOnJobAId = landOnA.Id;
         _landOnJobBId = landOnB.Id;
@@ -79,7 +80,7 @@ public class LandAccessScopingTests : WorkspaceIntegrationTestBase
         _jobService = GetService<IJobService>();
 
         var job = await _jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Unassigned job" });
-        var land = await _landService.CreateAsync(WorkspaceId, AdminId, new LandRequest { Address = new AddressDto { Street = "Nobody's land" } });
+        var land = await _landService.CreateAsync(WorkspaceId, AdminId, new LandRequest { Address = new LandAddressDto { Village = "Nobody's land" } });
         await _jobService.AddLandAsync(WorkspaceId, AdminId, job.Id, land.Id);
 
         var results = await _landService.SearchAsync(WorkspaceId, ClientId, null);

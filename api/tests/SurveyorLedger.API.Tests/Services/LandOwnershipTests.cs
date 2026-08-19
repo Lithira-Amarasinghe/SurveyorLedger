@@ -20,6 +20,7 @@ public class LandOwnershipTests : WorkspaceIntegrationTestBase
     protected override void ConfigureServices(IServiceCollection services)
     {
         services.AddScoped<ILandService, LandService>();
+        services.AddScoped<IDocumentService, DocumentService>();
         services.AddScoped<IInvitationService, InvitationService>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddSingleton<IEmailService, NoOpEmailService>();
@@ -35,7 +36,7 @@ public class LandOwnershipTests : WorkspaceIntegrationTestBase
 
     private static LandRequest NewLandRequest() => new()
     {
-        Address = new AddressDto { City = "Colombo" }
+        Address = new LandAddressDto { District = "Colombo" }
     };
 
     [Fact]

@@ -16,6 +16,12 @@ type AreaTab = 'arp' | 'sqm' | 'ha';
  * Emits only the active tab's field(s) populated, matching the backend's "exactly one
  * unit system per write" contract. No HTTP inside the component - controlled, same
  * pattern as LandLocationPickerComponent/OwnerPickerComponent.
+ *
+ * All five display fields are kept in sync from one internal canonical square-meter
+ * value on every keystroke (not just the active tab's own fields) - switching tabs
+ * always shows the converted equivalent instead of blank inputs. Out-of-range input
+ * (negative acres, Perches > 39.99) is clamped immediately rather than only rejected
+ * server-side, so the field visibly snaps back to a valid value as you type.
  */
 @Component({
   selector: 'app-land-area-input',
@@ -81,14 +87,24 @@ export class LandAreaInputComponent implements OnChanges {
   }
 
   onArpChange(): void {
+    this.acres = this.acres === null ? null : Math.max(0, Math.round(this.acres));
+    this.perches = this.perches === null ? null : Math.min(39.99, Math.max(0, Math.round(this.perches * 100) / 100));
+
+    this.syncFromSquareMeters(this.acres === null && this.perches === null ? null : acresRoodsPerchesToSquareMeters(this.acres ?? 0, this.roods, this.perches ?? 0));
     this.valueChange.emit({ acres: this.acres, roods: this.roods, perches: this.perches, squareMeters: null, hectares: null });
   }
 
   onSqmChange(): void {
+    this.squareMeters = this.squareMeters === null ? null : Math.max(0, this.squareMeters);
+
+    this.syncFromSquareMeters(this.squareMeters);
     this.valueChange.emit({ acres: null, roods: null, perches: null, squareMeters: this.squareMeters, hectares: null });
   }
 
   onHaChange(): void {
+    this.hectares = this.hectares === null ? null : Math.max(0, this.hectares);
+
+    this.syncFromSquareMeters(this.hectares === null ? null : hectaresToSquareMeters(this.hectares));
     this.valueChange.emit({ acres: null, roods: null, perches: null, squareMeters: null, hectares: this.hectares });
   }
 
@@ -115,5 +131,24 @@ export class LandAreaInputComponent implements OnChanges {
       return this.squareMeters === null ? null : this.squareMeters;
     }
     return this.hectares === null ? null : hectaresToSquareMeters(this.hectares);
+  }
+
+  /** Updates every tab's display fields from one canonical value, whichever tab produced it - so switching tabs never shows blank/stale inputs. Skips overwriting the tab that's currently being typed into (its own handler already updated it directly, and re-deriving it from a rounded sqm value would fight the user's cursor). */
+  private syncFromSquareMeters(sqm: number | null): void {
+    if (sqm === null) {
+      if (this.tab !== 'arp') { this.acres = null; this.roods = 0; this.perches = null; }
+      if (this.tab !== 'sqm') this.squareMeters = null;
+      if (this.tab !== 'ha') this.hectares = null;
+      return;
+    }
+
+    if (this.tab !== 'arp') {
+      const { acres, roods, perches } = squareMetersToAcresRoodsPerches(sqm);
+      this.acres = acres;
+      this.roods = roods;
+      this.perches = perches;
+    }
+    if (this.tab !== 'sqm') this.squareMeters = Math.round(sqm * 100) / 100;
+    if (this.tab !== 'ha') this.hectares = Math.round(squareMetersToHectares(sqm) * 10000) / 10000;
   }
 }

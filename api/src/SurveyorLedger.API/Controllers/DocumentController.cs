@@ -64,7 +64,7 @@ namespace SurveyorLedger.API.Controllers
         private static DocumentResponse ToResponse(Document d) => new()
         {
             DocumentId = d.Id,
-            JobId = d.JobId,
+            JobId = d.JobId!.Value,
             FileName = d.FileName,
             ContentType = d.ContentType,
             FileSizeBytes = d.FileSizeBytes,

@@ -8,6 +8,6 @@ namespace SurveyorLedger.API.Models.Land;
 public class LandLocationLinkPreviewResponse
 {
     public string AddressLine { get; set; } = string.Empty;
-    public decimal? Latitude { get; set; }
-    public decimal? Longitude { get; set; }
+    /// <summary>Every point already set, shown read-only - the recipient can add more but never edit/delete an existing one.</summary>
+    public List<LandMapPointResponse> Points { get; set; } = new();
 }

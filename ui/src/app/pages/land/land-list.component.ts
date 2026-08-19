@@ -47,21 +47,7 @@ interface LandRow {
               @for (row of rows(); track row.land.landId) {
                 <tr class="border-t border-neutral-200 cursor-pointer hover:bg-neutral-50" (click)="open(row.land)">
                   <td class="px-lg py-sm text-neutral-900">
-                    <div class="flex items-center gap-sm">
-                      <span>{{ addressLine(row.land) }}</span>
-                      @if (row.land.latitude !== null) {
-                        <a
-                          class="text-primary-600"
-                          [href]="'https://www.google.com/maps?q=' + row.land.latitude + ',' + row.land.longitude"
-                          target="_blank"
-                          rel="noopener"
-                          title="Open in Google Maps"
-                          (click)="$event.stopPropagation()"
-                        >📍</a>
-                      } @else {
-                        <span class="text-neutral-300" title="Location not set">📍</span>
-                      }
-                    </div>
+                    <span>{{ addressLine(row.land) }}</span>
                     @if (row.land.ownerName) {
                       <span class="text-xs text-neutral-500 block">{{ row.land.ownerName }}</span>
                     }

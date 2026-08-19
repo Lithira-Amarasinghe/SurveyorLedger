@@ -15,11 +15,13 @@ namespace SurveyorLedger.API.Controllers
     public class LandController : ControllerBase
     {
         private readonly ILandService _landService;
+        private readonly IDocumentService _documentService;
         private readonly ILogger<LandController> _logger;
 
-        public LandController(ILandService landService, ILogger<LandController> logger)
+        public LandController(ILandService landService, IDocumentService documentService, ILogger<LandController> logger)
         {
             _landService = landService;
+            _documentService = documentService;
             _logger = logger;
         }
 
@@ -63,14 +65,6 @@ namespace SurveyorLedger.API.Controllers
             return NoContent();
         }
 
-        [HttpPut("{id}/location")]
-        public async Task<ActionResult<ApiResponse<LandResponse>>> SetLocation(Guid workspaceId, Guid id, [FromBody] LandLocationRequest request)
-        {
-            var callerId = CallerId();
-            var land = await _landService.SetLocationAsync(workspaceId, callerId, id, request);
-            return Ok(ApiResponse<LandResponse>.Ok(ToResponse(land)));
-        }
-
         [HttpPost("{id}/location-share-link")]
         public async Task<ActionResult<ApiResponse<LandLocationShareLinkResponse>>> GenerateLocationShareLink(Guid workspaceId, Guid id)
         {
@@ -92,6 +86,30 @@ namespace SurveyorLedger.API.Controllers
         {
             var callerId = CallerId();
             await _landService.RevokeLocationShareLinkAsync(workspaceId, callerId, id);
+            return NoContent();
+        }
+
+        [HttpPost("{id}/map-view-share-link")]
+        public async Task<ActionResult<ApiResponse<LandLocationShareLinkResponse>>> GenerateMapViewShareLink(Guid workspaceId, Guid id)
+        {
+            var callerId = CallerId();
+            var token = await _landService.GenerateMapViewShareLinkAsync(workspaceId, callerId, id);
+            return Ok(ApiResponse<LandLocationShareLinkResponse>.Ok(new LandLocationShareLinkResponse { Token = token }));
+        }
+
+        [HttpPost("{id}/map-view-share-link/regenerate")]
+        public async Task<ActionResult<ApiResponse<LandLocationShareLinkResponse>>> RegenerateMapViewShareLink(Guid workspaceId, Guid id)
+        {
+            var callerId = CallerId();
+            var token = await _landService.RegenerateMapViewShareLinkAsync(workspaceId, callerId, id);
+            return Ok(ApiResponse<LandLocationShareLinkResponse>.Ok(new LandLocationShareLinkResponse { Token = token }));
+        }
+
+        [HttpDelete("{id}/map-view-share-link")]
+        public async Task<IActionResult> RevokeMapViewShareLink(Guid workspaceId, Guid id)
+        {
+            var callerId = CallerId();
+            await _landService.RevokeMapViewShareLinkAsync(workspaceId, callerId, id);
             return NoContent();
         }
 
@@ -127,6 +145,88 @@ namespace SurveyorLedger.API.Controllers
             return NoContent();
         }
 
+        [HttpGet("{id}/documents")]
+        public async Task<ActionResult<ApiResponse<List<OwnedDocumentResponse>>>> GetDocuments(Guid workspaceId, Guid id)
+        {
+            var callerId = CallerId();
+            var documents = await _documentService.GetOwnedDocumentsAsync(workspaceId, callerId, id, "Land", id);
+            return Ok(ApiResponse<List<OwnedDocumentResponse>>.Ok(documents.Select(ToOwnedDocumentResponse).ToList()));
+        }
+
+        [HttpPost("{id}/documents")]
+        [RequestSizeLimit(DocumentService.MaxFileSizeBytes)]
+        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> UploadDocument(Guid workspaceId, Guid id, IFormFile file, [FromQuery] DocumentCategory category = DocumentCategory.Other)
+        {
+            var callerId = CallerId();
+            var document = await _documentService.UploadOwnedDocumentAsync(workspaceId, callerId, id, "Land", id, category, file);
+            return Ok(ApiResponse<OwnedDocumentResponse>.Ok(ToOwnedDocumentResponse(document)));
+        }
+
+        [HttpGet("{id}/documents/{documentId}")]
+        public async Task<IActionResult> GetDocumentFile(Guid workspaceId, Guid id, Guid documentId)
+        {
+            var callerId = CallerId();
+            var (document, content) = await _documentService.GetOwnedDocumentFileAsync(workspaceId, callerId, id, "Land", id, documentId);
+            return File(content, document.ContentType, document.FileName);
+        }
+
+        [HttpDelete("{id}/documents/{documentId}")]
+        public async Task<IActionResult> DeleteDocument(Guid workspaceId, Guid id, Guid documentId)
+        {
+            var callerId = CallerId();
+            await _documentService.DeleteOwnedDocumentAsync(workspaceId, callerId, id, "Land", id, documentId);
+            return NoContent();
+        }
+
+        [HttpPatch("{id}/documents/{documentId}")]
+        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> RenameDocument(Guid workspaceId, Guid id, Guid documentId, [FromBody] RenamePhotoRequest request)
+        {
+            var callerId = CallerId();
+            var document = await _documentService.RenameOwnedDocumentAsync(workspaceId, callerId, id, "Land", id, documentId, request.FileName);
+            return Ok(ApiResponse<OwnedDocumentResponse>.Ok(ToOwnedDocumentResponse(document)));
+        }
+
+        [HttpGet("{id}/surveys/{surveyId}/documents")]
+        public async Task<ActionResult<ApiResponse<List<OwnedDocumentResponse>>>> GetSurveyDocuments(Guid workspaceId, Guid id, Guid surveyId)
+        {
+            var callerId = CallerId();
+            var documents = await _documentService.GetOwnedDocumentsAsync(workspaceId, callerId, id, "LandSurvey", surveyId);
+            return Ok(ApiResponse<List<OwnedDocumentResponse>>.Ok(documents.Select(ToOwnedDocumentResponse).ToList()));
+        }
+
+        [HttpPost("{id}/surveys/{surveyId}/documents")]
+        [RequestSizeLimit(DocumentService.MaxFileSizeBytes)]
+        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> UploadSurveyDocument(Guid workspaceId, Guid id, Guid surveyId, IFormFile file)
+        {
+            var callerId = CallerId();
+            var document = await _documentService.UploadOwnedDocumentAsync(workspaceId, callerId, id, "LandSurvey", surveyId, DocumentCategory.SurveyPlan, file);
+            return Ok(ApiResponse<OwnedDocumentResponse>.Ok(ToOwnedDocumentResponse(document)));
+        }
+
+        [HttpGet("{id}/surveys/{surveyId}/documents/{documentId}")]
+        public async Task<IActionResult> GetSurveyDocumentFile(Guid workspaceId, Guid id, Guid surveyId, Guid documentId)
+        {
+            var callerId = CallerId();
+            var (document, content) = await _documentService.GetOwnedDocumentFileAsync(workspaceId, callerId, id, "LandSurvey", surveyId, documentId);
+            return File(content, document.ContentType, document.FileName);
+        }
+
+        [HttpDelete("{id}/surveys/{surveyId}/documents/{documentId}")]
+        public async Task<IActionResult> DeleteSurveyDocument(Guid workspaceId, Guid id, Guid surveyId, Guid documentId)
+        {
+            var callerId = CallerId();
+            await _documentService.DeleteOwnedDocumentAsync(workspaceId, callerId, id, "LandSurvey", surveyId, documentId);
+            return NoContent();
+        }
+
+        [HttpPatch("{id}/surveys/{surveyId}/documents/{documentId}")]
+        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> RenameSurveyDocument(Guid workspaceId, Guid id, Guid surveyId, Guid documentId, [FromBody] RenamePhotoRequest request)
+        {
+            var callerId = CallerId();
+            var document = await _documentService.RenameOwnedDocumentAsync(workspaceId, callerId, id, "LandSurvey", surveyId, documentId, request.FileName);
+            return Ok(ApiResponse<OwnedDocumentResponse>.Ok(ToOwnedDocumentResponse(document)));
+        }
+
         [HttpGet("{id}/deeds")]
         public async Task<ActionResult<ApiResponse<List<LandDeedResponse>>>> GetDeeds(Guid workspaceId, Guid id)
         {
@@ -157,6 +257,47 @@ namespace SurveyorLedger.API.Controllers
             var callerId = CallerId();
             await _landService.DeleteDeedAsync(workspaceId, callerId, id, deedId);
             return NoContent();
+        }
+
+        [HttpGet("{id}/deeds/{deedId}/documents")]
+        public async Task<ActionResult<ApiResponse<List<OwnedDocumentResponse>>>> GetDeedDocuments(Guid workspaceId, Guid id, Guid deedId)
+        {
+            var callerId = CallerId();
+            var documents = await _documentService.GetOwnedDocumentsAsync(workspaceId, callerId, id, "LandDeed", deedId);
+            return Ok(ApiResponse<List<OwnedDocumentResponse>>.Ok(documents.Select(ToOwnedDocumentResponse).ToList()));
+        }
+
+        [HttpPost("{id}/deeds/{deedId}/documents")]
+        [RequestSizeLimit(DocumentService.MaxFileSizeBytes)]
+        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> UploadDeedDocument(Guid workspaceId, Guid id, Guid deedId, IFormFile file)
+        {
+            var callerId = CallerId();
+            var document = await _documentService.UploadOwnedDocumentAsync(workspaceId, callerId, id, "LandDeed", deedId, DocumentCategory.LegalDocument, file);
+            return Ok(ApiResponse<OwnedDocumentResponse>.Ok(ToOwnedDocumentResponse(document)));
+        }
+
+        [HttpGet("{id}/deeds/{deedId}/documents/{documentId}")]
+        public async Task<IActionResult> GetDeedDocumentFile(Guid workspaceId, Guid id, Guid deedId, Guid documentId)
+        {
+            var callerId = CallerId();
+            var (document, content) = await _documentService.GetOwnedDocumentFileAsync(workspaceId, callerId, id, "LandDeed", deedId, documentId);
+            return File(content, document.ContentType, document.FileName);
+        }
+
+        [HttpDelete("{id}/deeds/{deedId}/documents/{documentId}")]
+        public async Task<IActionResult> DeleteDeedDocument(Guid workspaceId, Guid id, Guid deedId, Guid documentId)
+        {
+            var callerId = CallerId();
+            await _documentService.DeleteOwnedDocumentAsync(workspaceId, callerId, id, "LandDeed", deedId, documentId);
+            return NoContent();
+        }
+
+        [HttpPatch("{id}/deeds/{deedId}/documents/{documentId}")]
+        public async Task<ActionResult<ApiResponse<OwnedDocumentResponse>>> RenameDeedDocument(Guid workspaceId, Guid id, Guid deedId, Guid documentId, [FromBody] RenamePhotoRequest request)
+        {
+            var callerId = CallerId();
+            var document = await _documentService.RenameOwnedDocumentAsync(workspaceId, callerId, id, "LandDeed", deedId, documentId, request.FileName);
+            return Ok(ApiResponse<OwnedDocumentResponse>.Ok(ToOwnedDocumentResponse(document)));
         }
 
         [HttpGet("{id}/boundaries")]
@@ -191,12 +332,47 @@ namespace SurveyorLedger.API.Controllers
             return NoContent();
         }
 
+        [HttpGet("{id}/map-points")]
+        public async Task<ActionResult<ApiResponse<List<LandMapPointResponse>>>> GetMapPoints(Guid workspaceId, Guid id)
+        {
+            var callerId = CallerId();
+            var points = await _landService.GetMapPointsAsync(workspaceId, callerId, id);
+            return Ok(ApiResponse<List<LandMapPointResponse>>.Ok(points.Select(ToResponse).ToList()));
+        }
+
+        [HttpPost("{id}/map-points")]
+        public async Task<ActionResult<ApiResponse<LandMapPointResponse>>> AddMapPoint(Guid workspaceId, Guid id, [FromBody] LandMapPointRequest request)
+        {
+            var callerId = CallerId();
+            var point = await _landService.AddMapPointAsync(workspaceId, callerId, id, request);
+            return Ok(ApiResponse<LandMapPointResponse>.Ok(ToResponse(point)));
+        }
+
+        [HttpPut("{id}/map-points/{pointId}")]
+        public async Task<ActionResult<ApiResponse<LandMapPointResponse>>> UpdateMapPoint(Guid workspaceId, Guid id, Guid pointId, [FromBody] LandMapPointRequest request)
+        {
+            var callerId = CallerId();
+            var point = await _landService.UpdateMapPointAsync(workspaceId, callerId, id, pointId, request);
+            return Ok(ApiResponse<LandMapPointResponse>.Ok(ToResponse(point)));
+        }
+
+        [HttpDelete("{id}/map-points/{pointId}")]
+        public async Task<IActionResult> DeleteMapPoint(Guid workspaceId, Guid id, Guid pointId)
+        {
+            var callerId = CallerId();
+            await _landService.DeleteMapPointAsync(workspaceId, callerId, id, pointId);
+            return NoContent();
+        }
+
+        // Photos are Documents (OwnerType="LandPhoto", OwnerId=landId) - same generic infra
+        // surveys/deeds/general land docs use. Route shape and LandPhotoResponse are
+        // unchanged for the frontend; only the storage moved.
         [HttpGet("{id}/photos")]
         public async Task<ActionResult<ApiResponse<List<LandPhotoResponse>>>> GetPhotos(Guid workspaceId, Guid id)
         {
             var callerId = CallerId();
-            var photos = await _landService.GetPhotosAsync(workspaceId, callerId, id);
-            return Ok(ApiResponse<List<LandPhotoResponse>>.Ok(photos.Select(ToResponse).ToList()));
+            var photos = await _documentService.GetOwnedDocumentsAsync(workspaceId, callerId, id, "LandPhoto", id);
+            return Ok(ApiResponse<List<LandPhotoResponse>>.Ok(photos.Select(ToPhotoResponse).ToList()));
         }
 
         [HttpPost("{id}/photos")]
@@ -204,23 +380,31 @@ namespace SurveyorLedger.API.Controllers
         public async Task<ActionResult<ApiResponse<LandPhotoResponse>>> UploadPhoto(Guid workspaceId, Guid id, IFormFile file)
         {
             var callerId = CallerId();
-            var photo = await _landService.UploadPhotoAsync(workspaceId, callerId, id, file);
-            return Ok(ApiResponse<LandPhotoResponse>.Ok(ToResponse(photo)));
+            var photo = await _documentService.UploadOwnedDocumentAsync(workspaceId, callerId, id, "LandPhoto", id, DocumentCategory.Photo, file);
+            return Ok(ApiResponse<LandPhotoResponse>.Ok(ToPhotoResponse(photo)));
         }
 
         [HttpGet("{id}/photos/{photoId}")]
         public async Task<IActionResult> GetPhotoFile(Guid workspaceId, Guid id, Guid photoId)
         {
             var callerId = CallerId();
-            var (photo, content) = await _landService.GetPhotoFileAsync(workspaceId, callerId, id, photoId);
+            var (photo, content) = await _documentService.GetOwnedDocumentFileAsync(workspaceId, callerId, id, "LandPhoto", id, photoId);
             return File(content, photo.ContentType, photo.FileName);
+        }
+
+        [HttpPatch("{id}/photos/{photoId}")]
+        public async Task<ActionResult<ApiResponse<LandPhotoResponse>>> RenamePhoto(Guid workspaceId, Guid id, Guid photoId, [FromBody] RenamePhotoRequest request)
+        {
+            var callerId = CallerId();
+            var photo = await _documentService.RenameOwnedDocumentAsync(workspaceId, callerId, id, "LandPhoto", id, photoId, request.FileName);
+            return Ok(ApiResponse<LandPhotoResponse>.Ok(ToPhotoResponse(photo)));
         }
 
         [HttpDelete("{id}/photos/{photoId}")]
         public async Task<IActionResult> DeletePhoto(Guid workspaceId, Guid id, Guid photoId)
         {
             var callerId = CallerId();
-            await _landService.DeletePhotoAsync(workspaceId, callerId, id, photoId);
+            await _documentService.DeleteOwnedDocumentAsync(workspaceId, callerId, id, "LandPhoto", id, photoId);
             return NoContent();
         }
 
@@ -229,16 +413,18 @@ namespace SurveyorLedger.API.Controllers
         private static LandResponse ToResponse(Land l) => new()
         {
             LandId = l.Id,
-            Address = new AddressDto
+            Address = new LandAddressDto
             {
-                Street = l.Address.Street,
-                City = l.Address.City,
+                Village = l.Address.Village,
+                GramaNiladhariDivision = l.Address.GramaNiladhariDivision,
+                DivisionalSecretariat = l.Address.DivisionalSecretariat,
+                PradeshiyaSabha = l.Address.PradeshiyaSabha,
+                Korale = l.Address.Korale,
+                Hatpattu = l.Address.Hatpattu,
                 District = l.Address.District,
-                PostalCode = l.Address.PostalCode,
-                Country = l.Address.Country
+                Province = l.Address.Province
             },
             Area = ToAreaDto(l.AreaSquareMeters),
-            GpsCoordinates = l.GpsCoordinates,
             Notes = l.Notes,
             CreatedAt = l.CreatedAt,
             UpdatedAt = l.UpdatedAt,
@@ -246,9 +432,8 @@ namespace SurveyorLedger.API.Controllers
             OwnerName = l.Owner != null ? $"{l.Owner.FirstName} {l.Owner.LastName}" : l.OwnerName,
             OwnerPhone = l.Owner != null ? l.Owner.Phone : l.OwnerPhone,
             OwnerEmail = l.Owner != null ? l.Owner.Email : l.OwnerEmail,
-            Latitude = l.Latitude,
-            Longitude = l.Longitude,
-            HasActiveLocationShareLink = l.LocationShareToken != null
+            HasActiveLocationShareLink = l.LocationShareToken != null,
+            HasActiveMapViewShareLink = l.MapViewShareToken != null
         };
 
         private static LandSurveyResponse ToResponse(LandSurvey s) => new()
@@ -270,6 +455,17 @@ namespace SurveyorLedger.API.Controllers
             IssuedDate = d.IssuedDate,
             IsCurrent = d.IsCurrent,
             Notes = d.Notes,
+            CreatedAt = d.CreatedAt
+        };
+
+        private static OwnedDocumentResponse ToOwnedDocumentResponse(Document d) => new()
+        {
+            DocumentId = d.Id,
+            FileName = d.FileName,
+            ContentType = d.ContentType,
+            FileSizeBytes = d.FileSizeBytes,
+            UploadedBy = d.UploadedBy,
+            UploadedByName = $"{d.UploadedByUser.FirstName} {d.UploadedByUser.LastName}",
             CreatedAt = d.CreatedAt
         };
 
@@ -298,14 +494,24 @@ namespace SurveyorLedger.API.Controllers
             CreatedAt = b.CreatedAt
         };
 
-        private static LandPhotoResponse ToResponse(LandPhoto p) => new()
+        private static LandMapPointResponse ToResponse(LandMapPoint p) => new()
         {
-            PhotoId = p.Id,
-            FileName = p.FileName,
-            ContentType = p.ContentType,
-            FileSizeBytes = p.FileSizeBytes,
-            UploadedByName = $"{p.UploadedByUser.FirstName} {p.UploadedByUser.LastName}",
+            Id = p.Id,
+            LandId = p.LandId,
+            Name = p.Name,
+            Latitude = p.Latitude,
+            Longitude = p.Longitude,
             CreatedAt = p.CreatedAt
+        };
+
+        private static LandPhotoResponse ToPhotoResponse(Document d) => new()
+        {
+            PhotoId = d.Id,
+            FileName = d.FileName,
+            ContentType = d.ContentType,
+            FileSizeBytes = d.FileSizeBytes,
+            UploadedByName = $"{d.UploadedByUser.FirstName} {d.UploadedByUser.LastName}",
+            CreatedAt = d.CreatedAt
         };
     }
 }

@@ -3,12 +3,12 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
-import { LandLocation } from './land.service';
+import { LandMapPoint, LandMapPointRequest } from './land.service';
 
 export interface LandLocationLinkPreview {
   addressLine: string;
-  latitude: number | null;
-  longitude: number | null;
+  /** Every point already set, read-only for the recipient - they can add more but never edit/delete an existing one. */
+  points: LandMapPoint[];
 }
 
 interface ApiResponse<T> {
@@ -33,7 +33,8 @@ export class LandLocationLinkService {
     return this.http.get<ApiResponse<LandLocationLinkPreview>>(this.base(token)).pipe(map(res => res.data));
   }
 
-  setLocation(token: string, location: LandLocation): Observable<void> {
-    return this.http.put<void>(this.base(token), { latitude: location.lat, longitude: location.lng });
+  /** Add-only: the token can never edit or delete an existing point. */
+  addPoint(token: string, request: LandMapPointRequest): Observable<LandMapPoint> {
+    return this.http.post<ApiResponse<LandMapPoint>>(`${this.base(token)}/points`, request).pipe(map(res => res.data));
   }
 }

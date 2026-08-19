@@ -27,12 +27,13 @@ public class ApplicationDbContext : DbContext
     public DbSet<LandSurvey> LandSurveys { get; set; }
     public DbSet<LandDeed> LandDeeds { get; set; }
     public DbSet<LandBoundary> LandBoundaries { get; set; }
-    public DbSet<LandPhoto> LandPhotos { get; set; }
+    public DbSet<LandMapPoint> LandMapPoints { get; set; }
     public DbSet<Job> Jobs { get; set; }
     public DbSet<JobLand> JobLands { get; set; }
     public DbSet<Milestone> Milestones { get; set; }
     public DbSet<Document> Documents { get; set; }
     public DbSet<DocumentRequest> DocumentRequests { get; set; }
+    public DbSet<LandDocumentRequest> LandDocumentRequests { get; set; }
     public DbSet<Quotation> Quotations { get; set; }
     public DbSet<Invoice> Invoices { get; set; }
     public DbSet<Payment> Payments { get; set; }

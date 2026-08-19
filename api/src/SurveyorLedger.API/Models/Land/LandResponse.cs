@@ -6,14 +6,12 @@ namespace SurveyorLedger.API.Models.Land;
 public class LandResponse
 {
     public Guid LandId { get; set; }
-    public AddressDto Address { get; set; } = new();
+    public LandAddressDto Address { get; set; } = new();
     public AreaDto Area { get; set; } = new();
-    public string? GpsCoordinates { get; set; }
-    public decimal? Latitude { get; set; }
-    public decimal? Longitude { get; set; }
 
     /// <summary>Leaks existence of an active share link, never the token itself.</summary>
     public bool HasActiveLocationShareLink { get; set; }
+    public bool HasActiveMapViewShareLink { get; set; }
     public string? Notes { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

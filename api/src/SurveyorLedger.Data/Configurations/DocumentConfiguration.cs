@@ -17,7 +17,10 @@ public class DocumentConfiguration : IEntityTypeConfiguration<Document>
         builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
         builder.Property(x => x.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
 
+        builder.Property(x => x.OwnerType).HasMaxLength(30);
+
         builder.HasIndex(x => x.JobId);
+        builder.HasIndex(x => new { x.OwnerType, x.OwnerId });
 
         builder.HasOne(x => x.Job)
             .WithMany()

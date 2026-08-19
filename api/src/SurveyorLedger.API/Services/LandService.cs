@@ -16,12 +16,18 @@ public interface ILandService
     Task<Land> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandRequest request);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid landId);
 
-    Task<Land> SetLocationAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandLocationRequest request);
     Task<string> GenerateLocationShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId);
     Task<string> RegenerateLocationShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId);
     Task RevokeLocationShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId);
     Task<Land> GetByLocationShareTokenAsync(string token);
-    Task<Land> SetLocationViaShareTokenAsync(string token, LandLocationRequest request);
+    Task<List<LandMapPoint>> GetMapPointsForShareTokenAsync(string token);
+    Task<LandMapPoint> AddMapPointViaShareTokenAsync(string token, LandMapPointRequest request);
+
+    Task<Land> GetByMapViewShareTokenAsync(string token);
+    Task<List<LandMapPoint>> GetMapPointsForMapViewShareTokenAsync(string token);
+    Task<string> GenerateMapViewShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId);
+    Task<string> RegenerateMapViewShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId);
+    Task RevokeMapViewShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId);
 
     Task<LandSurvey> AddSurveyAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandSurveyRequest request);
     Task<List<LandSurvey>> GetSurveysAsync(Guid workspaceId, Guid callerUserId, Guid landId);
@@ -38,10 +44,11 @@ public interface ILandService
     Task<LandBoundary> UpdateBoundaryAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid boundaryId, LandBoundaryRequest request);
     Task DeleteBoundaryAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid boundaryId);
 
-    Task<LandPhoto> UploadPhotoAsync(Guid workspaceId, Guid callerUserId, Guid landId, IFormFile file);
-    Task<List<LandPhoto>> GetPhotosAsync(Guid workspaceId, Guid callerUserId, Guid landId);
-    Task<(LandPhoto photo, Stream content)> GetPhotoFileAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid photoId);
-    Task DeletePhotoAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid photoId);
+    Task<LandMapPoint> AddMapPointAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandMapPointRequest request);
+    Task<List<LandMapPoint>> GetMapPointsAsync(Guid workspaceId, Guid callerUserId, Guid landId);
+    Task<LandMapPoint> UpdateMapPointAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid pointId, LandMapPointRequest request);
+    Task DeleteMapPointAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid pointId);
+
 }
 
 public class LandService : ILandService
@@ -49,13 +56,15 @@ public class LandService : ILandService
     private readonly ApplicationDbContext _context;
     private readonly IScopedAccessService _access;
     private readonly IFileStorageService _fileStorage;
+    private readonly IDocumentService _documentService;
     private readonly ILogger<LandService> _logger;
 
-    public LandService(ApplicationDbContext context, IScopedAccessService access, IFileStorageService fileStorage, ILogger<LandService> logger)
+    public LandService(ApplicationDbContext context, IScopedAccessService access, IFileStorageService fileStorage, IDocumentService documentService, ILogger<LandService> logger)
     {
         _context = context;
         _access = access;
         _fileStorage = fileStorage;
+        _documentService = documentService;
         _logger = logger;
     }
 
@@ -71,7 +80,6 @@ public class LandService : ILandService
             WorkspaceId = workspaceId,
             Address = ToAddress(request.Address),
             AreaSquareMeters = ToAreaSquareMeters(request.Area),
-            GpsCoordinates = request.GpsCoordinates,
             Notes = request.Notes,
             OwnerId = request.OwnerId,
             OwnerName = request.OwnerId == null ? request.OwnerName?.Trim() : null,
@@ -90,9 +98,9 @@ public class LandService : ILandService
     }
 
     /// <summary>
-    /// Matches address fields (street/city/district/postal code) to let a job creator
-    /// find and reuse an existing Land instead of re-entering it. Empty/null query
-    /// returns the workspace's full Land list.
+    /// Matches address fields (village/GN division/DS division/district) to let a job
+    /// creator find and reuse an existing Land instead of re-entering it. Empty/null
+    /// query returns the workspace's full Land list.
     /// </summary>
     public async Task<List<Land>> SearchAsync(Guid workspaceId, Guid callerUserId, string? query)
     {
@@ -113,8 +121,9 @@ public class LandService : ILandService
         {
             var term = query.Trim();
             lands = lands.Where(l =>
-                EF.Functions.Like(l.Address.Street, $"%{term}%") ||
-                EF.Functions.Like(l.Address.City, $"%{term}%") ||
+                EF.Functions.Like(l.Address.Village, $"%{term}%") ||
+                EF.Functions.Like(l.Address.GramaNiladhariDivision, $"%{term}%") ||
+                EF.Functions.Like(l.Address.DivisionalSecretariat, $"%{term}%") ||
                 EF.Functions.Like(l.Address.District, $"%{term}%") ||
                 l.Deeds.Any(d => EF.Functions.Like(d.DeedNumber, $"%{term}%")) ||
                 l.Surveys.Any(s => EF.Functions.Like(s.SurveyPlanNumber, $"%{term}%")));
@@ -137,7 +146,6 @@ public class LandService : ILandService
 
         land.Address = ToAddress(request.Address);
         land.AreaSquareMeters = ToAreaSquareMeters(request.Area);
-        land.GpsCoordinates = request.GpsCoordinates;
         land.Notes = request.Notes;
         land.OwnerId = request.OwnerId;
         land.OwnerName = request.OwnerId == null ? request.OwnerName?.Trim() : null;
@@ -157,19 +165,6 @@ public class LandService : ILandService
         land.IsActive = false;
         land.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
-    }
-
-    public async Task<Land> SetLocationAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandLocationRequest request)
-    {
-        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
-        var land = await FindLandAsync(workspaceId, landId);
-
-        land.Latitude = request.Latitude;
-        land.Longitude = request.Longitude;
-        land.UpdatedAt = DateTime.UtcNow;
-
-        await _context.SaveChangesAsync();
-        return land;
     }
 
     public async Task<string> GenerateLocationShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId)
@@ -212,16 +207,88 @@ public class LandService : ILandService
             ?? throw new NotFoundException("Link not found");
     }
 
-    public async Task<Land> SetLocationViaShareTokenAsync(string token, LandLocationRequest request)
+    public async Task<List<LandMapPoint>> GetMapPointsForShareTokenAsync(string token)
+    {
+        var land = await GetByLocationShareTokenAsync(token);
+        return await _context.LandMapPoints
+            .Where(p => p.LandId == land.Id)
+            .OrderBy(p => p.CreatedAt)
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// Anonymous add-only counterpart to AddMapPointAsync - the token is the only
+    /// credential, so this never edits or deletes an existing point, only appends a new
+    /// one (mirrors DocumentRequestLinkController's anonymous-upload trust model).
+    /// </summary>
+    public async Task<LandMapPoint> AddMapPointViaShareTokenAsync(string token, LandMapPointRequest request)
     {
         var land = await GetByLocationShareTokenAsync(token);
 
-        land.Latitude = request.Latitude;
-        land.Longitude = request.Longitude;
+        var point = new LandMapPoint
+        {
+            Id = Guid.NewGuid(),
+            LandId = land.Id,
+            Name = request.Name.Trim(),
+            Latitude = request.Latitude,
+            Longitude = request.Longitude,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        await _context.LandMapPoints.AddAsync(point);
         land.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
-        return land;
+        return point;
+    }
+
+    /// <summary>Read-only counterpart to the add-point link - same token-as-credential trust model, but this one can never write anything, only resolve which land a MapViewShareToken belongs to.</summary>
+    public async Task<Land> GetByMapViewShareTokenAsync(string token)
+    {
+        return await _context.Lands.FirstOrDefaultAsync(l => l.MapViewShareToken == token && l.IsActive)
+            ?? throw new NotFoundException("Link not found");
+    }
+
+    public async Task<List<LandMapPoint>> GetMapPointsForMapViewShareTokenAsync(string token)
+    {
+        var land = await GetByMapViewShareTokenAsync(token);
+        return await _context.LandMapPoints
+            .Where(p => p.LandId == land.Id)
+            .OrderBy(p => p.CreatedAt)
+            .ToListAsync();
+    }
+
+    public async Task<string> GenerateMapViewShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
+        var land = await FindLandAsync(workspaceId, landId);
+
+        if (land.MapViewShareToken != null)
+            return land.MapViewShareToken;
+
+        land.MapViewShareToken = Guid.NewGuid().ToString("N");
+        await _context.SaveChangesAsync();
+        return land.MapViewShareToken;
+    }
+
+    public async Task<string> RegenerateMapViewShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
+        var land = await FindLandAsync(workspaceId, landId);
+
+        land.MapViewShareToken = Guid.NewGuid().ToString("N");
+        await _context.SaveChangesAsync();
+        return land.MapViewShareToken;
+    }
+
+    public async Task RevokeMapViewShareLinkAsync(Guid workspaceId, Guid callerUserId, Guid landId)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
+        var land = await FindLandAsync(workspaceId, landId);
+
+        land.MapViewShareToken = null;
+        await _context.SaveChangesAsync();
     }
 
     public async Task<LandSurvey> AddSurveyAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandSurveyRequest request)
@@ -278,6 +345,7 @@ public class LandService : ILandService
         await FindLandAsync(workspaceId, landId);
         var survey = await FindSurveyAsync(landId, surveyId);
 
+        await _documentService.DeleteAllForOwnerAsync("LandSurvey", surveyId);
         _context.LandSurveys.Remove(survey);
         await _context.SaveChangesAsync();
     }
@@ -357,6 +425,7 @@ public class LandService : ILandService
         await FindLandAsync(workspaceId, landId);
         var deed = await FindDeedAsync(landId, deedId);
 
+        await _documentService.DeleteAllForOwnerAsync("LandDeed", deedId);
         _context.LandDeeds.Remove(deed);
         await _context.SaveChangesAsync();
     }
@@ -415,82 +484,70 @@ public class LandService : ILandService
         await _context.SaveChangesAsync();
     }
 
-    private static readonly HashSet<string> AllowedPhotoExtensions = new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png" };
-
-    public async Task<LandPhoto> UploadPhotoAsync(Guid workspaceId, Guid callerUserId, Guid landId, IFormFile file)
+    public async Task<LandMapPoint> AddMapPointAsync(Guid workspaceId, Guid callerUserId, Guid landId, LandMapPointRequest request)
     {
         await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
         await FindLandAsync(workspaceId, landId);
 
-        var extension = Path.GetExtension(file.FileName);
-        if (!AllowedPhotoExtensions.Contains(extension))
-            throw new ValidationException($"File type '{extension}' is not allowed. Allowed types: {string.Join(", ", AllowedPhotoExtensions)}.");
-        if (file.Length > DocumentService.MaxFileSizeBytes)
-            throw new ValidationException($"File exceeds the {DocumentService.MaxFileSizeBytes / (1024 * 1024)}MB size limit.");
-
-        var storedFileName = $"{Guid.NewGuid():N}_{file.FileName}";
-        var relativePath = $"{workspaceId}/land/{landId}/{storedFileName}";
-
-        await using (var stream = file.OpenReadStream())
-        {
-            await _fileStorage.SaveAsync(stream, relativePath, CancellationToken.None);
-        }
-
-        var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
-
-        var photo = new LandPhoto
+        var point = new LandMapPoint
         {
             Id = Guid.NewGuid(),
             LandId = landId,
-            FileName = file.FileName,
-            StoredPath = relativePath,
-            ContentType = file.ContentType,
-            FileSizeBytes = file.Length,
-            UploadedBy = callerPersonId,
-            CreatedAt = DateTime.UtcNow
+            Name = request.Name.Trim(),
+            Latitude = request.Latitude,
+            Longitude = request.Longitude,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         };
 
-        await _context.LandPhotos.AddAsync(photo);
+        await _context.LandMapPoints.AddAsync(point);
         await _context.SaveChangesAsync();
-
-        _logger.LogInformation("Photo {PhotoId} uploaded to land {LandId} by {UserId}", photo.Id, landId, callerUserId);
-        return await _context.LandPhotos.Include(p => p.UploadedByUser).FirstAsync(p => p.Id == photo.Id);
+        return point;
     }
 
-    public async Task<List<LandPhoto>> GetPhotosAsync(Guid workspaceId, Guid callerUserId, Guid landId)
+    public async Task<List<LandMapPoint>> GetMapPointsAsync(Guid workspaceId, Guid callerUserId, Guid landId)
     {
         await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "view");
         await FindLandAsync(workspaceId, landId);
 
-        return await _context.LandPhotos.Include(p => p.UploadedByUser)
+        return await _context.LandMapPoints
             .Where(p => p.LandId == landId)
-            .OrderByDescending(p => p.CreatedAt)
+            .OrderBy(p => p.CreatedAt)
             .ToListAsync();
     }
 
-    public async Task<(LandPhoto photo, Stream content)> GetPhotoFileAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid photoId)
-    {
-        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "view");
-        var photo = await FindPhotoAsync(landId, photoId);
-        var content = await _fileStorage.OpenAsync(photo.StoredPath, CancellationToken.None);
-        return (photo, content);
-    }
-
-    public async Task DeletePhotoAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid photoId)
+    public async Task<LandMapPoint> UpdateMapPointAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid pointId, LandMapPointRequest request)
     {
         await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
-        var photo = await FindPhotoAsync(landId, photoId);
+        await FindLandAsync(workspaceId, landId);
+        var point = await FindMapPointAsync(landId, pointId);
 
-        await _fileStorage.DeleteAsync(photo.StoredPath, CancellationToken.None);
-        _context.LandPhotos.Remove(photo);
+        point.Name = request.Name.Trim();
+        point.Latitude = request.Latitude;
+        point.Longitude = request.Longitude;
+        point.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+        return point;
+    }
+
+    /// <summary>Hard delete - corrects a mis-placed point, not meaningful history to preserve once wrong.</summary>
+    public async Task DeleteMapPointAsync(Guid workspaceId, Guid callerUserId, Guid landId, Guid pointId)
+    {
+        await _access.EnsureLandAccessAsync(callerUserId, workspaceId, landId, "edit");
+        await FindLandAsync(workspaceId, landId);
+        var point = await FindMapPointAsync(landId, pointId);
+
+        _context.LandMapPoints.Remove(point);
         await _context.SaveChangesAsync();
     }
 
-    private async Task<LandPhoto> FindPhotoAsync(Guid landId, Guid photoId)
+    private async Task<LandMapPoint> FindMapPointAsync(Guid landId, Guid pointId)
     {
-        return await _context.LandPhotos.FirstOrDefaultAsync(p => p.Id == photoId && p.LandId == landId)
-            ?? throw new NotFoundException("Photo not found");
+        return await _context.LandMapPoints.FirstOrDefaultAsync(p => p.Id == pointId && p.LandId == landId)
+            ?? throw new NotFoundException("Map point not found");
     }
+
 
     private async Task<Land> FindLandAsync(Guid workspaceId, Guid landId)
     {
@@ -566,12 +623,15 @@ public class LandService : ILandService
         return AreaConversion.FromAcresRoodsPerches(dto.Acres ?? 0, dto.Roods ?? 0, dto.Perches ?? 0);
     }
 
-    private static Address ToAddress(AddressDto? dto) => new()
+    private static LandAddress ToAddress(LandAddressDto? dto) => new()
     {
-        Street = dto?.Street,
-        City = dto?.City,
+        Village = dto?.Village,
+        GramaNiladhariDivision = dto?.GramaNiladhariDivision,
+        DivisionalSecretariat = dto?.DivisionalSecretariat,
+        PradeshiyaSabha = dto?.PradeshiyaSabha,
+        Korale = dto?.Korale,
+        Hatpattu = dto?.Hatpattu,
         District = dto?.District,
-        PostalCode = dto?.PostalCode,
-        Country = dto?.Country
+        Province = dto?.Province
     };
 }

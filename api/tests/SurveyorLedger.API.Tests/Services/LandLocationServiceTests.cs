@@ -19,6 +19,7 @@ public class LandLocationServiceTests : WorkspaceIntegrationTestBase
     protected override void ConfigureServices(IServiceCollection services)
     {
         services.AddScoped<ILandService, LandService>();
+        services.AddScoped<IDocumentService, DocumentService>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddSingleton<IConfiguration>(
             new ConfigurationBuilder()
@@ -34,26 +35,17 @@ public class LandLocationServiceTests : WorkspaceIntegrationTestBase
         _landService = GetService<ILandService>();
         var land = await _landService.CreateAsync(WorkspaceId, AdminId, new LandRequest
         {
-            Address = new AddressDto { Street = "123 Main St", City = "Colombo" }
+            Address = new LandAddressDto { Village = "123 Main St", District = "Colombo" }
         });
         _landId = land.Id;
     }
 
     [Fact]
-    public async Task SetLocationAsync_PersistsLatLng()
-    {
-        await SeedLandAsync();
-        var updated = await _landService.SetLocationAsync(WorkspaceId, AdminId, _landId, new LandLocationRequest { Latitude = 6.9271m, Longitude = 79.8612m });
-        Assert.Equal(6.9271m, updated.Latitude);
-        Assert.Equal(79.8612m, updated.Longitude);
-    }
-
-    [Fact]
-    public async Task Client_CannotSetLocation()
+    public async Task Client_CannotAddMapPoint()
     {
         await SeedLandAsync();
         await Assert.ThrowsAsync<ForbiddenException>(
-            () => _landService.SetLocationAsync(WorkspaceId, ClientId, _landId, new LandLocationRequest { Latitude = 1, Longitude = 1 }));
+            () => _landService.AddMapPointAsync(WorkspaceId, ClientId, _landId, new LandMapPointRequest { Name = "Gate", Latitude = 1, Longitude = 1 }));
     }
 
     [Fact]
@@ -89,17 +81,46 @@ public class LandLocationServiceTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
-    public async Task SetLocationViaShareTokenAsync_UpdatesSameLandRow()
+    public async Task AddMapPointViaShareTokenAsync_PersistsPoint()
     {
         await SeedLandAsync();
         var token = await _landService.GenerateLocationShareLinkAsync(WorkspaceId, AdminId, _landId);
 
-        var updated = await _landService.SetLocationViaShareTokenAsync(token, new LandLocationRequest { Latitude = 6.0m, Longitude = 80.0m });
+        var point = await _landService.AddMapPointViaShareTokenAsync(token, new LandMapPointRequest { Name = "Front gate", Latitude = 6.0m, Longitude = 80.0m });
 
-        Assert.Equal(_landId, updated.Id);
-        var land = await _landService.GetByIdAsync(WorkspaceId, AdminId, _landId);
-        Assert.Equal(6.0m, land.Latitude);
-        Assert.Equal(80.0m, land.Longitude);
+        Assert.Equal("Front gate", point.Name);
+        var points = await _landService.GetMapPointsAsync(WorkspaceId, AdminId, _landId);
+        Assert.Single(points);
+    }
+
+    [Fact]
+    public async Task GenerateMapViewShareLinkAsync_IsIdempotent()
+    {
+        await SeedLandAsync();
+        var first = await _landService.GenerateMapViewShareLinkAsync(WorkspaceId, AdminId, _landId);
+        var second = await _landService.GenerateMapViewShareLinkAsync(WorkspaceId, AdminId, _landId);
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public async Task RevokeMapViewShareLinkAsync_TokenNoLongerResolves()
+    {
+        await SeedLandAsync();
+        var token = await _landService.GenerateMapViewShareLinkAsync(WorkspaceId, AdminId, _landId);
+        await _landService.RevokeMapViewShareLinkAsync(WorkspaceId, AdminId, _landId);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => _landService.GetByMapViewShareTokenAsync(token));
+    }
+
+    [Fact]
+    public async Task MapViewShareLink_IsReadOnly_NeverAddsAPoint()
+    {
+        // The view link's own preview flow has no write endpoint at all - GetMapPointsForMapViewShareTokenAsync
+        // is the only thing it exposes, confirming zero points ever appear from a view-only token.
+        await SeedLandAsync();
+        var token = await _landService.GenerateMapViewShareLinkAsync(WorkspaceId, AdminId, _landId);
+        var points = await _landService.GetMapPointsForMapViewShareTokenAsync(token);
+        Assert.Empty(points);
     }
 
     [Fact]

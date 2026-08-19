@@ -1,19 +1,28 @@
-import { Component, EventEmitter, Input, OnInit, Output, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
-import { Address, Land, LandAreaValue, LandBoundary, LandDeed, LandPhoto, LandService, LandSurvey, telHref, whatsAppHref } from '../../../core/land.service';
+import { Land, LandAddress, LandAreaValue, LandBoundary, LandDeed, LandMapPoint, LandPhoto, LandService, LandSurvey, OwnedDocument, telHref, whatsAppHref } from '../../../core/land.service';
+import { LandDocumentRequest, LandDocumentRequestService } from '../../../core/land-document-request.service';
 import { OwnerPickerComponent, OwnerValue } from '../owner-picker/owner-picker.component';
 import { LandLocationPickerComponent } from '../../../shared/land-location-picker/land-location-picker.component';
 import { LandLocationQrComponent } from '../../../shared/land-location-qr/land-location-qr.component';
 import { PhotoGridComponent } from '../../../shared/photo-grid/photo-grid.component';
 import { LandAreaInputComponent } from '../../../shared/land-area-input/land-area-input.component';
+import { DocumentListComponent, DocRow } from '../../../shared/document-list/document-list.component';
+import { DocumentUploadButtonComponent } from '../../../shared/document-upload-button/document-upload-button.component';
+import { DocumentRequestFormComponent, DocumentRequestFormValue } from '../../../shared/document-request-form/document-request-form.component';
+import { DocumentViewerModalComponent } from '../../../shared/document-viewer-modal/document-viewer-modal.component';
+import { IconComponent } from '../../../shared/icon/icon.component';
 import { RouterLink } from '@angular/router';
 
 @Component({
   selector: 'app-land-detail-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule, OwnerPickerComponent, LandLocationPickerComponent, LandLocationQrComponent, PhotoGridComponent, LandAreaInputComponent, RouterLink],
+  imports: [
+    CommonModule, FormsModule, OwnerPickerComponent, LandLocationPickerComponent, LandLocationQrComponent, PhotoGridComponent,
+    LandAreaInputComponent, DocumentListComponent, DocumentUploadButtonComponent, DocumentRequestFormComponent, DocumentViewerModalComponent, IconComponent, RouterLink
+  ],
   template: `
     @if (loading()) {
       <p class="text-sm text-neutral-500">Loading…</p>
@@ -69,10 +78,14 @@ import { RouterLink } from '@angular/router';
             }
           </div>
           <div class="grid grid-cols-2 gap-sm">
-            <input class="input-field" placeholder="Street" [(ngModel)]="street" />
-            <input class="input-field" placeholder="City" [(ngModel)]="city" />
+            <input class="input-field" placeholder="Village" [(ngModel)]="village" />
+            <input class="input-field" placeholder="Grama Niladhari Division" [(ngModel)]="gramaNiladhariDivision" />
+            <input class="input-field" placeholder="Divisional Secretariat" [(ngModel)]="divisionalSecretariat" />
+            <input class="input-field" placeholder="Pradeshiya Sabha" [(ngModel)]="pradeshiyaSabha" />
+            <input class="input-field" placeholder="Korale" [(ngModel)]="korale" />
+            <input class="input-field" placeholder="Hatpattu" [(ngModel)]="hatpattu" />
             <input class="input-field" placeholder="District" [(ngModel)]="district" />
-            <input class="input-field" placeholder="GPS coordinates" [(ngModel)]="gpsCoordinates" />
+            <input class="input-field" placeholder="Province" [(ngModel)]="province" />
           </div>
           <div class="mt-sm">
             <app-land-area-input [value]="area" (valueChange)="onAreaChange($event)" />
@@ -97,66 +110,118 @@ import { RouterLink } from '@angular/router';
         <div>
           <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-sm">Location</h3>
           @if (isCreateMode) {
+            @if (pendingLat !== null) {
+              <p class="text-sm text-neutral-900 mb-sm">{{ pendingLat }}, {{ pendingLng }}</p>
+            }
             <app-land-location-picker
               [initialLat]="pendingLat"
               [initialLng]="pendingLng"
               heightClass="h-56"
-              (locationChosen)="onPendingLocationChosen($event)"
+              (pointAdded)="onPendingLocationChosen($event)"
             />
             <p class="text-xs text-neutral-500 mt-xs">
-              {{ pendingLat !== null ? 'Location set - it will be saved with the land record.' : 'Optional - pick a spot on the map, or set it later.' }}
+              {{ pendingLat !== null ? 'Location set - it will be saved with the land record. Add named points once the record is created.' : 'Optional - click the map to place a pin, or set it later.' }}
             </p>
-          } @else if (land()?.latitude !== null && land()?.latitude !== undefined) {
-            <p class="text-sm text-neutral-900 mb-sm">{{ land()!.latitude }}, {{ land()!.longitude }}</p>
-            <app-land-location-picker
-              [initialLat]="land()!.latitude"
-              [initialLng]="land()!.longitude"
-              [readonly]="true"
-              heightClass="h-48"
-            />
-            <div class="mt-sm">
-              <app-land-location-qr [lat]="land()!.latitude!" [lng]="land()!.longitude!" />
-            </div>
           } @else {
-            <p class="text-sm text-neutral-500">Not set</p>
-          }
-          @if (!isCreateMode) {
-            <div class="flex flex-wrap gap-sm mt-sm">
-              <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="pickerOpen.set(true)">
-                {{ land()?.latitude != null ? 'Update location' : 'Set location' }}
-              </button>
-              @if (land()?.latitude !== null && land()?.latitude !== undefined) {
-                <a
-                  class="text-xs text-primary-600 hover:text-primary-700"
-                  [href]="'https://www.google.com/maps?q=' + land()!.latitude + ',' + land()!.longitude"
-                  target="_blank"
-                  rel="noopener"
-                >
-                  Open in Google Maps
-                </a>
-                <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyMapsLink()">
-                  {{ mapsLinkCopied() ? 'Copied!' : 'Copy Google Maps link' }}
-                </button>
-              }
-              @if (land()?.hasActiveLocationShareLink) {
-                <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyShareLink()">
-                  {{ shareLinkCopied() ? 'Copied!' : 'Copy share link' }}
-                </button>
-                <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="regenerateShareLink()">
-                  Regenerate link
-                </button>
-                <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="revokeShareLink()">
-                  Revoke link
-                </button>
-              } @else {
-                <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyShareLink()">
-                  Copy share link (for client)
-                </button>
-              }
+            <app-land-location-picker
+              heightClass="h-64"
+              [markers]="mapPointMarkers()"
+              [pendingPoint]="pendingNewPoint()"
+              (pointAdded)="onMapClicked($event)"
+              (pointMoved)="onMapPointMoved($event)"
+            />
+            @if (pendingNewPoint()) {
+              <div class="flex gap-sm mt-sm">
+                <input class="input-field flex-1" placeholder="Name this point (e.g. North gate)" [(ngModel)]="pendingNewPointName" (keydown.enter)="saveNewPoint()" />
+                <button type="button" class="btn-primary" [disabled]="!pendingNewPointName.trim()" (click)="saveNewPoint()">Add</button>
+                <button type="button" class="btn-secondary" (click)="pendingNewPoint.set(null)">Cancel</button>
+              </div>
+            }
+            @if (mapPoints().length > 0) {
+              <div class="space-y-xs mt-sm">
+                @for (p of mapPoints(); track p.id) {
+                  <div class="px-md py-sm rounded bg-neutral-50 text-sm">
+                    <div class="flex items-center justify-between gap-sm">
+                      <div class="min-w-0 cursor-pointer" (click)="toggleExpandedMapPoint(p.id)">
+                        @if (renamingMapPointId() === p.id) {
+                          <input class="input-field text-xs px-xs py-xs" [(ngModel)]="renameMapPointValue" (keydown.enter)="confirmRenameMapPoint(p.id)" (click)="$event.stopPropagation()" />
+                        } @else {
+                          <span class="text-neutral-900">{{ p.name }}</span>
+                          <span class="text-neutral-500 block text-xs">{{ p.latitude | number: '1.6-6' }}, {{ p.longitude | number: '1.6-6' }}</span>
+                        }
+                      </div>
+                      @if (confirmingDeleteMapPointId() === p.id) {
+                        <span class="text-xs text-neutral-600 whitespace-nowrap">
+                          Delete?
+                          <button type="button" class="text-primary-500 font-medium ml-xs" (click)="deleteMapPoint(p.id)">Yes</button>
+                          <button type="button" class="text-neutral-500 ml-xs" (click)="confirmingDeleteMapPointId.set(null)">No</button>
+                        </span>
+                      } @else if (renamingMapPointId() === p.id) {
+                        <span class="whitespace-nowrap">
+                          <button type="button" class="text-xs text-primary-600 font-medium" (click)="confirmRenameMapPoint(p.id)">Save</button>
+                          <button type="button" class="text-xs text-neutral-500 ml-sm" (click)="renamingMapPointId.set(null)">Cancel</button>
+                        </span>
+                      } @else {
+                        <span class="flex items-center gap-xs flex-shrink-0">
+                          <a [href]="googleMapsUrl(p.latitude, p.longitude)" target="_blank" rel="noopener" class="icon-btn" title="Open in Google Maps" (click)="$event.stopPropagation()">
+                            <app-icon name="link" />
+                          </a>
+                          <button type="button" class="icon-btn" [title]="copiedMapPointId() === p.id ? 'Copied!' : 'Copy Google Maps link'" (click)="copyMapPointLink(p); $event.stopPropagation()">
+                            <app-icon name="copy" />
+                          </button>
+                          <button type="button" class="icon-btn" title="Show QR code" (click)="toggleExpandedMapPoint(p.id)">
+                            <app-icon name="qr" />
+                          </button>
+                          <button type="button" class="icon-btn" title="Rename" (click)="startRenameMapPoint(p); $event.stopPropagation()">
+                            <app-icon name="rename" />
+                          </button>
+                          <button type="button" class="icon-btn text-primary-500" title="Delete" (click)="confirmingDeleteMapPointId.set(p.id); $event.stopPropagation()">
+                            <app-icon name="delete" />
+                          </button>
+                        </span>
+                      }
+                    </div>
+                    @if (expandedMapPointId() === p.id) {
+                      <div class="mt-sm pt-sm border-t border-neutral-200">
+                        <app-land-location-qr [lat]="p.latitude" [lng]="p.longitude" [sizePx]="120" />
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            }
+            <div class="flex flex-wrap gap-md mt-sm">
+              <div class="flex items-center gap-sm">
+                <span class="text-xs text-neutral-500">Add-a-point link:</span>
+                @if (land()?.hasActiveLocationShareLink) {
+                  <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyShareLink()">
+                    {{ shareLinkCopied() ? 'Copied!' : 'Copy link' }}
+                  </button>
+                  <button type="button" class="icon-btn" title="Regenerate link" (click)="regenerateShareLink()"><app-icon name="reopen" /></button>
+                  <button type="button" class="icon-btn text-primary-500" title="Revoke link" (click)="revokeShareLink()"><app-icon name="delete" /></button>
+                } @else {
+                  <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyShareLink()">Create link</button>
+                }
+              </div>
+              <div class="flex items-center gap-sm">
+                <span class="text-xs text-neutral-500">View-map link:</span>
+                @if (land()?.hasActiveMapViewShareLink) {
+                  <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyMapViewShareLink()">
+                    {{ mapViewShareLinkCopied() ? 'Copied!' : 'Copy link' }}
+                  </button>
+                  <button type="button" class="icon-btn" title="Regenerate link" (click)="regenerateMapViewShareLink()"><app-icon name="reopen" /></button>
+                  <button type="button" class="icon-btn text-primary-500" title="Revoke link" (click)="revokeMapViewShareLink()"><app-icon name="delete" /></button>
+                } @else {
+                  <button type="button" class="text-xs text-primary-600 hover:text-primary-700" (click)="copyMapViewShareLink()">Create link</button>
+                }
+              </div>
             </div>
           }
           @if (locationError()) {
             <p class="text-xs text-primary-500 mt-xs">{{ locationError() }}</p>
+          }
+          @if (mapPointError()) {
+            <p class="text-xs text-primary-500 mt-xs">{{ mapPointError() }}</p>
           }
         </div>
 
@@ -165,7 +230,7 @@ import { RouterLink } from '@angular/router';
             @if (createError()) {
               <p class="text-sm text-primary-500 mb-sm">{{ createError() }}</p>
             }
-            <button type="button" class="btn-primary" [disabled]="!street.trim() || creating()" (click)="createLand()">
+            <button type="button" class="btn-primary" [disabled]="!village.trim() || creating()" (click)="createLand()">
               {{ creating() ? 'Creating…' : 'Create land' }}
             </button>
           </div>
@@ -177,28 +242,40 @@ import { RouterLink } from '@angular/router';
           @if (surveys().length > 0) {
             <div class="space-y-xs mb-sm">
               @for (s of surveys(); track s.id) {
-                <div class="px-md py-sm rounded bg-neutral-50 text-sm flex items-center justify-between">
-                  <div>
-                    <span class="text-neutral-900">{{ s.surveyPlanNumber }}</span>
-                    <span class="text-neutral-500"> · {{ s.surveyDate | date: 'mediumDate' }}</span>
-                    @if (s.surveyedByName) {
-                      <span class="text-neutral-500"> · {{ s.surveyedByName }}</span>
+                <div class="px-md py-sm rounded bg-neutral-50 text-sm">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <span class="text-neutral-900">{{ s.surveyPlanNumber }}</span>
+                      <span class="text-neutral-500"> · {{ s.surveyDate | date: 'mediumDate' }}</span>
+                      @if (s.surveyedByName) {
+                        <span class="text-neutral-500"> · {{ s.surveyedByName }}</span>
+                      }
+                    </div>
+                    @if (confirmingDeleteSurveyId() === s.id) {
+                      <span class="text-xs text-neutral-600 whitespace-nowrap">
+                        Delete?
+                        <button type="button" class="text-primary-500 font-medium ml-xs" (click)="deleteSurvey(s.id)">Yes</button>
+                        <button type="button" class="text-neutral-500 ml-xs" (click)="confirmingDeleteSurveyId.set(null)">No</button>
+                      </span>
+                    } @else {
+                      <span class="whitespace-nowrap">
+                        <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="startEditSurvey(s)">Edit</button>
+                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600 ml-sm" (click)="confirmingDeleteSurveyId.set(s.id)">
+                          Delete
+                        </button>
+                      </span>
                     }
                   </div>
-                  @if (confirmingDeleteSurveyId() === s.id) {
-                    <span class="text-xs text-neutral-600 whitespace-nowrap">
-                      Delete?
-                      <button type="button" class="text-primary-500 font-medium ml-xs" (click)="deleteSurvey(s.id)">Yes</button>
-                      <button type="button" class="text-neutral-500 ml-xs" (click)="confirmingDeleteSurveyId.set(null)">No</button>
-                    </span>
-                  } @else {
-                    <span class="whitespace-nowrap">
-                      <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="startEditSurvey(s)">Edit</button>
-                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600 ml-sm" (click)="confirmingDeleteSurveyId.set(s.id)">
-                        Delete
-                      </button>
-                    </span>
-                  }
+                  <div class="mt-sm">
+                    <app-document-list
+                      [rows]="toDocRows(surveyDocuments()[s.id] ?? [], 'landSurvey', s.id)"
+                      (view)="onOwnedDocView($event)"
+                      (download)="onOwnedDocDownload($event)"
+                      (remove)="onOwnedDocRemove($event)"
+                      (rename)="onOwnedDocRename($event)"
+                    />
+                    <app-document-upload-button label="Add file(s)" (filesSelected)="onSurveyDocUpload(s.id, $event)" />
+                  </div>
                 </div>
               }
             </div>
@@ -225,28 +302,40 @@ import { RouterLink } from '@angular/router';
           @if (deeds().length > 0) {
             <div class="space-y-xs mb-sm">
               @for (d of deeds(); track d.id) {
-                <div class="px-md py-sm rounded bg-neutral-50 text-sm flex items-center justify-between">
-                  <div>
-                    <span class="text-neutral-900">{{ d.deedNumber }}</span>
-                    <span class="text-neutral-500"> · {{ d.issuedDate | date: 'mediumDate' }}</span>
-                    @if (d.isCurrent) {
-                      <span class="text-xs px-sm py-xs rounded bg-green-100 text-green-700 ml-sm">Current</span>
+                <div class="px-md py-sm rounded bg-neutral-50 text-sm">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <span class="text-neutral-900">{{ d.deedNumber }}</span>
+                      <span class="text-neutral-500"> · {{ d.issuedDate | date: 'mediumDate' }}</span>
+                      @if (d.isCurrent) {
+                        <span class="text-xs px-sm py-xs rounded bg-green-100 text-green-700 ml-sm">Current</span>
+                      }
+                    </div>
+                    @if (confirmingDeleteDeedId() === d.id) {
+                      <span class="text-xs text-neutral-600 whitespace-nowrap">
+                        Delete?
+                        <button type="button" class="text-primary-500 font-medium ml-xs" (click)="deleteDeed(d.id)">Yes</button>
+                        <button type="button" class="text-neutral-500 ml-xs" (click)="confirmingDeleteDeedId.set(null)">No</button>
+                      </span>
+                    } @else {
+                      <span class="whitespace-nowrap">
+                        <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="startEditDeed(d)">Edit</button>
+                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600 ml-sm" (click)="confirmingDeleteDeedId.set(d.id)">
+                          Delete
+                        </button>
+                      </span>
                     }
                   </div>
-                  @if (confirmingDeleteDeedId() === d.id) {
-                    <span class="text-xs text-neutral-600 whitespace-nowrap">
-                      Delete?
-                      <button type="button" class="text-primary-500 font-medium ml-xs" (click)="deleteDeed(d.id)">Yes</button>
-                      <button type="button" class="text-neutral-500 ml-xs" (click)="confirmingDeleteDeedId.set(null)">No</button>
-                    </span>
-                  } @else {
-                    <span class="whitespace-nowrap">
-                      <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="startEditDeed(d)">Edit</button>
-                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600 ml-sm" (click)="confirmingDeleteDeedId.set(d.id)">
-                        Delete
-                      </button>
-                    </span>
-                  }
+                  <div class="mt-sm">
+                    <app-document-list
+                      [rows]="toDocRows(deedDocuments()[d.id] ?? [], 'landDeed', d.id)"
+                      (view)="onOwnedDocView($event)"
+                      (download)="onOwnedDocDownload($event)"
+                      (remove)="onOwnedDocRemove($event)"
+                      (rename)="onOwnedDocRename($event)"
+                    />
+                    <app-document-upload-button label="Add file(s)" (filesSelected)="onDeedDocUpload(d.id, $event)" />
+                  </div>
                 </div>
               }
             </div>
@@ -324,27 +413,48 @@ import { RouterLink } from '@angular/router';
             [photoUrls]="photoUrls()"
             (upload)="onPhotoUpload($event)"
             (remove)="onPhotoDelete($event)"
+            (view)="onPhotoView($event)"
+            (download)="onPhotoDownload($event)"
+            (rename)="onPhotoRename($event)"
           />
           @if (photoError()) {
             <p class="text-xs text-primary-500 mt-xs">{{ photoError() }}</p>
           }
         </div>
+
+        <div>
+          <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-sm">Documents</h3>
+          <app-document-list
+            [rows]="documentRows()"
+            (view)="onOwnedDocView($event)"
+            (download)="onOwnedDocDownload($event)"
+            (remove)="onOwnedDocRemove($event)"
+            (rename)="onOwnedDocRename($event)"
+            (requestFulfill)="onFulfillDocRequest($event)"
+            (requestReopen)="reopenDocRequestRow($event)"
+            (requestCancel)="cancelDocRequestRow($event)"
+            (requestCopyShareLink)="copyDocRequestShareLinkRow($event)"
+          />
+          @if (addingDocRequest()) {
+            <app-document-request-form (submitted)="submitDocRequest($event)" (cancelled)="addingDocRequest.set(false)" />
+          } @else {
+            <div class="flex gap-md mt-sm">
+              <app-document-upload-button (filesSelected)="onDocumentFilesSelected($event)" />
+              <button type="button" class="text-sm text-primary-600" (click)="addingDocRequest.set(true)">+ Request document</button>
+            </div>
+          }
+          @if (documentError()) {
+            <p class="text-xs text-primary-500 mt-xs">{{ documentError() }}</p>
+          }
+        </div>
         }
       </div>
     }
-    @if (pickerOpen()) {
-      <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-lg" (click)="pickerOpen.set(false)">
-        <div class="bg-white rounded-md p-lg max-w-lg w-full" (click)="$event.stopPropagation()">
-          <h3 class="text-sm font-semibold text-neutral-900 mb-md">Set land location</h3>
-          <app-land-location-picker
-            [initialLat]="land()?.latitude ?? null"
-            [initialLng]="land()?.longitude ?? null"
-            (locationChosen)="onLocationChosen($event)"
-          />
-        </div>
-      </div>
+    @if (viewingDocument()) {
+      <app-document-viewer-modal [document]="viewingDocument()!" [blobUrl]="viewingBlobUrl()!" (closed)="closeViewer()" />
     }
-  `
+  `,
+  styles: [`.icon-btn { display: flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; border-radius: 0.25rem; color: var(--color-neutral-500, #737373); } .icon-btn:hover { background: var(--color-neutral-100, #f5f5f5); color: var(--color-primary-600, #0284c7); }`]
 })
 export class LandDetailPanelComponent implements OnInit {
   @Input() workspaceId = '';
@@ -371,14 +481,66 @@ export class LandDetailPanelComponent implements OnInit {
   detailsError = signal('');
   surveys = signal<LandSurvey[]>([]);
   deeds = signal<LandDeed[]>([]);
+  surveyDocuments = signal<Record<string, OwnedDocument[]>>({});
+  deedDocuments = signal<Record<string, OwnedDocument[]>>({});
   boundaries = signal<LandBoundary[]>([]);
-  pickerOpen = signal(false);
   locationError = signal('');
-  mapsLinkCopied = signal(false);
   shareLinkCopied = signal(false);
+  mapViewShareLinkCopied = signal(false);
   photos = signal<LandPhoto[]>([]);
   photoUrls = signal<Record<string, string>>({});
   photoError = signal('');
+
+  mapPoints = signal<LandMapPoint[]>([]);
+  mapPointError = signal('');
+  confirmingDeleteMapPointId = signal<string | null>(null);
+  renamingMapPointId = signal<string | null>(null);
+  renameMapPointValue = '';
+  copiedMapPointId = signal<string | null>(null);
+  expandedMapPointId = signal<string | null>(null);
+  pendingNewPoint = signal<{ lat: number; lng: number } | null>(null);
+  pendingNewPointName = '';
+
+  mapPointMarkers = computed(() => this.mapPoints().map(p => ({ id: p.id, name: p.name, lat: p.latitude, lng: p.longitude })));
+  googleMapsUrl = (lat: number, lng: number) => this.landService.googleMapsUrl(lat, lng);
+
+  toggleExpandedMapPoint(pointId: string): void {
+    this.expandedMapPointId.update(current => (current === pointId ? null : pointId));
+  }
+
+  documents = signal<OwnedDocument[]>([]);
+  documentRequests = signal<LandDocumentRequest[]>([]);
+  documentError = signal('');
+  addingDocRequest = signal(false);
+  viewingDocument = signal<{ fileName: string; contentType: string } | null>(null);
+  viewingBlobUrl = signal<string | null>(null);
+
+  /** Merges plain uploaded documents with pending/fulfilled document requests into one DocRow list, same pattern job-detail.component.ts uses - a fulfilled request's document row absorbs the request (shown as one row, not two). */
+  documentRows = computed<DocRow[]>(() => {
+    const requests = this.documentRequests();
+    const rows: DocRow[] = [];
+
+    for (const doc of this.documents()) {
+      const request = requests.find(r => r.fulfilledDocumentId === doc.documentId) ?? null;
+      rows.push({
+        key: doc.documentId, ownerKind: 'land', ownerId: this.landId, documentId: doc.documentId,
+        fileName: doc.fileName, contentType: doc.contentType, uploadedByName: doc.uploadedByName, createdAt: doc.createdAt,
+        requestId: request?.requestId ?? null, requestTitle: request?.title ?? null, requestStatus: request?.status ?? null
+      });
+    }
+    for (const request of requests) {
+      if (!this.documents().some(d => d.documentId === request.fulfilledDocumentId)) {
+        // Pending/reopened, or fulfilled but the document itself isn't in `documents` (e.g. still loading) - show the request row on its own.
+        rows.push({
+          key: request.requestId, ownerKind: 'land', ownerId: this.landId, documentId: null,
+          fileName: null, contentType: null, uploadedByName: null, createdAt: null,
+          requestId: request.requestId, requestTitle: request.title, requestStatus: request.status,
+          requestDescription: request.description, hasActiveShareLink: request.hasActiveShareLink
+        });
+      }
+    }
+    return rows;
+  });
 
   telHref = telHref;
   whatsAppHref = whatsAppHref;
@@ -386,11 +548,15 @@ export class LandDetailPanelComponent implements OnInit {
   owner: OwnerValue = {};
   /** Display name for an existing account owner, so the picker can render it without a re-fetch. */
   ownerLabel: string | null = null;
-  street = '';
-  city = '';
+  village = '';
+  gramaNiladhariDivision = '';
+  divisionalSecretariat = '';
+  pradeshiyaSabha = '';
+  korale = '';
+  hatpattu = '';
   district = '';
+  province = '';
   area: LandAreaValue = { acres: null, roods: null, perches: null, squareMeters: null, hectares: null };
-  gpsCoordinates = '';
   notes = '';
 
   addingSurvey = signal(false);
@@ -413,7 +579,7 @@ export class LandDetailPanelComponent implements OnInit {
   newBoundaryLabel = '';
   newBoundaryDescription = '';
 
-  constructor(private landService: LandService) {}
+  constructor(private landService: LandService, private documentRequestService: LandDocumentRequestService) {}
 
   ngOnInit(): void {
     if (this.isCreateMode) {
@@ -434,15 +600,22 @@ export class LandDetailPanelComponent implements OnInit {
       surveys: this.landService.getSurveys(this.workspaceId, this.landId),
       deeds: this.landService.getDeeds(this.workspaceId, this.landId),
       boundaries: this.landService.getBoundaries(this.workspaceId, this.landId),
-      photos: this.landService.listPhotos(this.workspaceId, this.landId)
+      photos: this.landService.listPhotos(this.workspaceId, this.landId),
+      mapPoints: this.landService.getMapPoints(this.workspaceId, this.landId),
+      documents: this.landService.getDocuments(this.workspaceId, this.landId),
+      documentRequests: this.documentRequestService.list(this.workspaceId, this.landId)
     }).subscribe({
-      next: ({ land, surveys, deeds, boundaries, photos }) => {
+      next: ({ land, surveys, deeds, boundaries, photos, mapPoints, documents, documentRequests }) => {
         this.land.set(land);
-        this.street = land.address.street ?? '';
-        this.city = land.address.city ?? '';
+        this.village = land.address.village ?? '';
+        this.gramaNiladhariDivision = land.address.gramaNiladhariDivision ?? '';
+        this.divisionalSecretariat = land.address.divisionalSecretariat ?? '';
+        this.pradeshiyaSabha = land.address.pradeshiyaSabha ?? '';
+        this.korale = land.address.korale ?? '';
+        this.hatpattu = land.address.hatpattu ?? '';
         this.district = land.address.district ?? '';
+        this.province = land.address.province ?? '';
         this.area = land.area;
-        this.gpsCoordinates = land.gpsCoordinates ?? '';
         this.notes = land.notes ?? '';
         this.owner = land.ownerId
           ? { ownerId: land.ownerId, ownerEmail: land.ownerEmail ?? undefined }
@@ -453,9 +626,14 @@ export class LandDetailPanelComponent implements OnInit {
         this.storedDetails = this.snapshotDetails();
         this.surveys.set(surveys);
         this.deeds.set(deeds);
+        this.loadSurveyDocuments(surveys);
+        this.loadDeedDocuments(deeds);
         this.boundaries.set(boundaries);
         this.photos.set(photos);
         this.loadPhotoThumbnails(photos);
+        this.mapPoints.set(mapPoints);
+        this.documents.set(documents);
+        this.documentRequests.set(documentRequests);
         this.loading.set(false);
       },
       error: (err) => {
@@ -482,9 +660,10 @@ export class LandDetailPanelComponent implements OnInit {
 
   private snapshotDetails(): string {
     return JSON.stringify({
-      street: this.street, city: this.city, district: this.district,
-      area: this.area, gpsCoordinates: this.gpsCoordinates,
-      notes: this.notes, owner: this.owner
+      village: this.village, gramaNiladhariDivision: this.gramaNiladhariDivision,
+      divisionalSecretariat: this.divisionalSecretariat, pradeshiyaSabha: this.pradeshiyaSabha,
+      korale: this.korale, hatpattu: this.hatpattu, district: this.district, province: this.province,
+      area: this.area, notes: this.notes, owner: this.owner
     });
   }
 
@@ -504,11 +683,15 @@ export class LandDetailPanelComponent implements OnInit {
   discardDetails(): void {
     const current = this.land();
     if (!current) return;
-    this.street = current.address.street ?? '';
-    this.city = current.address.city ?? '';
+    this.village = current.address.village ?? '';
+    this.gramaNiladhariDivision = current.address.gramaNiladhariDivision ?? '';
+    this.divisionalSecretariat = current.address.divisionalSecretariat ?? '';
+    this.pradeshiyaSabha = current.address.pradeshiyaSabha ?? '';
+    this.korale = current.address.korale ?? '';
+    this.hatpattu = current.address.hatpattu ?? '';
     this.district = current.address.district ?? '';
+    this.province = current.address.province ?? '';
     this.area = current.area;
-    this.gpsCoordinates = current.gpsCoordinates ?? '';
     this.notes = current.notes ?? '';
     this.owner = current.ownerId
       ? { ownerId: current.ownerId, ownerEmail: current.ownerEmail ?? undefined }
@@ -525,12 +708,15 @@ export class LandDetailPanelComponent implements OnInit {
 
     this.detailsError.set('');
 
-    const address: Address = {
-      street: this.street.trim() || null,
-      city: this.city.trim() || null,
+    const address: Partial<LandAddress> = {
+      village: this.village.trim() || null,
+      gramaNiladhariDivision: this.gramaNiladhariDivision.trim() || null,
+      divisionalSecretariat: this.divisionalSecretariat.trim() || null,
+      pradeshiyaSabha: this.pradeshiyaSabha.trim() || null,
+      korale: this.korale.trim() || null,
+      hatpattu: this.hatpattu.trim() || null,
       district: this.district.trim() || null,
-      postalCode: current.address.postalCode,
-      country: current.address.country
+      province: this.province.trim() || null
     };
 
     this.savingDetails.set(true);
@@ -538,7 +724,6 @@ export class LandDetailPanelComponent implements OnInit {
       .update(this.workspaceId, this.landId, {
         address,
         area: this.area,
-        gpsCoordinates: this.gpsCoordinates.trim() || undefined,
         notes: this.notes.trim() || undefined,
         ...this.owner
       })
@@ -563,38 +748,41 @@ export class LandDetailPanelComponent implements OnInit {
   }
 
   createLand(): void {
-    if (!this.street.trim() || this.creating()) return;
+    if (!this.village.trim() || this.creating()) return;
     this.createError.set('');
     this.creating.set(true);
 
-    const address: Address = {
-      street: this.street.trim(),
-      city: this.city.trim() || null,
+    const address: Partial<LandAddress> = {
+      village: this.village.trim(),
+      gramaNiladhariDivision: this.gramaNiladhariDivision.trim() || null,
+      divisionalSecretariat: this.divisionalSecretariat.trim() || null,
+      pradeshiyaSabha: this.pradeshiyaSabha.trim() || null,
+      korale: this.korale.trim() || null,
+      hatpattu: this.hatpattu.trim() || null,
       district: this.district.trim() || null,
-      postalCode: null,
-      country: null
+      province: this.province.trim() || null
     };
 
     this.landService
       .create(this.workspaceId, {
         address,
         area: this.area,
-        gpsCoordinates: this.gpsCoordinates.trim() || undefined,
         notes: this.notes.trim() || undefined,
         ...this.owner
       })
       .subscribe({
         next: (land) => {
           if (this.pendingLat !== null && this.pendingLng !== null) {
-            // Location isn't part of LandRequest - one follow-up call on the new id,
-            // reusing the same endpoint the edit-mode picker already calls.
-            this.landService.setLocation(this.workspaceId, land.landId, { lat: this.pendingLat, lng: this.pendingLng }).subscribe({
-              next: (located) => {
+            // Map points aren't part of LandRequest - one follow-up call on the new id,
+            // reusing the same endpoint the edit-mode map uses. Named "Location" for now;
+            // the user can rename it from the point list once the record exists.
+            this.landService.addMapPoint(this.workspaceId, land.landId, { name: 'Location', latitude: this.pendingLat, longitude: this.pendingLng }).subscribe({
+              next: () => {
                 this.creating.set(false);
-                this.created.emit(located);
+                this.created.emit(land);
               },
               error: (err) => {
-                // Land exists even though the location save failed - still navigate,
+                // Land exists even though the point save failed - still navigate,
                 // rather than strand the user on a form for a record that now exists.
                 this.creating.set(false);
                 this.createError.set(err.error?.message ?? 'Land created, but the location could not be saved.');
@@ -613,23 +801,61 @@ export class LandDetailPanelComponent implements OnInit {
       });
   }
 
-  onLocationChosen(location: { lat: number; lng: number }): void {
-    this.locationError.set('');
-    this.landService.setLocation(this.workspaceId, this.landId, location).subscribe({
-      next: (land) => {
-        this.land.set(land);
-        this.pickerOpen.set(false);
+  onMapClicked(location: { lat: number; lng: number }): void {
+    this.mapPointError.set('');
+    this.pendingNewPoint.set(location);
+    this.pendingNewPointName = '';
+  }
+
+  saveNewPoint(): void {
+    const pending = this.pendingNewPoint();
+    if (!pending || !this.pendingNewPointName.trim()) return;
+    this.mapPointError.set('');
+
+    this.landService.addMapPoint(this.workspaceId, this.landId, { name: this.pendingNewPointName.trim(), latitude: pending.lat, longitude: pending.lng }).subscribe({
+      next: (point) => {
+        this.mapPoints.update(list => [...list, point]);
+        this.pendingNewPoint.set(null);
       },
-      error: (err) => this.locationError.set(err.error?.message ?? 'Could not save location.')
+      error: (err) => this.mapPointError.set(err.error?.message ?? 'Could not add point.')
     });
   }
 
-  copyMapsLink(): void {
-    const land = this.land();
-    if (!land?.latitude || !land?.longitude) return;
-    navigator.clipboard.writeText(`https://www.google.com/maps?q=${land.latitude},${land.longitude}`);
-    this.mapsLinkCopied.set(true);
-    setTimeout(() => this.mapsLinkCopied.set(false), 2000);
+  onMapPointMoved(event: { id: string; lat: number; lng: number }): void {
+    const point = this.mapPoints().find(p => p.id === event.id);
+    if (!point) return;
+    this.mapPointError.set('');
+
+    this.landService.updateMapPoint(this.workspaceId, this.landId, point.id, { name: point.name, latitude: event.lat, longitude: event.lng }).subscribe({
+      next: (updated) => this.mapPoints.update(list => list.map(p => (p.id === updated.id ? updated : p))),
+      error: (err) => this.mapPointError.set(err.error?.message ?? 'Could not move point.')
+    });
+  }
+
+  startRenameMapPoint(point: LandMapPoint): void {
+    this.renameMapPointValue = point.name;
+    this.renamingMapPointId.set(point.id);
+  }
+
+  confirmRenameMapPoint(pointId: string): void {
+    if (!this.renameMapPointValue.trim()) return;
+    const point = this.mapPoints().find(p => p.id === pointId);
+    if (!point) return;
+    this.mapPointError.set('');
+
+    this.landService.updateMapPoint(this.workspaceId, this.landId, pointId, { name: this.renameMapPointValue.trim(), latitude: point.latitude, longitude: point.longitude }).subscribe({
+      next: (updated) => {
+        this.mapPoints.update(list => list.map(p => (p.id === updated.id ? updated : p)));
+        this.renamingMapPointId.set(null);
+      },
+      error: (err) => this.mapPointError.set(err.error?.message ?? 'Could not rename point.')
+    });
+  }
+
+  copyMapPointLink(point: LandMapPoint): void {
+    navigator.clipboard.writeText(this.landService.googleMapsUrl(point.latitude, point.longitude));
+    this.copiedMapPointId.set(point.id);
+    setTimeout(() => this.copiedMapPointId.set(null), 2000);
   }
 
   copyShareLink(): void {
@@ -661,6 +887,39 @@ export class LandDetailPanelComponent implements OnInit {
     this.locationError.set('');
     this.landService.revokeLocationShareLink(this.workspaceId, this.landId).subscribe({
       next: () => this.land.update(l => (l ? { ...l, hasActiveLocationShareLink: false } : l)),
+      error: (err) => this.locationError.set(err.error?.message ?? 'Could not revoke share link.')
+    });
+  }
+
+  copyMapViewShareLink(): void {
+    this.locationError.set('');
+    this.landService.generateMapViewShareLink(this.workspaceId, this.landId).subscribe({
+      next: (token) => {
+        navigator.clipboard.writeText(`${location.origin}/land-map-view/${token}`);
+        this.mapViewShareLinkCopied.set(true);
+        setTimeout(() => this.mapViewShareLinkCopied.set(false), 2000);
+        this.land.update(l => (l ? { ...l, hasActiveMapViewShareLink: true } : l));
+      },
+      error: (err) => this.locationError.set(err.error?.message ?? 'Could not create share link.')
+    });
+  }
+
+  regenerateMapViewShareLink(): void {
+    this.locationError.set('');
+    this.landService.regenerateMapViewShareLink(this.workspaceId, this.landId).subscribe({
+      next: (token) => {
+        navigator.clipboard.writeText(`${location.origin}/land-map-view/${token}`);
+        this.mapViewShareLinkCopied.set(true);
+        setTimeout(() => this.mapViewShareLinkCopied.set(false), 2000);
+      },
+      error: (err) => this.locationError.set(err.error?.message ?? 'Could not regenerate share link.')
+    });
+  }
+
+  revokeMapViewShareLink(): void {
+    this.locationError.set('');
+    this.landService.revokeMapViewShareLink(this.workspaceId, this.landId).subscribe({
+      next: () => this.land.update(l => (l ? { ...l, hasActiveMapViewShareLink: false } : l)),
       error: (err) => this.locationError.set(err.error?.message ?? 'Could not revoke share link.')
     });
   }
@@ -742,7 +1001,10 @@ export class LandDetailPanelComponent implements OnInit {
       next: () => {
         // A current deed supersedes any other current deed server-side - refetch the
         // list rather than patch it locally, so every affected badge updates too.
-        this.landService.getDeeds(this.workspaceId, this.landId).subscribe(deeds => this.deeds.set(deeds));
+        this.landService.getDeeds(this.workspaceId, this.landId).subscribe(deeds => {
+          this.deeds.set(deeds);
+          this.loadDeedDocuments(deeds);
+        });
         this.cancelDeedForm();
       },
       error: (err) => this.error.set(err.error?.message ?? 'Could not save deed.')
@@ -832,5 +1094,242 @@ export class LandDetailPanelComponent implements OnInit {
       },
       error: (err) => this.photoError.set(err.error?.message ?? 'Could not delete photo.')
     });
+  }
+
+  onPhotoView(photo: LandPhoto): void {
+    this.landService.getPhotoBlob(this.workspaceId, this.landId, photo.photoId).subscribe(blob => this.openViewer(photo, blob));
+  }
+
+  onPhotoDownload(photo: LandPhoto): void {
+    const url = this.photoUrls()[photo.photoId];
+    if (!url) return;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = photo.fileName;
+    link.click();
+  }
+
+  onPhotoRename(event: { photoId: string; fileName: string }): void {
+    this.photoError.set('');
+    this.landService.renamePhoto(this.workspaceId, this.landId, event.photoId, event.fileName).subscribe({
+      next: (updated) => {
+        this.photos.update(list => list.map(p => (p.photoId === updated.photoId ? updated : p)));
+      },
+      error: (err) => this.photoError.set(err.error?.message ?? 'Could not rename photo.')
+    });
+  }
+
+  private loadSurveyDocuments(surveys: LandSurvey[]): void {
+    surveys.forEach(s => {
+      this.landService.getSurveyDocuments(this.workspaceId, this.landId, s.id).subscribe(docs => {
+        this.surveyDocuments.update(map => ({ ...map, [s.id]: docs }));
+      });
+    });
+  }
+
+  private loadDeedDocuments(deeds: LandDeed[]): void {
+    deeds.forEach(d => {
+      this.landService.getDeedDocuments(this.workspaceId, this.landId, d.id).subscribe(docs => {
+        this.deedDocuments.update(map => ({ ...map, [d.id]: docs }));
+      });
+    });
+  }
+
+  private triggerDownload(blob: Blob, fileName: string): void {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  onSurveyDocUpload(surveyId: string, files: File[]): void {
+    this.error.set('');
+    files.forEach(file =>
+      this.landService.uploadSurveyDocument(this.workspaceId, this.landId, surveyId, file).subscribe({
+        next: (doc) => this.surveyDocuments.update(map => ({ ...map, [surveyId]: [doc, ...(map[surveyId] ?? [])] })),
+        error: (err) => this.error.set(err.error?.message ?? 'Could not upload document.')
+      })
+    );
+  }
+
+  onDeedDocUpload(deedId: string, files: File[]): void {
+    this.error.set('');
+    files.forEach(file =>
+      this.landService.uploadDeedDocument(this.workspaceId, this.landId, deedId, file).subscribe({
+        next: (doc) => this.deedDocuments.update(map => ({ ...map, [deedId]: [doc, ...(map[deedId] ?? [])] })),
+        error: (err) => this.error.set(err.error?.message ?? 'Could not upload document.')
+      })
+    );
+  }
+
+  /** Maps an owner-kind's OwnedDocument[] into the generic DocRow shape app-document-list renders - the one adapter every owner kind (general/survey/deed) goes through. */
+  toDocRows(docs: OwnedDocument[], ownerKind: DocRow['ownerKind'], subId?: string): DocRow[] {
+    return docs.map(d => ({
+      key: d.documentId,
+      ownerKind,
+      ownerId: this.landId,
+      subId,
+      documentId: d.documentId,
+      fileName: d.fileName,
+      contentType: d.contentType,
+      uploadedByName: d.uploadedByName,
+      createdAt: d.createdAt
+    }));
+  }
+
+  private ownedDocBlob(row: DocRow) {
+    switch (row.ownerKind) {
+      case 'landSurvey':
+        return this.landService.getSurveyDocumentBlob(this.workspaceId, this.landId, row.subId!, row.documentId!);
+      case 'landDeed':
+        return this.landService.getDeedDocumentBlob(this.workspaceId, this.landId, row.subId!, row.documentId!);
+      default:
+        return this.landService.getDocumentBlob(this.workspaceId, this.landId, row.documentId!);
+    }
+  }
+
+  onOwnedDocView(row: DocRow): void {
+    this.ownedDocBlob(row).subscribe(blob => this.openViewer({ fileName: row.fileName!, contentType: row.contentType! }, blob));
+  }
+
+  onOwnedDocDownload(row: DocRow): void {
+    this.ownedDocBlob(row).subscribe(blob => this.triggerDownload(blob, row.fileName!));
+  }
+
+  onOwnedDocRemove(row: DocRow): void {
+    this.documentError.set('');
+    this.error.set('');
+    const documentId = row.documentId!;
+    switch (row.ownerKind) {
+      case 'landSurvey':
+        this.landService.deleteSurveyDocument(this.workspaceId, this.landId, row.subId!, documentId).subscribe({
+          next: () => this.surveyDocuments.update(map => ({ ...map, [row.subId!]: (map[row.subId!] ?? []).filter(d => d.documentId !== documentId) })),
+          error: (err) => this.error.set(err.error?.message ?? 'Could not delete document.')
+        });
+        break;
+      case 'landDeed':
+        this.landService.deleteDeedDocument(this.workspaceId, this.landId, row.subId!, documentId).subscribe({
+          next: () => this.deedDocuments.update(map => ({ ...map, [row.subId!]: (map[row.subId!] ?? []).filter(d => d.documentId !== documentId) })),
+          error: (err) => this.error.set(err.error?.message ?? 'Could not delete document.')
+        });
+        break;
+      default:
+        this.landService.deleteDocument(this.workspaceId, this.landId, documentId).subscribe({
+          next: () => this.documents.update(list => list.filter(d => d.documentId !== documentId)),
+          error: (err) => this.documentError.set(err.error?.message ?? 'Could not delete document.')
+        });
+    }
+  }
+
+  onOwnedDocRename(event: { row: DocRow; fileName: string }): void {
+    const { row, fileName } = event;
+    const documentId = row.documentId!;
+    this.documentError.set('');
+    this.error.set('');
+    switch (row.ownerKind) {
+      case 'landSurvey':
+        this.landService.renameSurveyDocument(this.workspaceId, this.landId, row.subId!, documentId, fileName).subscribe({
+          next: (updated) => this.surveyDocuments.update(map => ({ ...map, [row.subId!]: (map[row.subId!] ?? []).map(d => (d.documentId === updated.documentId ? updated : d)) })),
+          error: (err) => this.error.set(err.error?.message ?? 'Could not rename document.')
+        });
+        break;
+      case 'landDeed':
+        this.landService.renameDeedDocument(this.workspaceId, this.landId, row.subId!, documentId, fileName).subscribe({
+          next: (updated) => this.deedDocuments.update(map => ({ ...map, [row.subId!]: (map[row.subId!] ?? []).map(d => (d.documentId === updated.documentId ? updated : d)) })),
+          error: (err) => this.error.set(err.error?.message ?? 'Could not rename document.')
+        });
+        break;
+      default:
+        this.landService.renameDocument(this.workspaceId, this.landId, documentId, fileName).subscribe({
+          next: (updated) => this.documents.update(list => list.map(d => (d.documentId === updated.documentId ? updated : d))),
+          error: (err) => this.documentError.set(err.error?.message ?? 'Could not rename document.')
+        });
+    }
+  }
+
+  deleteMapPoint(pointId: string): void {
+    this.mapPointError.set('');
+    this.landService.deleteMapPoint(this.workspaceId, this.landId, pointId).subscribe({
+      next: () => {
+        this.mapPoints.update(list => list.filter(p => p.id !== pointId));
+        this.confirmingDeleteMapPointId.set(null);
+      },
+      error: (err) => this.mapPointError.set(err.error?.message ?? 'Could not delete point.')
+    });
+  }
+
+  onDocumentFilesSelected(files: File[]): void {
+    this.documentError.set('');
+    files.forEach(file =>
+      this.landService.uploadDocument(this.workspaceId, this.landId, file).subscribe({
+        next: (doc) => this.documents.update(list => [doc, ...list]),
+        error: (err) => this.documentError.set(err.error?.message ?? 'Could not upload document.')
+      })
+    );
+  }
+
+  submitDocRequest(value: DocumentRequestFormValue): void {
+    this.documentError.set('');
+    this.documentRequestService
+      .create(this.workspaceId, this.landId, value.title, value.description, value.category, value.targetRole)
+      .subscribe({
+        next: (request) => {
+          this.documentRequests.update(list => [request, ...list]);
+          this.addingDocRequest.set(false);
+        },
+        error: (err) => this.documentError.set(err.error?.message ?? 'Could not create request.')
+      });
+  }
+
+  onFulfillDocRequest(event: { row: DocRow; file: File }): void {
+    this.documentError.set('');
+    this.documentRequestService.fulfill(this.workspaceId, this.landId, event.row.requestId!, event.file).subscribe({
+      next: (updated) => {
+        this.documentRequests.update(list => list.map(r => (r.requestId === updated.requestId ? updated : r)));
+        this.landService.getDocuments(this.workspaceId, this.landId).subscribe(docs => this.documents.set(docs));
+      },
+      error: (err) => this.documentError.set(err.error?.message ?? 'Could not fulfill request.')
+    });
+  }
+
+  reopenDocRequestRow(row: DocRow): void {
+    this.documentError.set('');
+    this.documentRequestService.reopen(this.workspaceId, this.landId, row.requestId!).subscribe({
+      next: (updated) => this.documentRequests.update(list => list.map(r => (r.requestId === updated.requestId ? updated : r))),
+      error: (err) => this.documentError.set(err.error?.message ?? 'Could not reopen request.')
+    });
+  }
+
+  cancelDocRequestRow(row: DocRow): void {
+    this.documentError.set('');
+    this.documentRequestService.cancel(this.workspaceId, this.landId, row.requestId!).subscribe({
+      next: () => this.documentRequests.update(list => list.filter(r => r.requestId !== row.requestId)),
+      error: (err) => this.documentError.set(err.error?.message ?? 'Could not cancel request.')
+    });
+  }
+
+  copyDocRequestShareLinkRow(row: DocRow): void {
+    this.documentError.set('');
+    this.documentRequestService.generateShareLink(this.workspaceId, this.landId, row.requestId!).subscribe({
+      next: ({ token }) => {
+        navigator.clipboard.writeText(`${location.origin}/land-document-upload/${token}`);
+        this.documentRequests.update(list => list.map(r => (r.requestId === row.requestId ? { ...r, hasActiveShareLink: true } : r)));
+      },
+      error: (err) => this.documentError.set(err.error?.message ?? 'Could not create share link.')
+    });
+  }
+
+  private openViewer(doc: { fileName: string; contentType: string }, blob: Blob): void {
+    this.viewingDocument.set(doc);
+    this.viewingBlobUrl.set(URL.createObjectURL(blob));
+  }
+
+  closeViewer(): void {
+    const url = this.viewingBlobUrl();
+    if (url) URL.revokeObjectURL(url);
+    this.viewingDocument.set(null);
+    this.viewingBlobUrl.set(null);
   }
 }

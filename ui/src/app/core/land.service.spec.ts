@@ -35,8 +35,8 @@ describe('LandService', () => {
   });
 
   it('create() posts the land request', () => {
-    const request = { address: { street: '123 Main St', city: 'Colombo', district: null, postalCode: null, country: null }, area: { acres: 10, roods: 0, perches: 0 } };
-    const land = { landId: 'l1', address: request.address, area: { acres: 10, roods: 0, perches: 0, squareMeters: 40468.564224, hectares: 4.0468564224 }, gpsCoordinates: null, notes: null, createdAt: '2026-01-01', updatedAt: '2026-01-01' };
+    const request = { address: { village: '123 Main St', district: 'Colombo' }, area: { acres: 10, roods: 0, perches: 0 } };
+    const land = { landId: 'l1', address: { village: '123 Main St', gramaNiladhariDivision: null, divisionalSecretariat: null, pradeshiyaSabha: null, korale: null, hatpattu: null, district: 'Colombo', province: null }, area: { acres: 10, roods: 0, perches: 0, squareMeters: 40468.564224, hectares: 4.0468564224 }, notes: null, createdAt: '2026-01-01', updatedAt: '2026-01-01' };
     service.create(workspaceId, request).subscribe(result => expect(result).toEqual(land));
     const req = httpMock.expectOne(base);
     expect(req.request.method).toBe('POST');
@@ -45,7 +45,7 @@ describe('LandService', () => {
   });
 
   it('getById() gets a single land', () => {
-    const land = { landId: 'l1', address: { street: 'Main St', city: null, district: null, postalCode: null, country: null }, area: { acres: null, roods: null, perches: null, squareMeters: null, hectares: null }, gpsCoordinates: null, notes: null, createdAt: '2026-01-01', updatedAt: '2026-01-01' };
+    const land = { landId: 'l1', address: { village: 'Main St', gramaNiladhariDivision: null, divisionalSecretariat: null, pradeshiyaSabha: null, korale: null, hatpattu: null, district: null, province: null }, area: { acres: null, roods: null, perches: null, squareMeters: null, hectares: null }, notes: null, createdAt: '2026-01-01', updatedAt: '2026-01-01' };
     service.getById(workspaceId, 'l1').subscribe(result => expect(result).toEqual(land));
     const req = httpMock.expectOne(`${base}/l1`);
     expect(req.request.method).toBe('GET');
@@ -53,7 +53,7 @@ describe('LandService', () => {
   });
 
   it('update() puts the land request', () => {
-    const request = { address: { street: 'New St', city: null, district: null, postalCode: null, country: null } };
+    const request = { address: { village: 'New St', district: null } };
     service.update(workspaceId, 'l1', request).subscribe();
     const req = httpMock.expectOne(`${base}/l1`);
     expect(req.request.method).toBe('PUT');
@@ -171,9 +171,8 @@ describe('LandService', () => {
 describe('addressLine', () => {
   const baseLand: Land = {
     landId: 'l1',
-    address: { street: null, city: null, district: null, postalCode: null, country: null },
+    address: { village: null, gramaNiladhariDivision: null, divisionalSecretariat: null, pradeshiyaSabha: null, korale: null, hatpattu: null, district: null, province: null },
     area: { acres: null, roods: null, perches: null, squareMeters: null, hectares: null },
-    gpsCoordinates: null,
     notes: null,
     createdAt: '2026-01-01',
     updatedAt: '2026-01-01',
@@ -181,20 +180,19 @@ describe('addressLine', () => {
     ownerName: null,
     ownerPhone: null,
     ownerEmail: null,
-    latitude: null,
-    longitude: null,
-    hasActiveLocationShareLink: false
+    hasActiveLocationShareLink: false,
+    hasActiveMapViewShareLink: false
   };
 
-  it('joins street and city with a comma', () => {
-    expect(addressLine({ ...baseLand, address: { ...baseLand.address, street: '123 Main St', city: 'Colombo' } })).toBe('123 Main St, Colombo');
+  it('joins village, DS division, and district with commas', () => {
+    expect(addressLine({ ...baseLand, address: { ...baseLand.address, village: 'Kotte', divisionalSecretariat: 'Kotte DS', district: 'Colombo' } })).toBe('Kotte, Kotte DS, Colombo');
   });
 
-  it('falls back to a placeholder when both are empty', () => {
+  it('falls back to a placeholder when all are empty', () => {
     expect(addressLine(baseLand)).toBe('Unnamed land record');
   });
 
-  it('uses just street when city is missing', () => {
-    expect(addressLine({ ...baseLand, address: { ...baseLand.address, street: '123 Main St' } })).toBe('123 Main St');
+  it('uses just village when the rest are missing', () => {
+    expect(addressLine({ ...baseLand, address: { ...baseLand.address, village: 'Kotte' } })).toBe('Kotte');
   });
 });

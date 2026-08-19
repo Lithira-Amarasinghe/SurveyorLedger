@@ -206,16 +206,18 @@ namespace SurveyorLedger.API.Controllers
         private static LandResponse ToResponse(Land l) => new()
         {
             LandId = l.Id,
-            Address = new AddressDto
+            Address = new LandAddressDto
             {
-                Street = l.Address.Street,
-                City = l.Address.City,
+                Village = l.Address.Village,
+                GramaNiladhariDivision = l.Address.GramaNiladhariDivision,
+                DivisionalSecretariat = l.Address.DivisionalSecretariat,
+                PradeshiyaSabha = l.Address.PradeshiyaSabha,
+                Korale = l.Address.Korale,
+                Hatpattu = l.Address.Hatpattu,
                 District = l.Address.District,
-                PostalCode = l.Address.PostalCode,
-                Country = l.Address.Country
+                Province = l.Address.Province
             },
             Area = ToAreaDto(l.AreaSquareMeters),
-            GpsCoordinates = l.GpsCoordinates,
             Notes = l.Notes,
             CreatedAt = l.CreatedAt,
             UpdatedAt = l.UpdatedAt

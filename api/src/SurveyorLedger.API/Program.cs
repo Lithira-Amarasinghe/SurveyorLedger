@@ -112,6 +112,7 @@ builder.Services.AddScoped<IDocumentService, DocumentService>();
 
 // Register document request service
 builder.Services.AddScoped<IDocumentRequestService, DocumentRequestService>();
+builder.Services.AddScoped<ILandDocumentRequestService, LandDocumentRequestService>();
 
 // Register billing services.
 builder.Services.AddScoped<IInvoiceService, InvoiceService>();
