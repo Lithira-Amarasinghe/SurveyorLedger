@@ -8,6 +8,7 @@ export interface LineItem {
   description: string;
   quantity: number;
   unitPrice: number;
+  milestoneId?: string;
 }
 
 export type QuotationStatus = 'Draft' | 'Sent' | 'Accepted' | 'Rejected' | 'Expired';
@@ -24,6 +25,8 @@ export interface Quotation {
   status: QuotationStatus;
   validUntil: string | null;
   revisionNumber: number;
+  invoicedAmount: number;
+  remainingAmount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,11 +38,6 @@ export interface QuotationRequest {
   taxRatePercent: number;
   validUntil?: string;
   status?: QuotationStatus;
-}
-
-export interface ConvertQuotationRequest {
-  dueDate?: string;
-  discountAmount: number;
 }
 
 export type InvoiceStatus = 'Draft' | 'Sent' | 'PartiallyPaid' | 'Paid' | 'Overdue' | 'Cancelled';
@@ -70,6 +68,7 @@ export interface Invoice {
 export interface InvoiceRequest {
   clientId: string;
   jobId: string;
+  quotationId?: string;
   lineItems: LineItem[];
   taxRatePercent: number;
   discountAmount: number;
@@ -140,12 +139,6 @@ export class QuotationService {
 
   delete(workspaceId: string, quotationId: string): Observable<void> {
     return this.http.delete<void>(`${this.base(workspaceId)}/${quotationId}`);
-  }
-
-  convertToInvoice(workspaceId: string, quotationId: string, request: ConvertQuotationRequest): Observable<Invoice> {
-    return this.http
-      .post<ApiResponse<Invoice>>(`${this.base(workspaceId)}/${quotationId}/convert-to-invoice`, request)
-      .pipe(map(res => res.data));
   }
 
   send(workspaceId: string, quotationId: string, recipientPersonIds: string[]): Observable<void> {
