@@ -53,6 +53,10 @@ export class MilestoneService {
     return this.http.get<ApiResponse<Milestone[]>>(this.base(workspaceId, jobId)).pipe(map(res => res.data));
   }
 
+  getById(workspaceId: string, jobId: string, milestoneId: string): Observable<Milestone> {
+    return this.http.get<ApiResponse<Milestone>>(`${this.base(workspaceId, jobId)}/${milestoneId}`).pipe(map(res => res.data));
+  }
+
   create(workspaceId: string, jobId: string, request: MilestoneWriteRequest): Observable<Milestone> {
     return this.http.post<ApiResponse<Milestone>>(this.base(workspaceId, jobId), request).pipe(map(res => res.data));
   }

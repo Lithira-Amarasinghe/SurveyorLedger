@@ -14,6 +14,7 @@ import { LandListComponent } from './pages/land/land-list.component';
 import { LandDetailComponent } from './pages/land/land-detail.component';
 import { QuotationListComponent } from './pages/billing/quotations/quotation-list.component';
 import { InvoiceListComponent } from './pages/billing/invoices/invoice-list.component';
+import { BillingDocumentFormPageComponent } from './pages/billing/document-form/billing-document-form-page.component';
 import { AcceptInviteComponent } from './pages/invite/accept-invite.component';
 import { PublicDocumentUploadComponent } from './pages/document-upload/public-document-upload.component';
 import { PublicSetLocationComponent } from './pages/set-location/public-set-location.component';
@@ -77,7 +78,11 @@ export const routes: Routes = [
           { path: 'lands/new', component: LandDetailComponent },
           { path: 'lands/:landId', component: LandDetailComponent, canDeactivate: [unsavedChangesGuard] },
           { path: 'billing/quotations', component: QuotationListComponent },
+          { path: 'billing/quotations/new', component: BillingDocumentFormPageComponent, data: { documentType: 'quotation' } },
+          { path: 'billing/quotations/:quotationId/edit', component: BillingDocumentFormPageComponent, data: { documentType: 'quotation' } },
           { path: 'billing/invoices', component: InvoiceListComponent },
+          { path: 'billing/invoices/new', component: BillingDocumentFormPageComponent, data: { documentType: 'invoice' } },
+          { path: 'billing/invoices/:invoiceId/edit', component: BillingDocumentFormPageComponent, data: { documentType: 'invoice' } },
           { path: 'members', component: MembersComponent },
           { path: 'roles', component: RolesComponent },
           { path: 'reports', component: ReportsComponent },
