@@ -286,14 +286,14 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                             <option [value]="s">{{ s }}</option>
                           }
                         </select>
-                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="startEditingMilestone(m)">
-                          Edit
+                        <button type="button" class="text-sm text-primary-500 hover:text-primary-600" (click)="startEditingMilestone(m)" title="Edit">
+                          ✏️
                         </button>
-                        <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="toggleRulesEditor(m)">
-                          Payment rules
+                        <button type="button" class="text-sm text-neutral-500 hover:text-neutral-700" (click)="toggleRulesEditor(m)" title="Payment rules">
+                          💰
                         </button>
-                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="confirmingRemoveMilestone.set(m)">
-                          Remove
+                        <button type="button" class="text-sm text-primary-500 hover:text-primary-600" (click)="confirmingRemoveMilestone.set(m)" title="Remove">
+                          🗑️
                         </button>
                       }
                     </div>
