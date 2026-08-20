@@ -78,6 +78,7 @@ public class MilestoneService : IMilestoneService
             Title = request.Title.Trim(),
             Description = request.Description,
             DueDate = request.DueDate,
+            Amount = request.Amount,
             Status = "Pending",
             SortOrder = nextSortOrder + 1,
             CreatedBy = callerPersonId,
@@ -102,6 +103,7 @@ public class MilestoneService : IMilestoneService
         milestone.Title = request.Title.Trim();
         milestone.Description = request.Description;
         milestone.DueDate = request.DueDate;
+        milestone.Amount = request.Amount;
         milestone.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();

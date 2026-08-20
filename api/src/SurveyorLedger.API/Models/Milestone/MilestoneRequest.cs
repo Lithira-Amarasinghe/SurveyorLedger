@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace SurveyorLedger.API.Models.Milestone;
 
+
 /// <summary>
 /// Request model for creating or updating a Milestone. Mirrors JobRequest's shape -
 /// Title is the only required field.
@@ -16,4 +17,7 @@ public class MilestoneRequest
     public string? Description { get; set; }
 
     public DateTime? DueDate { get; set; }
+
+    [Range(0, double.MaxValue, ErrorMessage = "Amount cannot be negative.")]
+    public decimal? Amount { get; set; }
 }

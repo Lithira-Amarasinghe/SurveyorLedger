@@ -14,6 +14,7 @@ public class Milestone
     public string? Description { get; set; }
     public DateTime? DueDate { get; set; }
     public string Status { get; set; } = "Pending";
+    public decimal? Amount { get; set; }
     public int SortOrder { get; set; }
     public DateTime? CompletedAt { get; set; }
     public Guid? CompletedBy { get; set; }

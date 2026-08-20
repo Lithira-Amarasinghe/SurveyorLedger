@@ -78,6 +78,7 @@ namespace SurveyorLedger.API.Controllers
             Title = m.Title,
             Description = m.Description,
             DueDate = m.DueDate,
+            Amount = m.Amount,
             Status = m.Status,
             SortOrder = m.SortOrder,
             CompletedAt = m.CompletedAt,

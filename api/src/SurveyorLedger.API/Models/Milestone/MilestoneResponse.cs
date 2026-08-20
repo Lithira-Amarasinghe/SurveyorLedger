@@ -7,6 +7,7 @@ public class MilestoneResponse
     public required string Title { get; set; }
     public string? Description { get; set; }
     public DateTime? DueDate { get; set; }
+    public decimal? Amount { get; set; }
     public required string Status { get; set; }
     public int SortOrder { get; set; }
     public DateTime? CompletedAt { get; set; }

@@ -233,4 +233,15 @@ public class MilestoneServiceTests : WorkspaceIntegrationTestBase
         Assert.Equal("Admin", loaded.CreatedByUser.FirstName);
         Assert.NotEqual(AdminId, loaded.CreatedBy); // CreatedBy is the Person.Id, not the caller's UserAccount.Id
     }
+
+    [Fact]
+    public async Task Amount_IsPersisted_AndDefaultsToNull()
+    {
+        await SeedJobsAsync();
+        var withAmount = await _milestoneService.CreateAsync(WorkspaceId, AdminId, _jobAId, new MilestoneRequest { Title = "Deed Verified", Amount = 25000m });
+        var withoutAmount = await _milestoneService.CreateAsync(WorkspaceId, AdminId, _jobAId, new MilestoneRequest { Title = "Site Visit" });
+
+        Assert.Equal(25000m, withAmount.Amount);
+        Assert.Null(withoutAmount.Amount);
+    }
 }
