@@ -14,10 +14,12 @@ public class ExpenseConfiguration : IEntityTypeConfiguration<Expense>
         builder.Property(x => x.Description).HasMaxLength(1000);
         builder.Property(x => x.ReceiptFilePath).HasMaxLength(500);
         builder.Property(x => x.PayeeType).HasMaxLength(30);
+        builder.Property(x => x.MilestoneId);
         builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
 
         builder.HasIndex(x => x.WorkspaceId);
         builder.HasIndex(x => x.JobId);
+        builder.HasIndex(x => x.MilestoneId);
 
         builder.HasOne(x => x.Job).WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.RecordedByUser).WithMany().HasForeignKey(x => x.RecordedBy).OnDelete(DeleteBehavior.Restrict);

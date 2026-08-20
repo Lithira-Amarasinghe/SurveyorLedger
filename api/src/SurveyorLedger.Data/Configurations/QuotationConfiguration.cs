@@ -24,6 +24,7 @@ public class QuotationConfiguration : IEntityTypeConfiguration<Quotation>
             li.Property(x => x.Quantity).HasColumnType("decimal(18,2)");
             li.Property(x => x.UnitPrice).HasColumnType("decimal(18,2)");
             li.Property(x => x.MilestoneId);
+            li.HasIndex(x => x.MilestoneId);
         });
 
         builder.HasIndex(x => x.JobId);

@@ -26,6 +26,7 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
             li.Property(x => x.UnitPrice).HasColumnType("decimal(18,2)");
             li.Property(x => x.MilestoneId);
             li.Property(x => x.QuotationLineId);
+            li.HasIndex(x => x.MilestoneId);
         });
 
         builder.OwnsMany(x => x.Installments, i =>

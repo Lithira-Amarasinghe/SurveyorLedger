@@ -22,6 +22,7 @@ public class Expense
     public string? ReceiptFilePath { get; set; }
     public Guid? PayeeId { get; set; }
     public string? PayeeType { get; set; }
+    public Guid? MilestoneId { get; set; }
     public Guid RecordedBy { get; set; }
     public DateTime CreatedAt { get; set; }
 
