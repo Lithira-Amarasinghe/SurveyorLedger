@@ -21,6 +21,7 @@ public interface IInvoiceService
     Task SendAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, List<Guid> recipientPersonIds, string appBaseUrl);
     (decimal Total, decimal AmountPaid, decimal Balance, bool IsOverdue, int DaysOverdue) ComputeInvoiceTotals(Invoice invoice);
     List<(InvoiceInstallment Installment, string Status)> ComputeInstallmentStatuses(Invoice invoice);
+    decimal GetAmountBilledAgainstQuotationLine(Guid jobId, Guid quotationLineId, Guid? excludingInvoiceId = null);
 }
 
 /// <summary>
@@ -53,9 +54,7 @@ public class InvoiceService : IInvoiceService
     {
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, request.JobId, "create");
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
-        if (request.QuotationId.HasValue)
-            await EnsureQuotationBelongsToJobAsync(request.QuotationId.Value, request.JobId);
-        await ValidateLineItemsAsync(request.LineItems, null);
+        await ValidateLineItemsAsync(request.LineItems, request.JobId, null);
         ValidateFinancials(request.TaxRatePercent, request.DiscountAmount, request.LineItems);
         ValidateInstallments(request.Installments, request.LineItems, request.TaxRatePercent, request.DiscountAmount);
 
@@ -64,8 +63,7 @@ public class InvoiceService : IInvoiceService
             Id = Guid.NewGuid(),
             ClientId = request.ClientId,
             JobId = request.JobId,
-            QuotationId = request.QuotationId,
-            LineItems = request.LineItems.Select(i => new InvoiceLineItem { Id = Guid.NewGuid(), Description = i.Description.Trim(), Quantity = i.Quantity, UnitPrice = i.UnitPrice, MilestoneId = i.MilestoneId }).ToList(),
+            LineItems = request.LineItems.Select(i => new InvoiceLineItem { Id = Guid.NewGuid(), Description = i.Description.Trim(), Quantity = i.Quantity, UnitPrice = i.UnitPrice, MilestoneId = i.MilestoneId, QuotationLineId = i.QuotationLineId }).ToList(),
             Installments = request.Installments.Select(i => new InvoiceInstallment { Id = Guid.NewGuid(), Amount = i.Amount, DueDate = i.DueDate }).ToList(),
             TaxRatePercent = request.TaxRatePercent,
             DiscountAmount = request.DiscountAmount,
@@ -130,7 +128,7 @@ public class InvoiceService : IInvoiceService
             EnsureOnlyDueDateChanged(invoice, request);
 
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
-        await ValidateLineItemsAsync(request.LineItems, invoiceId);
+        await ValidateLineItemsAsync(request.LineItems, request.JobId, invoiceId);
         ValidateFinancials(request.TaxRatePercent, request.DiscountAmount, request.LineItems);
         ValidateInstallments(request.Installments, request.LineItems, request.TaxRatePercent, request.DiscountAmount);
 
@@ -142,7 +140,7 @@ public class InvoiceService : IInvoiceService
         foreach (var old in invoice.LineItems.ToList())
             _context.Remove(old);
         invoice.LineItems.Clear();
-        foreach (var item in request.LineItems.Select(i => new InvoiceLineItem { Id = Guid.NewGuid(), Description = i.Description.Trim(), Quantity = i.Quantity, UnitPrice = i.UnitPrice, MilestoneId = i.MilestoneId }))
+        foreach (var item in request.LineItems.Select(i => new InvoiceLineItem { Id = Guid.NewGuid(), Description = i.Description.Trim(), Quantity = i.Quantity, UnitPrice = i.UnitPrice, MilestoneId = i.MilestoneId, QuotationLineId = i.QuotationLineId }))
         {
             invoice.LineItems.Add(item);
             _context.Entry(item).State = EntityState.Added;
@@ -327,13 +325,6 @@ public class InvoiceService : IInvoiceService
         return $"RCP-{count + 1:D4}";
     }
 
-    private async Task EnsureQuotationBelongsToJobAsync(Guid quotationId, Guid jobId)
-    {
-        var belongs = await _context.Quotations.AnyAsync(q => q.Id == quotationId && q.JobId == jobId && q.IsActive);
-        if (!belongs)
-            throw new ValidationException("QuotationId must reference an active quotation on this same job.");
-    }
-
     /// <summary>Replaces EnsureClientExistsAsync - ClientId must resolve to a Person who holds
     /// Client or Finance UserAccess on this specific JobId, not just any active Person.</summary>
     private async Task EnsureClientHoldsBillingRoleOnJobAsync(Guid clientId, Guid jobId)
@@ -355,8 +346,12 @@ public class InvoiceService : IInvoiceService
     /// <summary>Also enforces "at most one active line item per milestone": a Milestone
     /// tagged on this document's line items can't already be tagged on a different active
     /// Invoice. excludingInvoiceId lets an update re-save its own existing tag without
-    /// tripping over itself.</summary>
-    private async Task ValidateLineItemsAsync(List<LineItemDto> items, Guid? excludingInvoiceId)
+    /// tripping over itself. Separately, any line carrying a QuotationLineId must point at
+    /// an active quotation line on this same job, and the total billed against that
+    /// quotation line (this invoice's own lines plus every other active invoice's) must
+    /// not exceed the quotation line's Quantity * UnitPrice - partial/progressive billing
+    /// is allowed, over-billing is not.</summary>
+    private async Task ValidateLineItemsAsync(List<LineItemDto> items, Guid jobId, Guid? excludingInvoiceId)
     {
         if (items.Count == 0)
             throw new ValidationException("At least one line item is required.");
@@ -364,16 +359,62 @@ public class InvoiceService : IInvoiceService
             throw new ValidationException("Line item quantity must be positive and unit price cannot be negative.");
 
         var milestoneIds = items.Where(i => i.MilestoneId.HasValue).Select(i => i.MilestoneId!.Value).ToList();
-        if (milestoneIds.Count == 0)
-            return;
+        if (milestoneIds.Count > 0)
+        {
+            var conflicting = await _context.Invoices
+                .Where(inv => inv.IsActive && (excludingInvoiceId == null || inv.Id != excludingInvoiceId))
+                .Where(inv => inv.LineItems.Any(li => li.MilestoneId != null && milestoneIds.Contains(li.MilestoneId.Value)))
+                .Select(inv => inv.Number)
+                .FirstOrDefaultAsync();
+            if (conflicting != null)
+                throw new ValidationException($"One of these milestones is already billed on invoice {conflicting}.");
+        }
 
-        var conflicting = await _context.Invoices
-            .Where(inv => inv.IsActive && (excludingInvoiceId == null || inv.Id != excludingInvoiceId))
-            .Where(inv => inv.LineItems.Any(li => li.MilestoneId != null && milestoneIds.Contains(li.MilestoneId.Value)))
-            .Select(inv => inv.Number)
-            .FirstOrDefaultAsync();
-        if (conflicting != null)
-            throw new ValidationException($"One of these milestones is already billed on invoice {conflicting}.");
+        var quotationLineGroups = items.Where(i => i.QuotationLineId.HasValue).GroupBy(i => i.QuotationLineId!.Value);
+        foreach (var group in quotationLineGroups)
+        {
+            var quotationLine = await FindQuotationLineAsync(group.Key);
+            if (quotationLine == null || quotationLine.Value.JobId != jobId)
+                throw new ValidationException("QuotationLineId must reference an active quotation line on this same job.");
+
+            var thisInvoiceAmount = group.Sum(i => i.Quantity * i.UnitPrice);
+            var otherInvoicesAmount = GetAmountBilledAgainstQuotationLine(jobId, group.Key, excludingInvoiceId);
+            var totalBilled = thisInvoiceAmount + otherInvoicesAmount;
+            if (totalBilled > quotationLine.Value.Amount)
+                throw new ValidationException($"Billing {totalBilled} against this quotation line would exceed its total of {quotationLine.Value.Amount}.");
+        }
+    }
+
+    /// <summary>Resolves a QuotationLineId to its owning quotation's JobId and its
+    /// Quantity * UnitPrice amount, or null if no active quotation currently has a line
+    /// with that Id. Owned-entity line items have no standalone DbSet, so this goes
+    /// through Quotations with LineItems included.</summary>
+    private async Task<(Guid JobId, decimal Amount)?> FindQuotationLineAsync(Guid quotationLineId)
+    {
+        var quotation = await _context.Quotations
+            .Include(q => q.LineItems)
+            .Where(q => q.IsActive)
+            .FirstOrDefaultAsync(q => q.LineItems.Any(li => li.Id == quotationLineId));
+        if (quotation == null)
+            return null;
+        var line = quotation.LineItems.First(li => li.Id == quotationLineId);
+        return (quotation.JobId, line.Quantity * line.UnitPrice);
+    }
+
+    /// <summary>Sums Quantity * UnitPrice across every active invoice line on this job whose
+    /// QuotationLineId matches, optionally excluding one invoice (the one currently being
+    /// saved, so it doesn't double-count against itself). Used both for the over-billing
+    /// check above and by QuotationService's edit-safety guard - the single source of
+    /// truth for "how much has been invoiced against this quotation line so far".</summary>
+    public decimal GetAmountBilledAgainstQuotationLine(Guid jobId, Guid quotationLineId, Guid? excludingInvoiceId = null)
+    {
+        return _context.Invoices
+            .Include(i => i.LineItems)
+            .Where(i => i.IsActive && i.JobId == jobId && (excludingInvoiceId == null || i.Id != excludingInvoiceId))
+            .AsEnumerable()
+            .SelectMany(i => i.LineItems)
+            .Where(li => li.QuotationLineId == quotationLineId)
+            .Sum(li => li.Quantity * li.UnitPrice);
     }
 
     /// <summary>Guards against a negative total: tax rate must be non-negative, discount
@@ -398,8 +439,8 @@ public class InvoiceService : IInvoiceService
     private static void EnsureOnlyDueDateChanged(Invoice invoice, InvoiceRequest request)
     {
         var lineItemsChanged = invoice.LineItems.Count != request.LineItems.Count
-            || invoice.LineItems.OrderBy(li => li.Id).Select(li => (li.Description, li.Quantity, li.UnitPrice, li.MilestoneId))
-                .Except(request.LineItems.Select(li => (li.Description.Trim(), li.Quantity, li.UnitPrice, li.MilestoneId))).Any();
+            || invoice.LineItems.OrderBy(li => li.Id).Select(li => (li.Description, li.Quantity, li.UnitPrice, li.MilestoneId, li.QuotationLineId))
+                .Except(request.LineItems.Select(li => (li.Description.Trim(), li.Quantity, li.UnitPrice, li.MilestoneId, li.QuotationLineId))).Any();
 
         if (invoice.ClientId != request.ClientId
             || invoice.JobId != request.JobId

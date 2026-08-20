@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SurveyorLedger.Data;
 
@@ -11,9 +12,11 @@ using SurveyorLedger.Data;
 namespace SurveyorLedger.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260820081127_AmountColumnTypeNoop")]
+    partial class AmountColumnTypeNoop
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -536,6 +539,9 @@ namespace SurveyorLedger.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<Guid?>("QuotationId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -556,6 +562,8 @@ namespace SurveyorLedger.Data.Migrations
                     b.HasIndex("IsActive");
 
                     b.HasIndex("JobId");
+
+                    b.HasIndex("QuotationId");
 
                     b.HasIndex("JobId", "Number")
                         .IsUnique();
@@ -2633,6 +2641,11 @@ namespace SurveyorLedger.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("SurveyorLedger.Data.Entities.Quotation", "Quotation")
+                        .WithMany()
+                        .HasForeignKey("QuotationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.OwnsMany("SurveyorLedger.Data.Entities.InvoiceInstallment", "Installments", b1 =>
                         {
                             b1.Property<Guid>("Id")
@@ -2678,9 +2691,6 @@ namespace SurveyorLedger.Data.Migrations
                             b1.Property<decimal>("Quantity")
                                 .HasColumnType("decimal(18,2)");
 
-                            b1.Property<Guid?>("QuotationLineId")
-                                .HasColumnType("uniqueidentifier");
-
                             b1.Property<decimal>("UnitPrice")
                                 .HasColumnType("decimal(18,2)");
 
@@ -2701,6 +2711,8 @@ namespace SurveyorLedger.Data.Migrations
                     b.Navigation("Job");
 
                     b.Navigation("LineItems");
+
+                    b.Navigation("Quotation");
                 });
 
             modelBuilder.Entity("SurveyorLedger.Data.Entities.Job", b =>

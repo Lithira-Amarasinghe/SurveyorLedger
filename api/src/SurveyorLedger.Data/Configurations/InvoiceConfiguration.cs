@@ -25,6 +25,7 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
             li.Property(x => x.Quantity).HasColumnType("decimal(18,2)");
             li.Property(x => x.UnitPrice).HasColumnType("decimal(18,2)");
             li.Property(x => x.MilestoneId);
+            li.Property(x => x.QuotationLineId);
         });
 
         builder.OwnsMany(x => x.Installments, i =>
@@ -41,7 +42,6 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
 
         builder.HasOne(x => x.Client).WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Job).WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne(x => x.Quotation).WithMany().HasForeignKey(x => x.QuotationId).OnDelete(DeleteBehavior.Restrict);
         builder.HasMany(x => x.Payments).WithOne(x => x.Invoice).HasForeignKey(x => x.InvoiceId).OnDelete(DeleteBehavior.Restrict);
     }
 }

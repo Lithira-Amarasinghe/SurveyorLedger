@@ -7,4 +7,5 @@ public class InvoiceLineItem
     public decimal Quantity { get; set; }
     public decimal UnitPrice { get; set; }
     public Guid? MilestoneId { get; set; }
+    public Guid? QuotationLineId { get; set; }
 }

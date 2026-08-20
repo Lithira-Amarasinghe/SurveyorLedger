@@ -17,6 +17,7 @@ public interface IQuotationService
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid quotationId);
     Task SendAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, List<Guid> recipientPersonIds, string appBaseUrl);
     (decimal InvoicedAmount, decimal RemainingAmount) ComputeBillingProgress(Quotation quotation);
+    (decimal InvoicedAmount, decimal RemainingAmount) ComputeLineProgress(Guid jobId, Guid quotationLineId, decimal lineAmount);
 }
 
 public class QuotationService : IQuotationService
@@ -107,6 +108,7 @@ public class QuotationService : IQuotationService
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
         await ValidateLineItemsAsync(request.LineItems, quotationId);
         ValidateTaxRate(request.TaxRatePercent);
+        EnsureLineEditsPreserveInvoicedAmounts(quotation, request.LineItems);
 
         // Line items changed after the quote was Sent - bump RevisionNumber so
         // "revision charges" have something to point at, without a new entity.
@@ -115,18 +117,36 @@ public class QuotationService : IQuotationService
 
         quotation.ClientId = request.ClientId;
         quotation.JobId = request.JobId;
-        // Explicitly remove old rows and mark new ones Added - EF's relationship-fixup
-        // detection for OwnsMany collections misidentifies a wholesale replacement as
-        // reparenting the new rows onto the old (now-deleted) ids, producing an UPDATE
-        // against a row that no longer exists and a spurious DbUpdateConcurrencyException.
-        foreach (var old in quotation.LineItems.ToList())
-            _context.Remove(old);
-        quotation.LineItems.Clear();
-        foreach (var item in ToEntities(request.LineItems))
+
+        // Update-in-place by Id so a line's identity survives an edit - once anything is
+        // invoiced against a quotation line, InvoiceLineItem.QuotationLineId depends on that
+        // Id staying stable. EnsureLineEditsPreserveInvoicedAmounts (above) already rejected
+        // any edit that would remove or shrink an invoiced line below its invoiced amount.
+        var currentById = quotation.LineItems.ToDictionary(li => li.Id);
+        var keepIds = new HashSet<Guid>();
+        foreach (var item in request.LineItems)
         {
-            quotation.LineItems.Add(item);
-            _context.Entry(item).State = EntityState.Added;
+            if (item.Id.HasValue && currentById.TryGetValue(item.Id.Value, out var existing))
+            {
+                existing.Description = item.Description.Trim();
+                existing.Quantity = item.Quantity;
+                existing.UnitPrice = item.UnitPrice;
+                existing.MilestoneId = item.MilestoneId;
+                keepIds.Add(existing.Id);
+            }
+            else
+            {
+                var created = new QuotationLineItem { Id = Guid.NewGuid(), Description = item.Description.Trim(), Quantity = item.Quantity, UnitPrice = item.UnitPrice, MilestoneId = item.MilestoneId };
+                quotation.LineItems.Add(created);
+                keepIds.Add(created.Id);
+            }
         }
+        foreach (var stale in quotation.LineItems.Where(li => !keepIds.Contains(li.Id)).ToList())
+        {
+            quotation.LineItems.Remove(stale);
+            _context.Remove(stale);
+        }
+
         quotation.TaxRatePercent = request.TaxRatePercent;
         quotation.ValidUntil = request.ValidUntil;
         if (request.Status != null)
@@ -192,23 +212,32 @@ public class QuotationService : IQuotationService
         _logger.LogInformation("Quotation {QuotationId} sent to {Count} recipient(s)", quotationId, recipients.Count);
     }
 
-    /// <summary>Sums each active Invoice's own computed Total (via InvoiceService -
-    /// Invoice.Total isn't a stored column) where that invoice carries this QuotationId.
-    /// Computed, not stored, same pattern as InvoiceService.ComputeInvoiceTotals itself.
+    /// <summary>Sums the amount billed against each of this quotation's lines
+    /// (InvoiceLineItem.QuotationLineId), via the same source of truth
+    /// InvoiceService.GetAmountBilledAgainstQuotationLine uses for the over-billing block.
+    /// Quotation linkage lives at the line level now, not on Invoice, so this is a sum of
+    /// per-line progress rather than a query against a document-level QuotationId.
     /// Requires quotation.LineItems already loaded (FindQuotationAsync/GetByIdAsync/the
     /// updated SearchAsync all do this).</summary>
     public (decimal InvoicedAmount, decimal RemainingAmount) ComputeBillingProgress(Quotation quotation)
     {
-        var invoices = _context.Invoices.Include(i => i.LineItems).Include(i => i.Payments)
-            .Where(i => i.IsActive && i.QuotationId == quotation.Id)
-            .ToList();
-        var invoicedAmount = invoices.Sum(i => _invoiceService.ComputeInvoiceTotals(i).Total);
+        var invoicedAmount = quotation.LineItems.Sum(li => _invoiceService.GetAmountBilledAgainstQuotationLine(quotation.JobId, li.Id));
 
         var quotationSubtotal = quotation.LineItems.Sum(li => li.Quantity * li.UnitPrice);
         var quotationTax = quotationSubtotal * quotation.TaxRatePercent / 100m;
         var quotationTotal = quotationSubtotal + quotationTax;
 
         return (invoicedAmount, quotationTotal - invoicedAmount);
+    }
+
+    /// <summary>Per-line counterpart to ComputeBillingProgress - how much of THIS specific
+    /// quotation line has been invoiced so far, and how much remains. Delegates the actual
+    /// sum to InvoiceService.GetAmountBilledAgainstQuotationLine, the single source of
+    /// truth also used by the over-billing block on invoice save.</summary>
+    public (decimal InvoicedAmount, decimal RemainingAmount) ComputeLineProgress(Guid jobId, Guid quotationLineId, decimal lineAmount)
+    {
+        var invoiced = _invoiceService.GetAmountBilledAgainstQuotationLine(jobId, quotationLineId);
+        return (invoiced, lineAmount - invoiced);
     }
 
     private async Task<string> NextNumberAsync(Guid workspaceId, string prefix)
@@ -257,6 +286,25 @@ public class QuotationService : IQuotationService
             .FirstOrDefaultAsync();
         if (conflicting != null)
             throw new ValidationException($"One of these milestones is already quoted on {conflicting}.");
+    }
+
+    /// <summary>Rejects an update that would remove a quotation line, or shrink one below
+    /// its already-invoiced amount, while any invoice is still actively billed against it.
+    /// Must run before the update-in-place loop mutates anything.</summary>
+    private void EnsureLineEditsPreserveInvoicedAmounts(Quotation quotation, List<LineItemDto> requestItems)
+    {
+        var incomingById = requestItems.Where(i => i.Id.HasValue).ToDictionary(i => i.Id!.Value);
+        foreach (var current in quotation.LineItems)
+        {
+            var invoiced = _invoiceService.GetAmountBilledAgainstQuotationLine(quotation.JobId, current.Id);
+            if (invoiced <= 0)
+                continue;
+            if (!incomingById.TryGetValue(current.Id, out var stillPresent))
+                throw new ValidationException($"Cannot remove quotation line '{current.Description}' - {invoiced} is already invoiced against it.");
+            var newAmount = stillPresent.Quantity * stillPresent.UnitPrice;
+            if (newAmount < invoiced)
+                throw new ValidationException($"Cannot reduce quotation line '{current.Description}' below its invoiced amount of {invoiced}.");
+        }
     }
 
     private static void ValidateTaxRate(decimal taxRatePercent)

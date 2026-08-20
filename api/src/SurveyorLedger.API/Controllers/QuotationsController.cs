@@ -78,7 +78,21 @@ namespace SurveyorLedger.API.Controllers
                 ClientId = q.ClientId,
                 JobId = q.JobId,
                 Number = q.Number,
-                LineItems = q.LineItems.Select(li => new LineItemDto { Description = li.Description, Quantity = li.Quantity, UnitPrice = li.UnitPrice, MilestoneId = li.MilestoneId }).ToList(),
+                LineItems = q.LineItems.Select(li =>
+                {
+                    var lineAmount = li.Quantity * li.UnitPrice;
+                    var (lineInvoiced, lineRemaining) = quotationService.ComputeLineProgress(q.JobId, li.Id, lineAmount);
+                    return new QuotationLineItemResponse
+                    {
+                        Id = li.Id,
+                        Description = li.Description,
+                        Quantity = li.Quantity,
+                        UnitPrice = li.UnitPrice,
+                        MilestoneId = li.MilestoneId,
+                        InvoicedAmount = lineInvoiced,
+                        RemainingAmount = lineRemaining
+                    };
+                }).ToList(),
                 TaxRatePercent = q.TaxRatePercent,
                 Subtotal = subtotal,
                 Total = subtotal + tax,
