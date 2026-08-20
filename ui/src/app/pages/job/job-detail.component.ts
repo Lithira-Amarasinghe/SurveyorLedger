@@ -9,7 +9,7 @@ import { Job, JobInvitation, JobParticipant, JobService } from '../../core/job.s
 import { Land, LandService, addressLine, formatArea } from '../../core/land.service';
 import { AuthService } from '../../core/auth.service';
 import { InviteByEmail, PersonWithRole } from './add-job-person-modal/add-job-person-modal.component';
-import { Milestone, MilestoneService } from '../../core/milestone.service';
+import { Milestone, MilestonePaymentStatus, MilestoneService, PaymentRequirement } from '../../core/milestone.service';
 import { Document, DocumentService } from '../../core/document.service';
 import { DocumentRequest, DocumentRequestService } from '../../core/document-request.service';
 import { CurrentWorkspaceService } from '../../core/current-workspace.service';
@@ -224,6 +224,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                     <input class="input-field text-sm" placeholder="Title" [(ngModel)]="milestoneEditTitleDraft" />
                     <textarea class="input-field text-sm" rows="2" placeholder="Description (optional)" [(ngModel)]="milestoneEditDescriptionDraft"></textarea>
                     <input class="input-field text-sm" type="date" [(ngModel)]="milestoneEditDueDateDraft" />
+                    <input class="input-field text-sm" type="number" min="0" step="0.01" placeholder="Fee amount (optional)" [(ngModel)]="milestoneEditAmountDraft" />
                     @if (milestoneEditError()) {
                       <p class="text-xs text-primary-500">{{ milestoneEditError() }}</p>
                     }
@@ -255,6 +256,28 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                       } @else if (m.dueDate) {
                         <span class="text-xs text-neutral-500">Due: {{ m.dueDate | date: 'mediumDate' }}</span>
                       }
+                      @if (milestonePaymentStatuses()[m.milestoneId]; as pay) {
+                        @if (pay.linkedInvoiceId) {
+                          <a
+                            class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700"
+                            [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', pay.linkedInvoiceId, 'edit']"
+                          >{{ pay.amount | number: '1.2-2' }} · {{ pay.linkedInvoiceNumber }}</a>
+                          @if (pay.nextGate) {
+                            <span class="text-xs" [title]="pay.nextGate">🔒</span>
+                          } @else {
+                            <span class="text-xs" title="No payment blocking the next status">🔓</span>
+                          }
+                        } @else if (pay.amount) {
+                          <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700">{{ pay.amount | number: '1.2-2' }}</span>
+                          @if (!isClient()) {
+                            <a
+                              class="text-xs text-primary-500 hover:text-primary-600"
+                              [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', 'new']"
+                              [queryParams]="{ jobId: jobId, milestoneId: m.milestoneId }"
+                            >Bill this milestone</a>
+                          }
+                        }
+                      }
                       @if (isClient()) {
                         <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ m.status }}</span>
                       } @else {
@@ -266,12 +289,40 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                         <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="startEditingMilestone(m)">
                           Edit
                         </button>
+                        <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700" (click)="toggleRulesEditor(m)">
+                          Payment rules
+                        </button>
                         <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="confirmingRemoveMilestone.set(m)">
                           Remove
                         </button>
                       }
                     </div>
                   </div>
+                  @if (editingRulesFor() === m.milestoneId) {
+                    <div class="px-md pb-md pt-sm border-t border-neutral-200 space-y-sm bg-neutral-50 rounded-b">
+                      @for (rule of ruleDrafts; track $index; let i = $index) {
+                        <div class="flex items-center gap-sm text-sm">
+                          <span class="text-neutral-600">Requires</span>
+                          <select class="input-field w-32 py-xs text-xs" [(ngModel)]="rule.targetStatus" [name]="'target-' + i">
+                            @for (s of milestoneStatuses; track s) {
+                              <option [value]="s">{{ s }}</option>
+                            }
+                          </select>
+                          <span class="text-neutral-600">→</span>
+                          <select class="input-field w-36 py-xs text-xs" [(ngModel)]="rule.requiredState" [name]="'state-' + i">
+                            <option value="Invoiced">Invoiced</option>
+                            <option value="PartiallyPaid">Partially paid</option>
+                            <option value="FullyPaid">Fully paid</option>
+                          </select>
+                          <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="removeRule(i)">✕</button>
+                        </div>
+                      }
+                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="addRule()">+ Add rule</button>
+                      <div class="flex justify-end">
+                        <button type="button" class="btn-primary text-xs" (click)="saveRules(m.milestoneId)">Save rules</button>
+                      </div>
+                    </div>
+                  }
                 }
               }
             </div>
@@ -282,6 +333,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                 <input class="input-field text-sm" placeholder="Title" [(ngModel)]="milestoneTitleDraft" />
                 <textarea class="input-field text-sm" rows="2" placeholder="Description (optional)" [(ngModel)]="milestoneDescriptionDraft"></textarea>
                 <input class="input-field text-sm" type="date" [(ngModel)]="milestoneDueDateDraft" />
+                <input class="input-field text-sm" type="number" min="0" step="0.01" placeholder="Fee amount (optional)" [(ngModel)]="milestoneAmountDraft" />
                 @if (milestoneError()) {
                   <p class="text-xs text-primary-500">{{ milestoneError() }}</p>
                 }
@@ -815,7 +867,11 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   milestoneTitleDraft = '';
   milestoneDescriptionDraft = '';
   milestoneDueDateDraft = '';
+  milestoneAmountDraft: number | null = null;
   milestoneError = signal('');
+  milestonePaymentStatuses = signal<Record<string, MilestonePaymentStatus>>({});
+  editingRulesFor = signal<string | null>(null);
+  ruleDrafts: PaymentRequirement[] = [];
   loading = signal(true);
   savingHeader = signal(false);
   headerError = signal('');
@@ -832,6 +888,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   milestoneEditTitleDraft = '';
   milestoneEditDescriptionDraft = '';
   milestoneEditDueDateDraft = '';
+  milestoneEditAmountDraft: number | null = null;
   milestoneEditError = signal('');
   milestonesCompletedCount = computed(() => this.milestones().filter(m => m.status === 'Completed').length);
   confirmingRevokeInvite = signal<string | null>(null);
@@ -913,6 +970,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
         this.lands.set(lands);
         this.loadLandDocuments(lands);
         this.milestones.set(milestones);
+        this.loadMilestonePaymentStatuses(milestones);
         this.documents.set(documents);
         this.documentRequests.set(documentRequests);
         this.jobInvoices.set(invoices);
@@ -1164,6 +1222,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     this.milestoneTitleDraft = '';
     this.milestoneDescriptionDraft = '';
     this.milestoneDueDateDraft = '';
+    this.milestoneAmountDraft = null;
     this.milestoneError.set('');
   }
 
@@ -1176,11 +1235,13 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
       .create(this.workspaceId, this.jobId, {
         title: this.milestoneTitleDraft.trim(),
         description: this.milestoneDescriptionDraft.trim() || null,
-        dueDate: this.milestoneDueDateDraft || null
+        dueDate: this.milestoneDueDateDraft || null,
+        amount: this.milestoneAmountDraft
       })
       .subscribe({
         next: (milestone) => {
           this.milestones.update(list => [...list, milestone]);
+          this.loadMilestonePaymentStatuses([milestone]);
           this.cancelAddMilestone();
         },
         error: (err) => this.milestoneError.set(err.error?.message ?? 'Could not add milestone.')
@@ -1192,6 +1253,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     this.milestoneEditTitleDraft = milestone.title;
     this.milestoneEditDescriptionDraft = milestone.description ?? '';
     this.milestoneEditDueDateDraft = milestone.dueDate ? milestone.dueDate.substring(0, 10) : '';
+    this.milestoneEditAmountDraft = milestone.amount;
     this.milestoneEditError.set('');
   }
 
@@ -1214,15 +1276,55 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
       .update(this.workspaceId, this.jobId, milestone.milestoneId, {
         title: this.milestoneEditTitleDraft.trim(),
         description: this.milestoneEditDescriptionDraft.trim() || null,
-        dueDate: this.milestoneEditDueDateDraft || null
+        dueDate: this.milestoneEditDueDateDraft || null,
+        amount: this.milestoneEditAmountDraft
       })
       .subscribe({
         next: (updated) => {
           this.milestones.update(list => list.map(m => (m.milestoneId === updated.milestoneId ? updated : m)));
+          this.loadMilestonePaymentStatuses([updated]);
           this.cancelEditingMilestone();
         },
         error: (err) => this.milestoneEditError.set(err.error?.message ?? 'Could not save milestone.')
       });
+  }
+
+  private loadMilestonePaymentStatuses(milestones: Milestone[]): void {
+    milestones.forEach(m => {
+      this.milestoneService.getPaymentStatus(this.workspaceId, this.jobId, m.milestoneId).subscribe({
+        next: status => this.milestonePaymentStatuses.update(map => ({ ...map, [m.milestoneId]: status }))
+      });
+    });
+  }
+
+  toggleRulesEditor(milestone: Milestone): void {
+    if (this.editingRulesFor() === milestone.milestoneId) {
+      this.editingRulesFor.set(null);
+      return;
+    }
+    this.editingRulesFor.set(milestone.milestoneId);
+    this.milestoneService.getPaymentRequirements(this.workspaceId, this.jobId, milestone.milestoneId).subscribe({
+      next: rules => (this.ruleDrafts = [...rules])
+    });
+  }
+
+  addRule(): void {
+    this.ruleDrafts = [...this.ruleDrafts, { targetStatus: 'Completed', requiredState: 'FullyPaid' }];
+  }
+
+  removeRule(index: number): void {
+    this.ruleDrafts = this.ruleDrafts.filter((_, i) => i !== index);
+  }
+
+  saveRules(milestoneId: string): void {
+    this.milestoneService.setPaymentRequirements(this.workspaceId, this.jobId, milestoneId, this.ruleDrafts).subscribe({
+      next: () => {
+        this.editingRulesFor.set(null);
+        this.milestoneService.getPaymentStatus(this.workspaceId, this.jobId, milestoneId).subscribe({
+          next: status => this.milestonePaymentStatuses.update(map => ({ ...map, [milestoneId]: status }))
+        });
+      }
+    });
   }
 
   onMilestoneStatusChange(milestone: Milestone, status: string): void {
