@@ -38,15 +38,17 @@ public class InvoiceService : IInvoiceService
     private readonly IFileStorageService _fileStorage;
     private readonly IPdfService _pdfService;
     private readonly IEmailService _emailService;
+    private readonly IMilestoneService _milestoneService;
     private readonly ILogger<InvoiceService> _logger;
 
-    public InvoiceService(ApplicationDbContext context, IScopedAccessService access, IFileStorageService fileStorage, IPdfService pdfService, IEmailService emailService, ILogger<InvoiceService> logger)
+    public InvoiceService(ApplicationDbContext context, IScopedAccessService access, IFileStorageService fileStorage, IPdfService pdfService, IEmailService emailService, IMilestoneService milestoneService, ILogger<InvoiceService> logger)
     {
         _context = context;
         _access = access;
         _fileStorage = fileStorage;
         _pdfService = pdfService;
         _emailService = emailService;
+        _milestoneService = milestoneService;
         _logger = logger;
     }
 
@@ -343,32 +345,22 @@ public class InvoiceService : IInvoiceService
             throw new ValidationException("ClientId must be a Person who holds Client or Finance access on this job.");
     }
 
-    /// <summary>Also enforces "at most one active line item per milestone": a Milestone
-    /// tagged on this document's line items can't already be tagged on a different active
-    /// Invoice. excludingInvoiceId lets an update re-save its own existing tag without
-    /// tripping over itself. Separately, any line carrying a QuotationLineId must point at
-    /// an active quotation line on this same job, and the total billed against that
-    /// quotation line (this invoice's own lines plus every other active invoice's) must
-    /// not exceed the quotation line's Quantity * UnitPrice - partial/progressive billing
-    /// is allowed, over-billing is not.</summary>
+    /// <summary>Any line carrying a QuotationLineId must point at an active quotation line
+    /// on this same job; if that quotation line carries a MilestoneId, it's auto-copied
+    /// onto the invoice line (an explicit conflicting MilestoneId on such a line is
+    /// rejected) so milestone rollups are a single-field query. The total billed against
+    /// that quotation line (this invoice's own lines plus every other active invoice's)
+    /// must not exceed the quotation line's Quantity * UnitPrice. Separately, every line
+    /// carrying a bare MilestoneId (no QuotationLineId - a direct, not quotation-drawn,
+    /// charge) is grouped by milestone and checked against
+    /// MilestoneService.EnsureWithinFeeCeilingAsync - the milestone's fee ceiling, shared
+    /// with whatever's already committed via quotation lines for the same milestone.</summary>
     private async Task ValidateLineItemsAsync(List<LineItemDto> items, Guid jobId, Guid? excludingInvoiceId)
     {
         if (items.Count == 0)
             throw new ValidationException("At least one line item is required.");
         if (items.Any(i => i.Quantity <= 0 || i.UnitPrice < 0))
             throw new ValidationException("Line item quantity must be positive and unit price cannot be negative.");
-
-        var milestoneIds = items.Where(i => i.MilestoneId.HasValue).Select(i => i.MilestoneId!.Value).ToList();
-        if (milestoneIds.Count > 0)
-        {
-            var conflicting = await _context.Invoices
-                .Where(inv => inv.IsActive && (excludingInvoiceId == null || inv.Id != excludingInvoiceId))
-                .Where(inv => inv.LineItems.Any(li => li.MilestoneId != null && milestoneIds.Contains(li.MilestoneId.Value)))
-                .Select(inv => inv.Number)
-                .FirstOrDefaultAsync();
-            if (conflicting != null)
-                throw new ValidationException($"One of these milestones is already billed on invoice {conflicting}.");
-        }
 
         var quotationLineGroups = items.Where(i => i.QuotationLineId.HasValue).GroupBy(i => i.QuotationLineId!.Value);
         foreach (var group in quotationLineGroups)
@@ -377,11 +369,25 @@ public class InvoiceService : IInvoiceService
             if (quotationLine == null || quotationLine.Value.JobId != jobId)
                 throw new ValidationException("QuotationLineId must reference an active quotation line on this same job.");
 
+            foreach (var item in group)
+            {
+                if (item.MilestoneId.HasValue && item.MilestoneId != quotationLine.Value.MilestoneId)
+                    throw new ValidationException("A line's MilestoneId must match its linked quotation line's milestone.");
+                item.MilestoneId = quotationLine.Value.MilestoneId;
+            }
+
             var thisInvoiceAmount = group.Sum(i => i.Quantity * i.UnitPrice);
             var otherInvoicesAmount = GetAmountBilledAgainstQuotationLine(jobId, group.Key, excludingInvoiceId);
             var totalBilled = thisInvoiceAmount + otherInvoicesAmount;
             if (totalBilled > quotationLine.Value.Amount)
                 throw new ValidationException($"Billing {totalBilled} against this quotation line would exceed its total of {quotationLine.Value.Amount}.");
+        }
+
+        var directMilestoneGroups = items.Where(i => i.MilestoneId.HasValue && !i.QuotationLineId.HasValue).GroupBy(i => i.MilestoneId!.Value);
+        foreach (var group in directMilestoneGroups)
+        {
+            var amount = group.Sum(i => i.Quantity * i.UnitPrice);
+            await _milestoneService.EnsureWithinFeeCeilingAsync(jobId, group.Key, amount, excludingInvoiceId: excludingInvoiceId);
         }
     }
 
@@ -389,7 +395,7 @@ public class InvoiceService : IInvoiceService
     /// Quantity * UnitPrice amount, or null if no active quotation currently has a line
     /// with that Id. Owned-entity line items have no standalone DbSet, so this goes
     /// through Quotations with LineItems included.</summary>
-    private async Task<(Guid JobId, decimal Amount)?> FindQuotationLineAsync(Guid quotationLineId)
+    private async Task<(Guid JobId, decimal Amount, Guid? MilestoneId)?> FindQuotationLineAsync(Guid quotationLineId)
     {
         var quotation = await _context.Quotations
             .Include(q => q.LineItems)
@@ -398,7 +404,7 @@ public class InvoiceService : IInvoiceService
         if (quotation == null)
             return null;
         var line = quotation.LineItems.First(li => li.Id == quotationLineId);
-        return (quotation.JobId, line.Quantity * line.UnitPrice);
+        return (quotation.JobId, line.Quantity * line.UnitPrice, line.MilestoneId);
     }
 
     /// <summary>Sums Quantity * UnitPrice across every active invoice line on this job whose
