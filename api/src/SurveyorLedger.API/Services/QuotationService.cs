@@ -138,6 +138,7 @@ public class QuotationService : IQuotationService
             {
                 var created = new QuotationLineItem { Id = Guid.NewGuid(), Description = item.Description.Trim(), Quantity = item.Quantity, UnitPrice = item.UnitPrice, MilestoneId = item.MilestoneId };
                 quotation.LineItems.Add(created);
+                _context.Entry(created).State = EntityState.Added;
                 keepIds.Add(created.Id);
             }
         }

@@ -14,6 +14,7 @@ namespace SurveyorLedger.API.Tests.Services;
 public class QuotationServiceTests : WorkspaceIntegrationTestBase
 {
     private IQuotationService _quotationService = null!;
+    private IInvoiceService _invoiceService = null!;
 
     protected override void ConfigureServices(IServiceCollection services)
     {
@@ -39,6 +40,7 @@ public class QuotationServiceTests : WorkspaceIntegrationTestBase
     {
         var jobService = GetService<IJobService>();
         _quotationService = GetService<IQuotationService>();
+        _invoiceService = GetService<IInvoiceService>();
         var job = await jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Test Job" });
 
         var clientPerson = new Person
@@ -108,4 +110,96 @@ public class QuotationServiceTests : WorkspaceIntegrationTestBase
         await Assert.ThrowsAsync<ValidationException>(() => _quotationService.CreateAsync(WorkspaceId, AdminId, request));
     }
 
+    [Fact]
+    public async Task UpdateAsync_PreservesLineIdForMatchedLine_AssignsNewIdForNewLine()
+    {
+        var (job, clientPersonId) = await SeedJobWithClientParticipantAsync();
+        var quotation = await _quotationService.CreateAsync(WorkspaceId, AdminId, new QuotationRequest
+        {
+            ClientId = clientPersonId, JobId = job.Id,
+            LineItems = new() { new LineItemDto { Description = "Survey", Quantity = 1, UnitPrice = 50000m } },
+            TaxRatePercent = 0
+        });
+        var originalLineId = quotation.LineItems[0].Id;
+
+        var updated = await _quotationService.UpdateAsync(WorkspaceId, AdminId, quotation.Id, new QuotationRequest
+        {
+            ClientId = clientPersonId, JobId = job.Id,
+            LineItems = new()
+            {
+                new LineItemDto { Id = originalLineId, Description = "Survey", Quantity = 1, UnitPrice = 55000m },
+                new LineItemDto { Description = "Extra visit", Quantity = 1, UnitPrice = 5000m }
+            },
+            TaxRatePercent = 0
+        });
+
+        Assert.Equal(2, updated.LineItems.Count);
+        var survey = updated.LineItems.Single(li => li.Description == "Survey");
+        Assert.Equal(originalLineId, survey.Id);
+        Assert.Equal(55000m, survey.UnitPrice);
+        var extra = updated.LineItems.Single(li => li.Description == "Extra visit");
+        Assert.NotEqual(originalLineId, extra.Id);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_RejectsRemovingALineWithInvoicedAmount()
+    {
+        var (job, clientPersonId) = await SeedJobWithClientParticipantAsync();
+        var quotation = await _quotationService.CreateAsync(WorkspaceId, AdminId, new QuotationRequest
+        {
+            ClientId = clientPersonId, JobId = job.Id,
+            LineItems = new()
+            {
+                new LineItemDto { Description = "Survey", Quantity = 1, UnitPrice = 50000m },
+                new LineItemDto { Description = "Plan", Quantity = 1, UnitPrice = 20000m }
+            },
+            TaxRatePercent = 0
+        });
+        var surveyLineId = quotation.LineItems.Single(li => li.Description == "Survey").Id;
+
+        await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
+        {
+            ClientId = clientPersonId, JobId = job.Id,
+            LineItems = new() { new LineItemDto { Description = "Survey (advance)", Quantity = 1, UnitPrice = 20000m, QuotationLineId = surveyLineId } },
+            TaxRatePercent = 0, DiscountAmount = 0, Installments = new()
+        });
+
+        var requestWithoutSurveyLine = new QuotationRequest
+        {
+            ClientId = clientPersonId, JobId = job.Id,
+            LineItems = new() { new LineItemDto { Id = quotation.LineItems.Single(li => li.Description == "Plan").Id, Description = "Plan", Quantity = 1, UnitPrice = 20000m } },
+            TaxRatePercent = 0
+        };
+
+        await Assert.ThrowsAsync<ValidationException>(() => _quotationService.UpdateAsync(WorkspaceId, AdminId, quotation.Id, requestWithoutSurveyLine));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_RejectsShrinkingALineBelowItsInvoicedAmount()
+    {
+        var (job, clientPersonId) = await SeedJobWithClientParticipantAsync();
+        var quotation = await _quotationService.CreateAsync(WorkspaceId, AdminId, new QuotationRequest
+        {
+            ClientId = clientPersonId, JobId = job.Id,
+            LineItems = new() { new LineItemDto { Description = "Survey", Quantity = 1, UnitPrice = 50000m } },
+            TaxRatePercent = 0
+        });
+        var surveyLineId = quotation.LineItems[0].Id;
+
+        await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
+        {
+            ClientId = clientPersonId, JobId = job.Id,
+            LineItems = new() { new LineItemDto { Description = "Survey (advance)", Quantity = 1, UnitPrice = 30000m, QuotationLineId = surveyLineId } },
+            TaxRatePercent = 0, DiscountAmount = 0, Installments = new()
+        });
+
+        var shrunkRequest = new QuotationRequest
+        {
+            ClientId = clientPersonId, JobId = job.Id,
+            LineItems = new() { new LineItemDto { Id = surveyLineId, Description = "Survey", Quantity = 1, UnitPrice = 25000m } },
+            TaxRatePercent = 0
+        };
+
+        await Assert.ThrowsAsync<ValidationException>(() => _quotationService.UpdateAsync(WorkspaceId, AdminId, quotation.Id, shrunkRequest));
+    }
 }
