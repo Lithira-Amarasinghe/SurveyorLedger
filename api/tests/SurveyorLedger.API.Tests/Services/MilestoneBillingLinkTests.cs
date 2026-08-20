@@ -73,17 +73,19 @@ public class MilestoneBillingLinkTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
-    public async Task SecondInvoice_CannotClaimSameMilestone_WhileFirstIsActive()
+    public async Task SecondInvoice_ExceedingMilestoneFee_IsRejected()
     {
         await SeedAsync();
         await _invoiceService.CreateAsync(WorkspaceId, AdminId, InvoiceRequestFor(_milestoneId));
 
+        // Milestone fee is 25000, already fully committed by the first invoice - a second
+        // direct-invoice line for the same milestone would push the total to 50000.
         await Assert.ThrowsAsync<ValidationException>(
             () => _invoiceService.CreateAsync(WorkspaceId, AdminId, InvoiceRequestFor(_milestoneId)));
     }
 
     [Fact]
-    public async Task Quotation_And_Invoice_CanEachHoldTheirOwnActiveLink_Simultaneously()
+    public async Task Quotation_And_DirectInvoice_ShareTheSameFeeCeiling()
     {
         await SeedAsync();
         var quotationRequest = new QuotationRequest
@@ -95,8 +97,9 @@ public class MilestoneBillingLinkTests : WorkspaceIntegrationTestBase
         };
         await _quotationService.CreateAsync(WorkspaceId, AdminId, quotationRequest);
 
-        // Same milestone tagged on an invoice too - independent document types, both allowed.
-        var invoice = await _invoiceService.CreateAsync(WorkspaceId, AdminId, InvoiceRequestFor(_milestoneId));
-        Assert.Equal(_milestoneId, invoice.LineItems.Single().MilestoneId);
+        // The milestone's 25000 fee is already fully committed by the quotation line above -
+        // a direct invoice for the same milestone must be rejected, not allowed alongside it.
+        await Assert.ThrowsAsync<ValidationException>(
+            () => _invoiceService.CreateAsync(WorkspaceId, AdminId, InvoiceRequestFor(_milestoneId)));
     }
 }

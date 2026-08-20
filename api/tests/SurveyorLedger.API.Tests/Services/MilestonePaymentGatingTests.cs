@@ -113,7 +113,10 @@ public class MilestonePaymentGatingTests : WorkspaceIntegrationTestBase
         });
 
         var status = await _milestoneService.GetPaymentStatusAsync(WorkspaceId, AdminId, _jobId, milestone.Id);
-        Assert.Equal(invoice.Id, status.LinkedInvoiceId);
-        Assert.Equal("Draft", status.InvoiceStatus);
+        Assert.Single(status.LinkedInvoices);
+        Assert.Equal(invoice.Id, status.LinkedInvoices[0].InvoiceId);
+        Assert.Equal("Draft", status.LinkedInvoices[0].Status);
+        Assert.Equal(25000m, status.CommittedAmount);
+        Assert.Equal(0m, status.RemainingAmount);
     }
 }
