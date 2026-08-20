@@ -8,6 +8,7 @@ public class ExpenseRequest
     public DateTime IncurredDate { get; set; }
     public Guid? PayeeId { get; set; }
     public string? PayeeType { get; set; }
+    public Guid? MilestoneId { get; set; }
 }
 
 public class ExpenseResponse
@@ -22,6 +23,7 @@ public class ExpenseResponse
     public Guid? PayeeId { get; set; }
     public string? PayeeName { get; set; }
     public string? PayeeType { get; set; }
+    public Guid? MilestoneId { get; set; }
     public string RecordedByName { get; set; }
     public DateTime CreatedAt { get; set; }
 }

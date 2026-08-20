@@ -24,35 +24,38 @@ namespace SurveyorLedger.API.Controllers
         public async Task<ActionResult<ApiResponse<List<MilestoneResponse>>>> List(Guid workspaceId, Guid jobId)
         {
             var milestones = await _milestoneService.GetMilestonesAsync(workspaceId, CallerId(), jobId);
-            return Ok(ApiResponse<List<MilestoneResponse>>.Ok(milestones.Select(ToResponse).ToList()));
+            var responses = new List<MilestoneResponse>();
+            foreach (var m in milestones)
+                responses.Add(await ToResponseAsync(m));
+            return Ok(ApiResponse<List<MilestoneResponse>>.Ok(responses));
         }
 
         [HttpGet("{id}")]
         public async Task<ActionResult<ApiResponse<MilestoneResponse>>> GetById(Guid workspaceId, Guid jobId, Guid id)
         {
             var milestone = await _milestoneService.GetByIdAsync(workspaceId, CallerId(), jobId, id);
-            return Ok(ApiResponse<MilestoneResponse>.Ok(ToResponse(milestone)));
+            return Ok(ApiResponse<MilestoneResponse>.Ok(await ToResponseAsync(milestone)));
         }
 
         [HttpPost]
         public async Task<ActionResult<ApiResponse<MilestoneResponse>>> Create(Guid workspaceId, Guid jobId, [FromBody] MilestoneRequest request)
         {
             var milestone = await _milestoneService.CreateAsync(workspaceId, CallerId(), jobId, request);
-            return CreatedAtAction(nameof(GetById), new { workspaceId, jobId, id = milestone.Id }, ApiResponse<MilestoneResponse>.Ok(ToResponse(milestone)));
+            return CreatedAtAction(nameof(GetById), new { workspaceId, jobId, id = milestone.Id }, ApiResponse<MilestoneResponse>.Ok(await ToResponseAsync(milestone)));
         }
 
         [HttpPut("{id}")]
         public async Task<ActionResult<ApiResponse<MilestoneResponse>>> Update(Guid workspaceId, Guid jobId, Guid id, [FromBody] MilestoneRequest request)
         {
             var milestone = await _milestoneService.UpdateAsync(workspaceId, CallerId(), jobId, id, request);
-            return Ok(ApiResponse<MilestoneResponse>.Ok(ToResponse(milestone)));
+            return Ok(ApiResponse<MilestoneResponse>.Ok(await ToResponseAsync(milestone)));
         }
 
         [HttpPut("{id}/status")]
         public async Task<ActionResult<ApiResponse<MilestoneResponse>>> UpdateStatus(Guid workspaceId, Guid jobId, Guid id, [FromBody] MilestoneStatusRequest request)
         {
             var milestone = await _milestoneService.UpdateStatusAsync(workspaceId, CallerId(), jobId, id, request.Status);
-            return Ok(ApiResponse<MilestoneResponse>.Ok(ToResponse(milestone)));
+            return Ok(ApiResponse<MilestoneResponse>.Ok(await ToResponseAsync(milestone)));
         }
 
         [HttpDelete("{id}")]
@@ -66,7 +69,10 @@ namespace SurveyorLedger.API.Controllers
         public async Task<ActionResult<ApiResponse<List<MilestoneResponse>>>> Reorder(Guid workspaceId, Guid jobId, [FromBody] MilestoneReorderRequest request)
         {
             var milestones = await _milestoneService.ReorderAsync(workspaceId, CallerId(), jobId, request.MilestoneIds);
-            return Ok(ApiResponse<List<MilestoneResponse>>.Ok(milestones.Select(ToResponse).ToList()));
+            var responses = new List<MilestoneResponse>();
+            foreach (var m in milestones)
+                responses.Add(await ToResponseAsync(m));
+            return Ok(ApiResponse<List<MilestoneResponse>>.Ok(responses));
         }
 
         [HttpGet("{id}/payment-requirements")]
@@ -98,23 +104,39 @@ namespace SurveyorLedger.API.Controllers
             }));
         }
 
+        [HttpGet("{id}/profitability")]
+        public async Task<ActionResult<ApiResponse<MilestoneProfitabilityResponse>>> GetProfitability(Guid workspaceId, Guid jobId, Guid id)
+        {
+            var (revenue, expenses, profit) = await _milestoneService.ComputeProfitabilityAsync(workspaceId, CallerId(), jobId, id);
+            return Ok(ApiResponse<MilestoneProfitabilityResponse>.Ok(new MilestoneProfitabilityResponse { Revenue = revenue, Expenses = expenses, Profit = profit }));
+        }
+
         private Guid CallerId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
 
-        private static MilestoneResponse ToResponse(Milestone m) => new()
+        // Note: sequential await in a loop, never Select(...).ToList() with an async lambda
+        // or Task.WhenAll - the injected ApplicationDbContext is scoped per-request and not
+        // safe for concurrent operations.
+        private async Task<MilestoneResponse> ToResponseAsync(Milestone m)
         {
-            MilestoneId = m.Id,
-            JobId = m.JobId,
-            Title = m.Title,
-            Description = m.Description,
-            DueDate = m.DueDate,
-            Amount = m.Amount,
-            Status = m.Status,
-            SortOrder = m.SortOrder,
-            CompletedAt = m.CompletedAt,
-            CompletedBy = m.CompletedBy,
-            CreatedBy = m.CreatedBy,
-            CreatedAt = m.CreatedAt,
-            UpdatedAt = m.UpdatedAt
-        };
+            var committed = await _milestoneService.GetCommittedAmountAsync(m.JobId, m.Id);
+            return new MilestoneResponse
+            {
+                MilestoneId = m.Id,
+                JobId = m.JobId,
+                Title = m.Title,
+                Description = m.Description,
+                DueDate = m.DueDate,
+                Amount = m.Amount,
+                Status = m.Status,
+                SortOrder = m.SortOrder,
+                CompletedAt = m.CompletedAt,
+                CompletedBy = m.CompletedBy,
+                CreatedBy = m.CreatedBy,
+                CreatedAt = m.CreatedAt,
+                UpdatedAt = m.UpdatedAt,
+                CommittedAmount = committed,
+                RemainingAmount = m.Amount.HasValue ? m.Amount.Value - committed : null
+            };
+        }
     }
 }

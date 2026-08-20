@@ -52,6 +52,7 @@ public class ExpenseService : IExpenseService
         await FindJobAsync(workspaceId, jobId);
         await _access.EnsureAllowedAsync(callerUserId, "expense", "create", workspaceId);
         await ValidateAndNormalizePayeeAsync(request);
+        await ValidateMilestoneAsync(jobId, request.MilestoneId);
         var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
 
         var expense = new Expense
@@ -65,6 +66,7 @@ public class ExpenseService : IExpenseService
             IncurredDate = request.IncurredDate,
             PayeeId = request.PayeeId,
             PayeeType = request.PayeeType,
+            MilestoneId = request.MilestoneId,
             RecordedBy = callerPersonId,
             CreatedAt = DateTime.UtcNow
         };
@@ -114,6 +116,7 @@ public class ExpenseService : IExpenseService
         await FindJobAsync(workspaceId, jobId);
         await _access.EnsureAllowedAsync(callerUserId, "expense", "edit", workspaceId);
         await ValidateAndNormalizePayeeAsync(request);
+        await ValidateMilestoneAsync(jobId, request.MilestoneId);
         var expense = await FindExpenseAsync(jobId, expenseId);
 
         expense.Category = request.Category;
@@ -122,6 +125,7 @@ public class ExpenseService : IExpenseService
         expense.IncurredDate = request.IncurredDate;
         expense.PayeeId = request.PayeeId;
         expense.PayeeType = request.PayeeType;
+        expense.MilestoneId = request.MilestoneId;
 
         await _context.SaveChangesAsync();
         return expense;
@@ -199,6 +203,15 @@ public class ExpenseService : IExpenseService
         {
             throw new ValidationException("PayeeId and PayeeType must be empty unless Category is StaffCost.");
         }
+    }
+
+    private async Task ValidateMilestoneAsync(Guid jobId, Guid? milestoneId)
+    {
+        if (milestoneId == null)
+            return;
+        var exists = await _context.Milestones.AnyAsync(m => m.Id == milestoneId && m.JobId == jobId && m.IsActive);
+        if (!exists)
+            throw new ValidationException("MilestoneId must reference an active milestone on this same job.");
     }
 
     private async Task<Job> FindJobAsync(Guid workspaceId, Guid jobId)

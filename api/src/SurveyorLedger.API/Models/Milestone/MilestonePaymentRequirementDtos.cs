@@ -18,6 +18,13 @@ public class LinkedInvoiceSummaryDto
     public required string Status { get; set; }
 }
 
+public class MilestoneProfitabilityResponse
+{
+    public decimal Revenue { get; set; }
+    public decimal Expenses { get; set; }
+    public decimal Profit { get; set; }
+}
+
 public class MilestonePaymentStatusResponse
 {
     public decimal? Amount { get; set; }
