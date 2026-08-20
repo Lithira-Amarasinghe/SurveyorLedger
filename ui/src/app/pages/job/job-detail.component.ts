@@ -24,8 +24,6 @@ import { DocumentListComponent, DocRow } from '../../shared/document-list/docume
 import { DocumentUploadButtonComponent } from '../../shared/document-upload-button/document-upload-button.component';
 import { DocumentRequestFormComponent, DocumentRequestFormValue } from '../../shared/document-request-form/document-request-form.component';
 import { DocumentViewerModalComponent } from '../../shared/document-viewer-modal/document-viewer-modal.component';
-import { InvoiceFormModalComponent } from '../billing/invoices/invoice-form-modal/invoice-form-modal.component';
-import { QuotationFormModalComponent } from '../billing/quotations/quotation-form-modal/quotation-form-modal.component';
 import { ExpenseFormModalComponent } from './expense-form-modal/expense-form-modal.component';
 import { StatusBadgeComponent } from '../../shared/status-badge/status-badge.component';
 import { HasUnsavedChanges } from '../../core/unsaved-changes.guard';
@@ -48,8 +46,6 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
     DocumentUploadButtonComponent,
     DocumentRequestFormComponent,
     DocumentViewerModalComponent,
-    InvoiceFormModalComponent,
-    QuotationFormModalComponent,
     ExpenseFormModalComponent,
     StatusBadgeComponent
   ],
@@ -214,43 +210,69 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
         </div>
 
         <div class="card">
-          <h2 class="text-sm font-semibold text-neutral-900 mb-md">Milestones</h2>
+          <div class="flex items-center justify-between mb-md">
+            <h2 class="text-sm font-semibold text-neutral-900">Milestones</h2>
+            @if (milestones().length > 0) {
+              <span class="text-xs text-neutral-500">{{ milestonesCompletedCount() }}/{{ milestones().length }} completed</span>
+            }
+          </div>
           @if (milestones().length > 0) {
             <div cdkDropList class="space-y-xs mb-md" (cdkDropListDropped)="onMilestoneDropped($event)">
               @for (m of milestones(); track m.milestoneId) {
-                <div cdkDrag [cdkDragDisabled]="isClient()" class="flex items-center justify-between gap-sm px-md py-sm rounded bg-neutral-50">
-                  <div class="flex items-center gap-sm min-w-0">
-                    @if (!isClient()) {
-                      <span cdkDragHandle class="cursor-grab text-neutral-400 select-none flex-shrink-0">⠿</span>
+                @if (editingMilestoneId() === m.milestoneId) {
+                  <div class="rounded bg-neutral-50 p-md space-y-sm">
+                    <input class="input-field text-sm" placeholder="Title" [(ngModel)]="milestoneEditTitleDraft" />
+                    <textarea class="input-field text-sm" rows="2" placeholder="Description (optional)" [(ngModel)]="milestoneEditDescriptionDraft"></textarea>
+                    <input class="input-field text-sm" type="date" [(ngModel)]="milestoneEditDueDateDraft" />
+                    @if (milestoneEditError()) {
+                      <p class="text-xs text-primary-500">{{ milestoneEditError() }}</p>
                     }
-                    <span class="flex-shrink-0">{{ milestoneStatusIcon(m.status) }}</span>
-                    <div class="min-w-0">
-                      <span class="text-sm text-neutral-900 truncate block">{{ m.title }}</span>
-                      @if (m.description) {
-                        <span class="text-xs text-neutral-500 truncate block">{{ m.description }}</span>
+                    <div class="flex items-center justify-end gap-sm">
+                      <button type="button" class="btn-secondary text-xs" (click)="cancelEditingMilestone()">Cancel</button>
+                      <button type="button" class="btn-primary text-xs" (click)="saveMilestoneEdit(m)">Save</button>
+                    </div>
+                  </div>
+                } @else {
+                  <div cdkDrag [cdkDragDisabled]="isClient()" class="flex items-center justify-between gap-sm px-md py-sm rounded bg-neutral-50">
+                    <div class="flex items-center gap-sm min-w-0">
+                      @if (!isClient()) {
+                        <span cdkDragHandle class="cursor-grab text-neutral-400 select-none flex-shrink-0">⠿</span>
+                      }
+                      <span class="flex-shrink-0">{{ milestoneStatusIcon(m.status) }}</span>
+                      <div class="min-w-0">
+                        <span class="text-sm text-neutral-900 truncate block">{{ m.title }}</span>
+                        @if (m.description) {
+                          <span class="text-xs text-neutral-500 truncate block">{{ m.description }}</span>
+                        }
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-sm flex-shrink-0 whitespace-nowrap">
+                      @if (isMilestoneOverdue(m)) {
+                        <span class="text-xs px-sm py-xs rounded bg-primary-50 text-primary-600 font-medium">Overdue</span>
+                      }
+                      @if (m.status === 'Completed') {
+                        <span class="text-xs text-neutral-500">Completed {{ m.completedAt | date: 'mediumDate' }}</span>
+                      } @else if (m.dueDate) {
+                        <span class="text-xs text-neutral-500">Due: {{ m.dueDate | date: 'mediumDate' }}</span>
+                      }
+                      @if (isClient()) {
+                        <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ m.status }}</span>
+                      } @else {
+                        <select class="input-field w-32 py-xs text-xs" [ngModel]="m.status" (ngModelChange)="onMilestoneStatusChange(m, $event)">
+                          @for (s of milestoneStatuses; track s) {
+                            <option [value]="s">{{ s }}</option>
+                          }
+                        </select>
+                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="startEditingMilestone(m)">
+                          Edit
+                        </button>
+                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="confirmingRemoveMilestone.set(m)">
+                          Remove
+                        </button>
                       }
                     </div>
                   </div>
-                  <div class="flex items-center gap-sm flex-shrink-0 whitespace-nowrap">
-                    @if (m.status === 'Completed') {
-                      <span class="text-xs text-neutral-500">Completed {{ m.completedAt | date: 'mediumDate' }}</span>
-                    } @else if (m.dueDate) {
-                      <span class="text-xs text-neutral-500">Due: {{ m.dueDate | date: 'mediumDate' }}</span>
-                    }
-                    @if (isClient()) {
-                      <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ m.status }}</span>
-                    } @else {
-                      <select class="input-field w-32 py-xs text-xs" [ngModel]="m.status" (ngModelChange)="onMilestoneStatusChange(m, $event)">
-                        @for (s of milestoneStatuses; track s) {
-                          <option [value]="s">{{ s }}</option>
-                        }
-                      </select>
-                      <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="confirmingRemoveMilestone.set(m)">
-                        Remove
-                      </button>
-                    }
-                  </div>
-                </div>
+                }
               }
             </div>
           }
@@ -367,8 +389,8 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
           <div class="flex items-center justify-between mb-md">
             <h2 class="text-sm font-semibold text-neutral-900">Billing</h2>
             <div class="flex gap-sm">
-              <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="showQuotationModal.set(true)">+ Quotation</button>
-              <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="showInvoiceModal.set(true)">+ Invoice</button>
+              <a class="text-xs text-primary-500 hover:text-primary-600" [routerLink]="['/app/workspace', workspaceId, 'billing', 'quotations', 'new']" [queryParams]="{ jobId: jobId }">+ Quotation</a>
+              <a class="text-xs text-primary-500 hover:text-primary-600" [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', 'new']" [queryParams]="{ jobId: jobId }">+ Invoice</a>
             </div>
           </div>
 
@@ -537,24 +559,6 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
       }
     }
 
-    @if (showInvoiceModal()) {
-      <app-invoice-form-modal
-        [workspaceId]="workspaceId"
-        [fixedJobId]="jobId"
-        (cancel)="showInvoiceModal.set(false)"
-        (saved)="onInvoiceSaved()"
-      />
-    }
-
-    @if (showQuotationModal()) {
-      <app-quotation-form-modal
-        [workspaceId]="workspaceId"
-        [fixedJobId]="jobId"
-        (cancel)="showQuotationModal.set(false)"
-        (saved)="onQuotationSaved()"
-      />
-    }
-
     @if (showExpenseModal()) {
       <app-expense-form-modal
         [workspaceId]="workspaceId"
@@ -701,8 +705,6 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   budgetCostDraft = 0;
   budgetError = signal('');
   savingBudget = signal(false);
-  showInvoiceModal = signal(false);
-  showQuotationModal = signal(false);
   showExpenseModal = signal(false);
   editingExpense = signal<Expense | null>(null);
 
@@ -718,22 +720,6 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   financeMessage = signal('');
   confirmingDeleteExpense = signal<Expense | null>(null);
   confirmingClearBudget = signal(false);
-
-  onInvoiceSaved(): void {
-    this.showInvoiceModal.set(false);
-    this.invoiceService.search(this.workspaceId, undefined, this.jobId).subscribe(list => {
-      this.jobInvoices.set(list);
-      this.financeMessage.set('Invoice saved.');
-    });
-  }
-
-  onQuotationSaved(): void {
-    this.showQuotationModal.set(false);
-    this.quotationService.search(this.workspaceId, undefined, this.jobId).subscribe(list => {
-      this.jobQuotations.set(list);
-      this.financeMessage.set('Quotation saved.');
-    });
-  }
 
   openExpenseModal(expense: Expense | null = null): void {
     this.editingExpense.set(expense);
@@ -842,6 +828,12 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   confirmingRemoveRole = signal<{ userId: string; role: string } | null>(null);
   confirmingRemoveLand = signal<Land | null>(null);
   confirmingRemoveMilestone = signal<Milestone | null>(null);
+  editingMilestoneId = signal<string | null>(null);
+  milestoneEditTitleDraft = '';
+  milestoneEditDescriptionDraft = '';
+  milestoneEditDueDateDraft = '';
+  milestoneEditError = signal('');
+  milestonesCompletedCount = computed(() => this.milestones().filter(m => m.status === 'Completed').length);
   confirmingRevokeInvite = signal<string | null>(null);
 
   addressLine = addressLine;
@@ -1192,6 +1184,44 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
           this.cancelAddMilestone();
         },
         error: (err) => this.milestoneError.set(err.error?.message ?? 'Could not add milestone.')
+      });
+  }
+
+  startEditingMilestone(milestone: Milestone): void {
+    this.editingMilestoneId.set(milestone.milestoneId);
+    this.milestoneEditTitleDraft = milestone.title;
+    this.milestoneEditDescriptionDraft = milestone.description ?? '';
+    this.milestoneEditDueDateDraft = milestone.dueDate ? milestone.dueDate.substring(0, 10) : '';
+    this.milestoneEditError.set('');
+  }
+
+  cancelEditingMilestone(): void {
+    this.editingMilestoneId.set(null);
+    this.milestoneEditError.set('');
+  }
+
+  isMilestoneOverdue(milestone: Milestone): boolean {
+    if (!milestone.dueDate || milestone.status === 'Completed') return false;
+    return new Date(milestone.dueDate) < new Date(new Date().toDateString());
+  }
+
+  saveMilestoneEdit(milestone: Milestone): void {
+    if (!this.milestoneEditTitleDraft.trim()) {
+      this.milestoneEditError.set('Title is required.');
+      return;
+    }
+    this.milestoneService
+      .update(this.workspaceId, this.jobId, milestone.milestoneId, {
+        title: this.milestoneEditTitleDraft.trim(),
+        description: this.milestoneEditDescriptionDraft.trim() || null,
+        dueDate: this.milestoneEditDueDateDraft || null
+      })
+      .subscribe({
+        next: (updated) => {
+          this.milestones.update(list => list.map(m => (m.milestoneId === updated.milestoneId ? updated : m)));
+          this.cancelEditingMilestone();
+        },
+        error: (err) => this.milestoneEditError.set(err.error?.message ?? 'Could not save milestone.')
       });
   }
 

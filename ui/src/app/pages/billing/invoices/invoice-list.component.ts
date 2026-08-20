@@ -4,21 +4,20 @@ import { RouterLink } from '@angular/router';
 import { Invoice, InvoiceService } from '../../../core/billing.service';
 import { CurrentWorkspaceService } from '../../../core/current-workspace.service';
 import { BillingTabsComponent } from '../billing-tabs.component';
-import { InvoiceFormModalComponent } from './invoice-form-modal/invoice-form-modal.component';
 import { RecordPaymentModalComponent } from './record-payment-modal/record-payment-modal.component';
 import { SendDocumentModalComponent } from '../../../shared/send-document-modal/send-document-modal.component';
 
 @Component({
   selector: 'app-invoice-list',
   standalone: true,
-  imports: [CommonModule, RouterLink, BillingTabsComponent, InvoiceFormModalComponent, RecordPaymentModalComponent, SendDocumentModalComponent],
+  imports: [CommonModule, RouterLink, BillingTabsComponent, RecordPaymentModalComponent, SendDocumentModalComponent],
   template: `
     <div class="p-lg max-w-5xl mx-auto">
       <app-billing-tabs [workspaceId]="workspaceId" active="invoices" />
 
       <div class="flex items-center justify-between mb-lg">
         <h1 class="text-lg font-semibold text-neutral-900">Invoices</h1>
-        <button class="btn-primary" (click)="openCreate()">New invoice</button>
+        <button class="btn-primary" [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', 'new']">New invoice</button>
       </div>
 
       @if (loading()) {
@@ -46,7 +45,9 @@ import { SendDocumentModalComponent } from '../../../shared/send-document-modal/
             <tbody>
               @for (invoice of invoices(); track invoice.invoiceId) {
                 <tr class="border-t border-neutral-200 hover:bg-neutral-50">
-                  <td class="px-lg py-sm text-neutral-900 cursor-pointer" (click)="openEdit(invoice)">{{ invoice.number }}</td>
+                  <td class="px-lg py-sm text-neutral-900">
+                    <a [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', invoice.invoiceId, 'edit']">{{ invoice.number }}</a>
+                  </td>
                   <td class="px-lg py-sm text-neutral-600">{{ invoice.total | number: '1.2-2' }}</td>
                   <td class="px-lg py-sm text-neutral-600">{{ invoice.balance | number: '1.2-2' }}</td>
                   <td class="px-lg py-sm">
@@ -59,7 +60,6 @@ import { SendDocumentModalComponent } from '../../../shared/send-document-modal/
                     <a
                       class="text-xs text-neutral-500 hover:text-neutral-700 mr-md"
                       [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', invoice.invoiceId, 'print']"
-                      (click)="$event.stopPropagation()"
                     >Print</a>
                     <button class="text-xs text-primary-500 hover:text-primary-600 mr-md" (click)="openSend(invoice)">Send</button>
                     @if (invoice.balance > 0 && invoice.status !== 'Cancelled') {
@@ -74,9 +74,6 @@ import { SendDocumentModalComponent } from '../../../shared/send-document-modal/
       }
     </div>
 
-    @if (modalOpen()) {
-      <app-invoice-form-modal [workspaceId]="workspaceId" [editing]="editingInvoice()" (cancel)="closeModal()" (saved)="onSaved()" />
-    }
     @if (payingInvoice(); as invoice) {
       <app-record-payment-modal [workspaceId]="workspaceId" [invoice]="invoice" (cancel)="payingInvoice.set(null)" (recorded)="onPaymentRecorded()" />
     }
@@ -97,8 +94,6 @@ export class InvoiceListComponent implements OnInit {
   invoices = signal<Invoice[]>([]);
   loading = signal(true);
   error = signal('');
-  modalOpen = signal(false);
-  editingInvoice = signal<Invoice | null>(null);
   payingInvoice = signal<Invoice | null>(null);
   sendingInvoice = signal<Invoice | null>(null);
 
@@ -129,25 +124,6 @@ export class InvoiceListComponent implements OnInit {
     if (invoice.status === 'Paid') return 'bg-green-50 text-green-700';
     if (invoice.status === 'PartiallyPaid') return 'bg-amber-50 text-amber-700';
     return 'bg-neutral-100 text-neutral-700';
-  }
-
-  openCreate(): void {
-    this.editingInvoice.set(null);
-    this.modalOpen.set(true);
-  }
-
-  openEdit(invoice: Invoice): void {
-    this.editingInvoice.set(invoice);
-    this.modalOpen.set(true);
-  }
-
-  closeModal(): void {
-    this.modalOpen.set(false);
-  }
-
-  onSaved(): void {
-    this.modalOpen.set(false);
-    this.fetch();
   }
 
   openPayment(invoice: Invoice): void {
