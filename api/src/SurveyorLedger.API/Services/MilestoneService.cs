@@ -19,6 +19,9 @@ public interface IMilestoneService
     Task<List<MilestonePaymentRequirement>> GetPaymentRequirementsAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId);
     Task<List<MilestonePaymentRequirement>> SetPaymentRequirementsAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId, List<(string TargetStatus, string RequiredState)> rules);
     Task<MilestonePaymentStatus> GetPaymentStatusAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId);
+    Task<decimal> GetCommittedAmountAsync(Guid jobId, Guid milestoneId, Guid? excludingQuotationId = null, Guid? excludingInvoiceId = null);
+    Task EnsureWithinFeeCeilingAsync(Guid jobId, Guid milestoneId, decimal additionalAmount, Guid? excludingQuotationId = null, Guid? excludingInvoiceId = null);
+    Task<(decimal Revenue, decimal Expenses, decimal Profit)> ComputeProfitabilityAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId);
 }
 
 public record MilestonePaymentStatus(decimal? Amount, Guid? LinkedInvoiceId, string? LinkedInvoiceNumber, string? InvoiceStatus, string? NextGate);
@@ -255,6 +258,77 @@ public class MilestoneService : IMilestoneService
             linkedInvoice?.Number,
             linkedInvoice?.Status,
             nextGate);
+    }
+
+    /// <summary>Sums everything currently committed against a milestone's fee: every
+    /// quotation line tagged with this MilestoneId on a non-Rejected/Expired active
+    /// quotation (Draft/Sent/Accepted all count - two drafts can each partially quote the
+    /// milestone as long as their sum stays under the fee), plus every direct-invoice line
+    /// tagged with this MilestoneId whose QuotationLineId is null (a line billed through a
+    /// quotation is already counted via that quotation line - counting the resulting
+    /// invoice line too would double-charge the ceiling). excludingQuotationId/
+    /// excludingInvoiceId let a document being saved exclude its own not-yet-persisted
+    /// lines from the sum.</summary>
+    public async Task<decimal> GetCommittedAmountAsync(Guid jobId, Guid milestoneId, Guid? excludingQuotationId = null, Guid? excludingInvoiceId = null)
+    {
+        var quotationCommitted = await _context.Quotations
+            .Where(q => q.IsActive && q.JobId == jobId && q.Status != "Rejected" && q.Status != "Expired")
+            .Where(q => excludingQuotationId == null || q.Id != excludingQuotationId)
+            .SelectMany(q => q.LineItems)
+            .Where(li => li.MilestoneId == milestoneId)
+            .SumAsync(li => (decimal?)(li.Quantity * li.UnitPrice)) ?? 0m;
+
+        var invoiceCommitted = await _context.Invoices
+            .Where(i => i.IsActive && i.JobId == jobId)
+            .Where(i => excludingInvoiceId == null || i.Id != excludingInvoiceId)
+            .SelectMany(i => i.LineItems)
+            .Where(li => li.MilestoneId == milestoneId && li.QuotationLineId == null)
+            .SumAsync(li => (decimal?)(li.Quantity * li.UnitPrice)) ?? 0m;
+
+        return quotationCommitted + invoiceCommitted;
+    }
+
+    /// <summary>Also validates that milestoneId resolves to an active milestone on this
+    /// same job - the old exclusivity checks in InvoiceService/QuotationService never
+    /// verified this, so it's added here as the single place both now route through.
+    /// No-ops if the milestone has no fee (Amount == null) - "milestone can exist without
+    /// a fee" per the design spec.</summary>
+    public async Task EnsureWithinFeeCeilingAsync(Guid jobId, Guid milestoneId, decimal additionalAmount, Guid? excludingQuotationId = null, Guid? excludingInvoiceId = null)
+    {
+        var milestone = await _context.Milestones.FirstOrDefaultAsync(m => m.Id == milestoneId && m.IsActive);
+        if (milestone == null || milestone.JobId != jobId)
+            throw new ValidationException("MilestoneId must reference an active milestone on this same job.");
+        if (milestone.Amount == null)
+            return;
+
+        var committed = await GetCommittedAmountAsync(jobId, milestoneId, excludingQuotationId, excludingInvoiceId);
+        var total = committed + additionalAmount;
+        if (total > milestone.Amount)
+            throw new ValidationException($"Billing {total} against milestone '{milestone.Title}' would exceed its fee of {milestone.Amount}.");
+    }
+
+    /// <summary>Revenue is invoiced-amount, not paid-amount: Payment is recorded per
+    /// Invoice as a whole document, not per line, so there's no reliable way to know how
+    /// much of one milestone's line within a multi-line invoice has actually been
+    /// collected. Quotation lines are excluded - a quotation is a proposal, not revenue,
+    /// even though it counts toward the fee ceiling in GetCommittedAmountAsync.</summary>
+    public async Task<(decimal Revenue, decimal Expenses, decimal Profit)> ComputeProfitabilityAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId)
+    {
+        await FindJobAsync(workspaceId, jobId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
+        await FindMilestoneAsync(jobId, milestoneId);
+
+        var revenue = await _context.Invoices
+            .Where(i => i.IsActive && i.JobId == jobId)
+            .SelectMany(i => i.LineItems)
+            .Where(li => li.MilestoneId == milestoneId)
+            .SumAsync(li => (decimal?)(li.Quantity * li.UnitPrice)) ?? 0m;
+
+        var expenses = await _context.Expenses
+            .Where(e => e.JobId == jobId && e.MilestoneId == milestoneId)
+            .SumAsync(e => (decimal?)e.Amount) ?? 0m;
+
+        return (revenue, expenses, revenue - expenses);
     }
 
     /// <summary>The invoice, if any, carrying a line item tagged with this milestone - at
