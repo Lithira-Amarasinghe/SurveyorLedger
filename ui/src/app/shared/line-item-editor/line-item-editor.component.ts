@@ -2,6 +2,7 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { LineItem } from '../../core/billing.service';
+import { Milestone } from '../../core/milestone.service';
 
 @Component({
   selector: 'app-line-item-editor',
@@ -40,6 +41,19 @@ import { LineItem } from '../../core/billing.service';
               (ngModelChange)="updateItem(i, 'unitPrice', $event)"
               [name]="'price-' + i"
             />
+            @if (milestones.length > 0) {
+              <select
+                class="input-field w-40"
+                [ngModel]="item.milestoneId ?? ''"
+                (ngModelChange)="updateItem(i, 'milestoneId', $event || undefined)"
+                [name]="'milestone-' + i"
+              >
+                <option value="">No milestone (other fee)</option>
+                @for (m of milestones; track m.milestoneId) {
+                  <option [value]="m.milestoneId">{{ m.title }}</option>
+                }
+              </select>
+            }
             <button type="button" class="text-primary-500 hover:text-primary-600 px-sm py-sm" (click)="removeItem(i)" title="Remove line">✕</button>
           </div>
         }
@@ -54,6 +68,7 @@ import { LineItem } from '../../core/billing.service';
 })
 export class LineItemEditorComponent {
   @Input() items: LineItem[] = [];
+  @Input() milestones: Milestone[] = [];
   @Output() itemsChange = new EventEmitter<LineItem[]>();
 
   addItem(): void {
@@ -64,8 +79,12 @@ export class LineItemEditorComponent {
     this.itemsChange.emit(this.items.filter((_, i) => i !== index));
   }
 
-  updateItem(index: number, field: keyof LineItem, value: string | number): void {
-    const updated = this.items.map((item, i) => (i === index ? { ...item, [field]: field === 'description' ? value : Number(value) } : item));
+  updateItem(index: number, field: keyof LineItem, value: string | number | undefined): void {
+    const updated = this.items.map((item, i) => {
+      if (i !== index) return item;
+      if (field === 'description' || field === 'milestoneId') return { ...item, [field]: value };
+      return { ...item, [field]: Number(value) };
+    });
     this.itemsChange.emit(updated);
   }
 
