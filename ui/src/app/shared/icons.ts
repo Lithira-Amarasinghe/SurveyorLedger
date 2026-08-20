@@ -12,7 +12,8 @@ export const ICONS = {
   request: `<path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75M3.75 4.5h16.5a1.5 1.5 0 011.5 1.5v13.5a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5V6a1.5 1.5 0 011.5-1.5z" />`,
   chevronDown: `<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />`,
   chevronUp: `<path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />`,
-  qr: `<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.5h6v6h-6v-6zM14.25 4.5h6v6h-6v-6zM3.75 14.25h6v6h-6v-6zM14.25 14.25h2.25v2.25M18.75 14.25H20.25M14.25 18.75h2.25M18.75 17.25V20.25M6.75 7.5v0M17.25 7.5v0M6.75 17.25v0" />`
+  qr: `<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.5h6v6h-6v-6zM14.25 4.5h6v6h-6v-6zM3.75 14.25h6v6h-6v-6zM14.25 14.25h2.25v2.25M18.75 14.25H20.25M14.25 18.75h2.25M18.75 17.25V20.25M6.75 7.5v0M17.25 7.5v0M6.75 17.25v0" />`,
+  banknote: `<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 8.25v9a1.5 1.5 0 001.5 1.5h16.5a1.5 1.5 0 001.5-1.5v-9M2.25 8.25a1.5 1.5 0 011.5-1.5h16.5a1.5 1.5 0 011.5 1.5M12 15a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z" />`
 } as const;
 
 export type IconName = keyof typeof ICONS;

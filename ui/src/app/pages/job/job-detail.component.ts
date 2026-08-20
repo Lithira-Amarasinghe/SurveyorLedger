@@ -26,6 +26,7 @@ import { DocumentRequestFormComponent, DocumentRequestFormValue } from '../../sh
 import { DocumentViewerModalComponent } from '../../shared/document-viewer-modal/document-viewer-modal.component';
 import { ExpenseFormModalComponent } from './expense-form-modal/expense-form-modal.component';
 import { StatusBadgeComponent } from '../../shared/status-badge/status-badge.component';
+import { IconComponent } from '../../shared/icon/icon.component';
 import { HasUnsavedChanges } from '../../core/unsaved-changes.guard';
 
 const STATUSES = ['Draft', 'Scheduled', 'InProgress', 'Completed', 'Cancelled'];
@@ -47,7 +48,8 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
     DocumentRequestFormComponent,
     DocumentViewerModalComponent,
     ExpenseFormModalComponent,
-    StatusBadgeComponent
+    StatusBadgeComponent,
+    IconComponent
   ],
   template: `
     @if (loading()) {
@@ -286,14 +288,14 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                             <option [value]="s">{{ s }}</option>
                           }
                         </select>
-                        <button type="button" class="text-sm text-primary-500 hover:text-primary-600" (click)="startEditingMilestone(m)" title="Edit">
-                          ✏️
+                        <button type="button" class="icon-btn" title="Edit" (click)="startEditingMilestone(m)">
+                          <app-icon name="rename" />
                         </button>
-                        <button type="button" class="text-sm text-neutral-500 hover:text-neutral-700" (click)="toggleRulesEditor(m)" title="Payment rules">
-                          💰
+                        <button type="button" class="icon-btn" title="Payment rules" (click)="toggleRulesEditor(m)">
+                          <app-icon name="banknote" />
                         </button>
-                        <button type="button" class="text-sm text-primary-500 hover:text-primary-600" (click)="confirmingRemoveMilestone.set(m)" title="Remove">
-                          🗑️
+                        <button type="button" class="icon-btn text-primary-500" title="Remove" (click)="confirmingRemoveMilestone.set(m)">
+                          <app-icon name="delete" />
                         </button>
                       }
                     </div>
@@ -702,7 +704,8 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
         </div>
       </div>
     }
-  `
+  `,
+  styles: [`.icon-btn { display: flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; border-radius: 0.25rem; color: var(--color-neutral-500, #737373); } .icon-btn:hover { background: var(--color-neutral-100, #f5f5f5); color: var(--color-primary-600, #0284c7); }`]
 })
 export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   @ViewChild('personModal') personModal?: AddJobPersonModalComponent;
