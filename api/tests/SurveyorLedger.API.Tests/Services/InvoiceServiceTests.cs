@@ -19,6 +19,7 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
     protected override void ConfigureServices(IServiceCollection services)
     {
         services.AddScoped<IInvoiceService, InvoiceService>();
+        services.AddScoped<IMilestoneService, MilestoneService>();
         services.AddScoped<IJobService, JobService>();
         services.AddScoped<IInvitationService, InvitationService>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();

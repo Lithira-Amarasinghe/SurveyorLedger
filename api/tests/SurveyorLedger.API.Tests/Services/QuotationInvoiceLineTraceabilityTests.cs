@@ -22,6 +22,7 @@ public class QuotationInvoiceLineTraceabilityTests : WorkspaceIntegrationTestBas
         services.AddScoped<IJobService, JobService>();
         services.AddScoped<IQuotationService, QuotationService>();
         services.AddScoped<IInvoiceService, InvoiceService>();
+        services.AddScoped<IMilestoneService, MilestoneService>();
         services.AddScoped<IInvitationService, InvitationService>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddScoped<IPdfService, PdfService>();

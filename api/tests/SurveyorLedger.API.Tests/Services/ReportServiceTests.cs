@@ -23,6 +23,7 @@ public class ReportServiceTests : WorkspaceIntegrationTestBase
     {
         services.AddScoped<IReportService, ReportService>();
         services.AddScoped<IInvoiceService, InvoiceService>();
+        services.AddScoped<IMilestoneService, MilestoneService>();
         services.AddScoped<IExpenseService, ExpenseService>();
         services.AddScoped<IJobService, JobService>();
         services.AddScoped<IInvitationService, InvitationService>();

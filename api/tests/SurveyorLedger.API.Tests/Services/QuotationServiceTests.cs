@@ -20,6 +20,7 @@ public class QuotationServiceTests : WorkspaceIntegrationTestBase
     {
         services.AddScoped<IInvoiceService, InvoiceService>();
         services.AddScoped<IQuotationService, QuotationService>();
+        services.AddScoped<IMilestoneService, MilestoneService>();
         services.AddScoped<IJobService, JobService>();
         services.AddScoped<IInvitationService, InvitationService>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
