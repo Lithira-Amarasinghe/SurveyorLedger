@@ -27,15 +27,17 @@ public class QuotationService : IQuotationService
     private readonly IPdfService _pdfService;
     private readonly IEmailService _emailService;
     private readonly IInvoiceService _invoiceService;
+    private readonly IMilestoneService _milestoneService;
     private readonly ILogger<QuotationService> _logger;
 
-    public QuotationService(ApplicationDbContext context, IScopedAccessService access, IPdfService pdfService, IEmailService emailService, IInvoiceService invoiceService, ILogger<QuotationService> logger)
+    public QuotationService(ApplicationDbContext context, IScopedAccessService access, IPdfService pdfService, IEmailService emailService, IInvoiceService invoiceService, IMilestoneService milestoneService, ILogger<QuotationService> logger)
     {
         _context = context;
         _access = access;
         _pdfService = pdfService;
         _emailService = emailService;
         _invoiceService = invoiceService;
+        _milestoneService = milestoneService;
         _logger = logger;
     }
 
@@ -43,7 +45,7 @@ public class QuotationService : IQuotationService
     {
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, request.JobId, "create");
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
-        await ValidateLineItemsAsync(request.LineItems, null);
+        await ValidateLineItemsAsync(request.LineItems, request.JobId, null);
         ValidateTaxRate(request.TaxRatePercent);
 
         var quotation = new Quotation
@@ -106,7 +108,7 @@ public class QuotationService : IQuotationService
         var quotation = await FindQuotationAsync(workspaceId, quotationId);
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId, "edit");
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
-        await ValidateLineItemsAsync(request.LineItems, quotationId);
+        await ValidateLineItemsAsync(request.LineItems, request.JobId, quotationId);
         ValidateTaxRate(request.TaxRatePercent);
         EnsureLineEditsPreserveInvoicedAmounts(quotation, request.LineItems);
 
@@ -265,28 +267,24 @@ public class QuotationService : IQuotationService
             throw new ValidationException("ClientId must be a Person who holds Client or Finance access on this job.");
     }
 
-    /// <summary>Also enforces "at most one active line item per milestone" for quotations,
-    /// independent of the same rule on invoices - a milestone can have one active tag on
-    /// each document type at once. excludingQuotationId lets an update re-save its own
-    /// existing tag without tripping over itself.</summary>
-    private async Task ValidateLineItemsAsync(List<LineItemDto> items, Guid? excludingQuotationId)
+    /// <summary>Every line carrying a MilestoneId is grouped by milestone and checked
+    /// against MilestoneService.EnsureWithinFeeCeilingAsync - the fee ceiling shared with
+    /// whatever's already committed via direct-invoice lines for the same milestone.
+    /// excludingQuotationId lets an update exclude this quotation's own current lines from
+    /// the sum before re-adding its (possibly changed) new amount.</summary>
+    private async Task ValidateLineItemsAsync(List<LineItemDto> items, Guid jobId, Guid? excludingQuotationId)
     {
         if (items.Count == 0)
             throw new ValidationException("At least one line item is required.");
         if (items.Any(i => i.Quantity <= 0 || i.UnitPrice < 0))
             throw new ValidationException("Line item quantity must be positive and unit price cannot be negative.");
 
-        var milestoneIds = items.Where(i => i.MilestoneId.HasValue).Select(i => i.MilestoneId!.Value).ToList();
-        if (milestoneIds.Count == 0)
-            return;
-
-        var conflicting = await _context.Quotations
-            .Where(q => q.IsActive && (excludingQuotationId == null || q.Id != excludingQuotationId))
-            .Where(q => q.LineItems.Any(li => li.MilestoneId != null && milestoneIds.Contains(li.MilestoneId.Value)))
-            .Select(q => q.Number)
-            .FirstOrDefaultAsync();
-        if (conflicting != null)
-            throw new ValidationException($"One of these milestones is already quoted on {conflicting}.");
+        var milestoneGroups = items.Where(i => i.MilestoneId.HasValue).GroupBy(i => i.MilestoneId!.Value);
+        foreach (var group in milestoneGroups)
+        {
+            var amount = group.Sum(i => i.Quantity * i.UnitPrice);
+            await _milestoneService.EnsureWithinFeeCeilingAsync(jobId, group.Key, amount, excludingQuotationId: excludingQuotationId);
+        }
     }
 
     /// <summary>Rejects an update that would remove a quotation line, or shrink one below
