@@ -53,6 +53,8 @@ public class InvoiceService : IInvoiceService
     {
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, request.JobId, "create");
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
+        if (request.QuotationId.HasValue)
+            await EnsureQuotationBelongsToJobAsync(request.QuotationId.Value, request.JobId);
         await ValidateLineItemsAsync(request.LineItems, null);
         ValidateFinancials(request.TaxRatePercent, request.DiscountAmount, request.LineItems);
         ValidateInstallments(request.Installments, request.LineItems, request.TaxRatePercent, request.DiscountAmount);
@@ -62,6 +64,7 @@ public class InvoiceService : IInvoiceService
             Id = Guid.NewGuid(),
             ClientId = request.ClientId,
             JobId = request.JobId,
+            QuotationId = request.QuotationId,
             LineItems = request.LineItems.Select(i => new InvoiceLineItem { Id = Guid.NewGuid(), Description = i.Description.Trim(), Quantity = i.Quantity, UnitPrice = i.UnitPrice, MilestoneId = i.MilestoneId }).ToList(),
             Installments = request.Installments.Select(i => new InvoiceInstallment { Id = Guid.NewGuid(), Amount = i.Amount, DueDate = i.DueDate }).ToList(),
             TaxRatePercent = request.TaxRatePercent,
@@ -322,6 +325,13 @@ public class InvoiceService : IInvoiceService
     {
         var count = await _context.Payments.IgnoreQueryFilters().CountAsync(p => p.WorkspaceId == workspaceId);
         return $"RCP-{count + 1:D4}";
+    }
+
+    private async Task EnsureQuotationBelongsToJobAsync(Guid quotationId, Guid jobId)
+    {
+        var belongs = await _context.Quotations.AnyAsync(q => q.Id == quotationId && q.JobId == jobId && q.IsActive);
+        if (!belongs)
+            throw new ValidationException("QuotationId must reference an active quotation on this same job.");
     }
 
     /// <summary>Replaces EnsureClientExistsAsync - ClientId must resolve to a Person who holds

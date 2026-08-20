@@ -99,31 +99,6 @@ public class QuotationServiceTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
-    public async Task ConvertToInvoiceAsync_CreatesInvoiceAndMarksAccepted()
-    {
-        var (job, clientPersonId) = await SeedJobWithClientParticipantAsync();
-        var quotation = await _quotationService.CreateAsync(WorkspaceId, AdminId, MakeRequest(clientPersonId, job.Id, "Sent"));
-
-        var invoice = await _quotationService.ConvertToInvoiceAsync(WorkspaceId, AdminId, quotation.Id, new ConvertQuotationRequest());
-        Assert.Equal("INV-0001", invoice.Number);
-        Assert.Equal(clientPersonId, invoice.ClientId);
-
-        var reloaded = await _quotationService.GetByIdAsync(WorkspaceId, AdminId, quotation.Id);
-        Assert.Equal("Accepted", reloaded.Status);
-    }
-
-    [Fact]
-    public async Task ConvertToInvoiceAsync_AlreadyConverted_Throws()
-    {
-        var (job, clientPersonId) = await SeedJobWithClientParticipantAsync();
-        var quotation = await _quotationService.CreateAsync(WorkspaceId, AdminId, MakeRequest(clientPersonId, job.Id, "Sent"));
-        await _quotationService.ConvertToInvoiceAsync(WorkspaceId, AdminId, quotation.Id, new ConvertQuotationRequest());
-
-        await Assert.ThrowsAsync<ValidationException>(
-            () => _quotationService.ConvertToInvoiceAsync(WorkspaceId, AdminId, quotation.Id, new ConvertQuotationRequest()));
-    }
-
-    [Fact]
     public async Task CreateAsync_NegativeTaxRate_Throws()
     {
         var (job, clientId) = await SeedJobWithClientParticipantAsync();
@@ -133,13 +108,4 @@ public class QuotationServiceTests : WorkspaceIntegrationTestBase
         await Assert.ThrowsAsync<ValidationException>(() => _quotationService.CreateAsync(WorkspaceId, AdminId, request));
     }
 
-    [Fact]
-    public async Task ConvertToInvoiceAsync_DiscountExceedsSubtotal_Throws()
-    {
-        var (job, clientId) = await SeedJobWithClientParticipantAsync();
-        var quotation = await _quotationService.CreateAsync(WorkspaceId, AdminId, MakeRequest(clientId, job.Id));
-
-        await Assert.ThrowsAsync<ValidationException>(() =>
-            _quotationService.ConvertToInvoiceAsync(WorkspaceId, AdminId, quotation.Id, new ConvertQuotationRequest { DiscountAmount = 999999m }));
-    }
 }

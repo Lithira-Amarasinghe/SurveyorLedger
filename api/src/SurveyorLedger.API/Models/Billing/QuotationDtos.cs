@@ -23,12 +23,6 @@ public class SendQuotationRequest
     public List<Guid> RecipientPersonIds { get; set; } = new();
 }
 
-public class ConvertQuotationRequest
-{
-    public DateTime? DueDate { get; set; }
-    public decimal DiscountAmount { get; set; }
-}
-
 public class QuotationResponse
 {
     public Guid QuotationId { get; set; }
@@ -42,6 +36,8 @@ public class QuotationResponse
     public string Status { get; set; }
     public DateTime? ValidUntil { get; set; }
     public int RevisionNumber { get; set; }
+    public decimal InvoicedAmount { get; set; }
+    public decimal RemainingAmount { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

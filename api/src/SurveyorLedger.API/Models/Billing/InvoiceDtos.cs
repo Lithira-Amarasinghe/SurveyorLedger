@@ -4,6 +4,7 @@ public class InvoiceRequest
 {
     public Guid ClientId { get; set; }
     public Guid JobId { get; set; }
+    public Guid? QuotationId { get; set; }
     public List<LineItemDto> LineItems { get; set; } = new();
     public decimal TaxRatePercent { get; set; }
     public decimal DiscountAmount { get; set; }

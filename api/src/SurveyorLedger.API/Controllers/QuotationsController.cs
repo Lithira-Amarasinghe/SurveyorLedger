@@ -14,13 +14,11 @@ namespace SurveyorLedger.API.Controllers
     public class QuotationsController : ControllerBase
     {
         private readonly IQuotationService _quotationService;
-        private readonly IInvoiceService _invoiceService;
         private readonly IConfiguration _config;
 
-        public QuotationsController(IQuotationService quotationService, IInvoiceService invoiceService, IConfiguration config)
+        public QuotationsController(IQuotationService quotationService, IConfiguration config)
         {
             _quotationService = quotationService;
-            _invoiceService = invoiceService;
             _config = config;
         }
 
@@ -28,28 +26,28 @@ namespace SurveyorLedger.API.Controllers
         public async Task<ActionResult<ApiResponse<List<QuotationResponse>>>> Search(Guid workspaceId, [FromQuery] Guid? clientId, [FromQuery] Guid? jobId)
         {
             var quotations = await _quotationService.SearchAsync(workspaceId, CallerId(), clientId, jobId);
-            return Ok(ApiResponse<List<QuotationResponse>>.Ok(quotations.Select(ToResponse).ToList()));
+            return Ok(ApiResponse<List<QuotationResponse>>.Ok(quotations.Select(q => ToResponse(q, _quotationService)).ToList()));
         }
 
         [HttpPost]
         public async Task<ActionResult<ApiResponse<QuotationResponse>>> Create(Guid workspaceId, [FromBody] QuotationRequest request)
         {
             var quotation = await _quotationService.CreateAsync(workspaceId, CallerId(), request);
-            return CreatedAtAction(nameof(GetById), new { workspaceId, id = quotation.Id }, ApiResponse<QuotationResponse>.Ok(ToResponse(quotation)));
+            return CreatedAtAction(nameof(GetById), new { workspaceId, id = quotation.Id }, ApiResponse<QuotationResponse>.Ok(ToResponse(quotation, _quotationService)));
         }
 
         [HttpGet("{id}")]
         public async Task<ActionResult<ApiResponse<QuotationResponse>>> GetById(Guid workspaceId, Guid id)
         {
             var quotation = await _quotationService.GetByIdAsync(workspaceId, CallerId(), id);
-            return Ok(ApiResponse<QuotationResponse>.Ok(ToResponse(quotation)));
+            return Ok(ApiResponse<QuotationResponse>.Ok(ToResponse(quotation, _quotationService)));
         }
 
         [HttpPut("{id}")]
         public async Task<ActionResult<ApiResponse<QuotationResponse>>> Update(Guid workspaceId, Guid id, [FromBody] QuotationRequest request)
         {
             var quotation = await _quotationService.UpdateAsync(workspaceId, CallerId(), id, request);
-            return Ok(ApiResponse<QuotationResponse>.Ok(ToResponse(quotation)));
+            return Ok(ApiResponse<QuotationResponse>.Ok(ToResponse(quotation, _quotationService)));
         }
 
         [HttpDelete("{id}")]
@@ -57,13 +55,6 @@ namespace SurveyorLedger.API.Controllers
         {
             await _quotationService.DeleteAsync(workspaceId, CallerId(), id);
             return NoContent();
-        }
-
-        [HttpPost("{id}/convert-to-invoice")]
-        public async Task<ActionResult<ApiResponse<InvoiceResponse>>> ConvertToInvoice(Guid workspaceId, Guid id, [FromBody] ConvertQuotationRequest request)
-        {
-            var invoice = await _quotationService.ConvertToInvoiceAsync(workspaceId, CallerId(), id, request);
-            return Ok(ApiResponse<InvoiceResponse>.Ok(InvoicesController.ToResponse(invoice, _invoiceService)));
         }
 
         [HttpPost("{id}/send")]
@@ -76,10 +67,11 @@ namespace SurveyorLedger.API.Controllers
 
         private Guid CallerId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
 
-        internal static QuotationResponse ToResponse(Quotation q)
+        internal static QuotationResponse ToResponse(Quotation q, IQuotationService quotationService)
         {
             var subtotal = q.LineItems.Sum(li => li.Quantity * li.UnitPrice);
             var tax = subtotal * q.TaxRatePercent / 100m;
+            var (invoicedAmount, remainingAmount) = quotationService.ComputeBillingProgress(q);
             return new QuotationResponse
             {
                 QuotationId = q.Id,
@@ -93,6 +85,8 @@ namespace SurveyorLedger.API.Controllers
                 Status = q.Status,
                 ValidUntil = q.ValidUntil,
                 RevisionNumber = q.RevisionNumber,
+                InvoicedAmount = invoicedAmount,
+                RemainingAmount = remainingAmount,
                 CreatedAt = q.CreatedAt,
                 UpdatedAt = q.UpdatedAt
             };

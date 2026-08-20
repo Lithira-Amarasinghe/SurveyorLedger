@@ -15,8 +15,8 @@ public interface IQuotationService
     Task<Quotation> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid quotationId);
     Task<Quotation> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, QuotationRequest request);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid quotationId);
-    Task<Invoice> ConvertToInvoiceAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, ConvertQuotationRequest request);
     Task SendAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, List<Guid> recipientPersonIds, string appBaseUrl);
+    (decimal InvoicedAmount, decimal RemainingAmount) ComputeBillingProgress(Quotation quotation);
 }
 
 public class QuotationService : IQuotationService
@@ -25,14 +25,16 @@ public class QuotationService : IQuotationService
     private readonly IScopedAccessService _access;
     private readonly IPdfService _pdfService;
     private readonly IEmailService _emailService;
+    private readonly IInvoiceService _invoiceService;
     private readonly ILogger<QuotationService> _logger;
 
-    public QuotationService(ApplicationDbContext context, IScopedAccessService access, IPdfService pdfService, IEmailService emailService, ILogger<QuotationService> logger)
+    public QuotationService(ApplicationDbContext context, IScopedAccessService access, IPdfService pdfService, IEmailService emailService, IInvoiceService invoiceService, ILogger<QuotationService> logger)
     {
         _context = context;
         _access = access;
         _pdfService = pdfService;
         _emailService = emailService;
+        _invoiceService = invoiceService;
         _logger = logger;
     }
 
@@ -76,7 +78,7 @@ public class QuotationService : IQuotationService
     {
         await _access.EnsureListAllowedAsync(callerUserId, workspaceId);
 
-        var quotations = _context.Quotations.Where(q => q.Job.WorkspaceId == workspaceId);
+        var quotations = _context.Quotations.Include(q => q.LineItems).Where(q => q.Job.WorkspaceId == workspaceId);
         if (!await _access.HasViewAllAsync(callerUserId, "job", workspaceId))
         {
             var accessibleJobIds = (await _access.GetAccessibleJobsAsync(callerUserId))
@@ -145,52 +147,6 @@ public class QuotationService : IQuotationService
         await _context.SaveChangesAsync();
     }
 
-    public async Task<Invoice> ConvertToInvoiceAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, ConvertQuotationRequest request)
-    {
-        var quotation = await FindQuotationAsync(workspaceId, quotationId);
-        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId, "edit");
-        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId, "create");
-
-        if (quotation.Status is not ("Draft" or "Sent"))
-            throw new ValidationException($"Cannot convert a quotation with status '{quotation.Status}'.");
-        if (request.DiscountAmount < 0)
-            throw new ValidationException("Discount amount cannot be negative.");
-        var quotationSubtotal = quotation.LineItems.Sum(li => li.Quantity * li.UnitPrice);
-        if (request.DiscountAmount > quotationSubtotal)
-            throw new ValidationException($"Discount ({request.DiscountAmount}) cannot exceed the subtotal ({quotationSubtotal}).");
-
-        var invoice = new Invoice
-        {
-            Id = Guid.NewGuid(),
-            ClientId = quotation.ClientId,
-            JobId = quotation.JobId,
-            QuotationId = quotation.Id,
-            LineItems = quotation.LineItems.Select(li => new InvoiceLineItem { Id = Guid.NewGuid(), Description = li.Description, Quantity = li.Quantity, UnitPrice = li.UnitPrice, MilestoneId = li.MilestoneId }).ToList(),
-            TaxRatePercent = quotation.TaxRatePercent,
-            DiscountAmount = request.DiscountAmount,
-            Status = "Draft",
-            DueDate = request.DueDate,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
-
-        var strategy = _context.Database.CreateExecutionStrategy();
-        await strategy.ExecuteAsync(async () =>
-        {
-            await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
-            invoice.Number = await NextNumberAsync(workspaceId, "INV");
-            await _context.Invoices.AddAsync(invoice);
-            quotation.Status = "Accepted";
-            quotation.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-        });
-
-        _logger.LogInformation("Quotation {QuotationId} converted to Invoice {InvoiceId} ({Number})", quotation.Id, invoice.Id, invoice.Number);
-        return invoice;
-    }
-
     public async Task SendAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, List<Guid> recipientPersonIds, string appBaseUrl)
     {
         var quotation = await FindQuotationAsync(workspaceId, quotationId);
@@ -236,14 +192,28 @@ public class QuotationService : IQuotationService
         _logger.LogInformation("Quotation {QuotationId} sent to {Count} recipient(s)", quotationId, recipients.Count);
     }
 
+    /// <summary>Sums each active Invoice's own computed Total (via InvoiceService -
+    /// Invoice.Total isn't a stored column) where that invoice carries this QuotationId.
+    /// Computed, not stored, same pattern as InvoiceService.ComputeInvoiceTotals itself.
+    /// Requires quotation.LineItems already loaded (FindQuotationAsync/GetByIdAsync/the
+    /// updated SearchAsync all do this).</summary>
+    public (decimal InvoicedAmount, decimal RemainingAmount) ComputeBillingProgress(Quotation quotation)
+    {
+        var invoices = _context.Invoices.Include(i => i.LineItems).Include(i => i.Payments)
+            .Where(i => i.IsActive && i.QuotationId == quotation.Id)
+            .ToList();
+        var invoicedAmount = invoices.Sum(i => _invoiceService.ComputeInvoiceTotals(i).Total);
+
+        var quotationSubtotal = quotation.LineItems.Sum(li => li.Quantity * li.UnitPrice);
+        var quotationTax = quotationSubtotal * quotation.TaxRatePercent / 100m;
+        var quotationTotal = quotationSubtotal + quotationTax;
+
+        return (invoicedAmount, quotationTotal - invoicedAmount);
+    }
+
     private async Task<string> NextNumberAsync(Guid workspaceId, string prefix)
     {
-        var count = prefix switch
-        {
-            "Q" => await _context.Quotations.IgnoreQueryFilters().CountAsync(q => q.Job.WorkspaceId == workspaceId),
-            "INV" => await _context.Invoices.IgnoreQueryFilters().CountAsync(i => i.Job.WorkspaceId == workspaceId),
-            _ => throw new InvalidOperationException($"Unknown prefix '{prefix}'.")
-        };
+        var count = await _context.Quotations.IgnoreQueryFilters().CountAsync(q => q.Job.WorkspaceId == workspaceId);
         return $"{prefix}-{count + 1:D4}";
     }
 
