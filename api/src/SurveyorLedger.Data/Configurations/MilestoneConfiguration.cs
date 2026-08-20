@@ -31,5 +31,14 @@ public class MilestoneConfiguration : IEntityTypeConfiguration<Milestone>
             .WithMany()
             .HasForeignKey(x => x.CompletedBy)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.OwnsMany(x => x.PaymentRequirements, r =>
+        {
+            r.ToTable("MilestonePaymentRequirements");
+            r.WithOwner().HasForeignKey("MilestoneId");
+            r.HasKey(x => x.Id);
+            r.Property(x => x.TargetStatus).HasMaxLength(20).IsRequired();
+            r.Property(x => x.RequiredState).HasMaxLength(20).IsRequired();
+        });
     }
 }

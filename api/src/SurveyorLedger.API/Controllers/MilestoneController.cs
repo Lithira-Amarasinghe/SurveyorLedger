@@ -69,6 +69,35 @@ namespace SurveyorLedger.API.Controllers
             return Ok(ApiResponse<List<MilestoneResponse>>.Ok(milestones.Select(ToResponse).ToList()));
         }
 
+        [HttpGet("{id}/payment-requirements")]
+        public async Task<ActionResult<ApiResponse<List<PaymentRequirementDto>>>> GetPaymentRequirements(Guid workspaceId, Guid jobId, Guid id)
+        {
+            var requirements = await _milestoneService.GetPaymentRequirementsAsync(workspaceId, CallerId(), jobId, id);
+            return Ok(ApiResponse<List<PaymentRequirementDto>>.Ok(requirements.Select(r => new PaymentRequirementDto { TargetStatus = r.TargetStatus, RequiredState = r.RequiredState }).ToList()));
+        }
+
+        [HttpPut("{id}/payment-requirements")]
+        public async Task<ActionResult<ApiResponse<List<PaymentRequirementDto>>>> SetPaymentRequirements(Guid workspaceId, Guid jobId, Guid id, [FromBody] SetPaymentRequirementsRequest request)
+        {
+            var rules = request.Requirements.Select(r => (r.TargetStatus, r.RequiredState)).ToList();
+            var requirements = await _milestoneService.SetPaymentRequirementsAsync(workspaceId, CallerId(), jobId, id, rules);
+            return Ok(ApiResponse<List<PaymentRequirementDto>>.Ok(requirements.Select(r => new PaymentRequirementDto { TargetStatus = r.TargetStatus, RequiredState = r.RequiredState }).ToList()));
+        }
+
+        [HttpGet("{id}/payment-status")]
+        public async Task<ActionResult<ApiResponse<MilestonePaymentStatusResponse>>> GetPaymentStatus(Guid workspaceId, Guid jobId, Guid id)
+        {
+            var status = await _milestoneService.GetPaymentStatusAsync(workspaceId, CallerId(), jobId, id);
+            return Ok(ApiResponse<MilestonePaymentStatusResponse>.Ok(new MilestonePaymentStatusResponse
+            {
+                Amount = status.Amount,
+                LinkedInvoiceId = status.LinkedInvoiceId,
+                LinkedInvoiceNumber = status.LinkedInvoiceNumber,
+                InvoiceStatus = status.InvoiceStatus,
+                NextGate = status.NextGate
+            }));
+        }
+
         private Guid CallerId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
 
         private static MilestoneResponse ToResponse(Milestone m) => new()

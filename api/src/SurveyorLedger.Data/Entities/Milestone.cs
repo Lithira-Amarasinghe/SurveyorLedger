@@ -26,4 +26,5 @@ public class Milestone
     public Job Job { get; set; }
     public Person CreatedByUser { get; set; }
     public Person? CompletedByUser { get; set; }
+    public List<MilestonePaymentRequirement> PaymentRequirements { get; set; } = new();
 }

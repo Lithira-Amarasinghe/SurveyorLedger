@@ -16,7 +16,12 @@ public interface IMilestoneService
     Task<Milestone> UpdateStatusAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId, string status);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId);
     Task<List<Milestone>> ReorderAsync(Guid workspaceId, Guid callerUserId, Guid jobId, List<Guid> orderedMilestoneIds);
+    Task<List<MilestonePaymentRequirement>> GetPaymentRequirementsAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId);
+    Task<List<MilestonePaymentRequirement>> SetPaymentRequirementsAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId, List<(string TargetStatus, string RequiredState)> rules);
+    Task<MilestonePaymentStatus> GetPaymentStatusAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId);
 }
+
+public record MilestonePaymentStatus(decimal? Amount, Guid? LinkedInvoiceId, string? LinkedInvoiceNumber, string? InvoiceStatus, string? NextGate);
 
 /// <summary>
 /// Milestones are a job sub-resource: every action reuses JobService's job.view /
@@ -29,6 +34,7 @@ public interface IMilestoneService
 public class MilestoneService : IMilestoneService
 {
     private static readonly HashSet<string> ValidStatuses = new() { "Pending", "InProgress", "Completed" };
+    private static readonly HashSet<string> ValidPaymentStates = new() { "Invoiced", "PartiallyPaid", "FullyPaid" };
 
     private readonly ApplicationDbContext _context;
     private readonly IScopedAccessService _access;
@@ -119,6 +125,17 @@ public class MilestoneService : IMilestoneService
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
 
         var milestone = await FindMilestoneAsync(jobId, milestoneId);
+
+        await _context.Entry(milestone).Collection(m => m.PaymentRequirements).LoadAsync();
+        var applicableRules = milestone.PaymentRequirements.Where(r => r.TargetStatus == status).ToList();
+        if (applicableRules.Count > 0)
+        {
+            var linkedInvoice = await FindLinkedInvoiceAsync(milestoneId);
+            var unmet = applicableRules.FirstOrDefault(r => !IsRequirementSatisfied(r.RequiredState, linkedInvoice));
+            if (unmet != null)
+                throw new ValidationException($"Requires the linked invoice to be {DescribeState(unmet.RequiredState)} before it can be marked {status}.");
+        }
+
         milestone.Status = status;
         milestone.UpdatedAt = DateTime.UtcNow;
 
@@ -178,6 +195,107 @@ public class MilestoneService : IMilestoneService
 
         await _context.SaveChangesAsync();
         return milestones.OrderBy(m => m.SortOrder).ToList();
+    }
+
+    public async Task<List<MilestonePaymentRequirement>> GetPaymentRequirementsAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId)
+    {
+        await FindJobAsync(workspaceId, jobId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
+        var milestone = await _context.Milestones.Include(m => m.PaymentRequirements).FirstOrDefaultAsync(m => m.Id == milestoneId && m.JobId == jobId)
+            ?? throw new NotFoundException("Milestone not found");
+        return milestone.PaymentRequirements;
+    }
+
+    public async Task<List<MilestonePaymentRequirement>> SetPaymentRequirementsAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId, List<(string TargetStatus, string RequiredState)> rules)
+    {
+        await FindJobAsync(workspaceId, jobId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "edit");
+
+        foreach (var (targetStatus, requiredState) in rules)
+        {
+            if (!ValidStatuses.Contains(targetStatus))
+                throw new ValidationException($"TargetStatus must be one of: {string.Join(", ", ValidStatuses)}.");
+            if (!ValidPaymentStates.Contains(requiredState))
+                throw new ValidationException($"RequiredState must be one of: {string.Join(", ", ValidPaymentStates)}.");
+        }
+
+        var milestone = await _context.Milestones.Include(m => m.PaymentRequirements).FirstOrDefaultAsync(m => m.Id == milestoneId && m.JobId == jobId)
+            ?? throw new NotFoundException("Milestone not found");
+
+        // Wholesale replace - same delete-all/insert-all pattern InvoiceService uses for
+        // LineItems/Installments, appropriate here for the same reason: a small owned list
+        // with no external references to preserve.
+        foreach (var old in milestone.PaymentRequirements.ToList())
+            _context.Remove(old);
+        milestone.PaymentRequirements.Clear();
+        foreach (var (targetStatus, requiredState) in rules)
+        {
+            var rule = new MilestonePaymentRequirement { Id = Guid.NewGuid(), TargetStatus = targetStatus, RequiredState = requiredState };
+            milestone.PaymentRequirements.Add(rule);
+            _context.Entry(rule).State = EntityState.Added;
+        }
+        milestone.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+        return milestone.PaymentRequirements;
+    }
+
+    public async Task<MilestonePaymentStatus> GetPaymentStatusAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId)
+    {
+        await FindJobAsync(workspaceId, jobId);
+        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
+        var milestone = await FindMilestoneAsync(jobId, milestoneId);
+
+        var linkedInvoice = await FindLinkedInvoiceAsync(milestoneId);
+        var nextGate = await ResolveNextGateAsync(milestone, linkedInvoice);
+
+        return new MilestonePaymentStatus(
+            milestone.Amount,
+            linkedInvoice?.Id,
+            linkedInvoice?.Number,
+            linkedInvoice?.Status,
+            nextGate);
+    }
+
+    /// <summary>The invoice, if any, carrying a line item tagged with this milestone - at
+    /// most one, per the uniqueness rule enforced in InvoiceService.ValidateLineItemsAsync.</summary>
+    private async Task<Invoice?> FindLinkedInvoiceAsync(Guid milestoneId) =>
+        await _context.Invoices.Include(i => i.LineItems)
+            .FirstOrDefaultAsync(i => i.IsActive && i.LineItems.Any(li => li.MilestoneId == milestoneId));
+
+    /// <summary>Human-readable description of the nearest unmet requirement for this
+    /// milestone's *current* status - i.e. what would block its next transition attempt via
+    /// UpdateStatusAsync, without knowing in advance which status the caller will try next.</summary>
+    private async Task<string?> ResolveNextGateAsync(Milestone milestone, Invoice? linkedInvoice)
+    {
+        await _context.Entry(milestone).Collection(m => m.PaymentRequirements).LoadAsync();
+        foreach (var rule in milestone.PaymentRequirements)
+        {
+            if (!IsRequirementSatisfied(rule.RequiredState, linkedInvoice))
+                return $"Requires the linked invoice to be {DescribeState(rule.RequiredState)} before it can be marked {rule.TargetStatus}.";
+        }
+        return null;
+    }
+
+    private static string DescribeState(string state) => state switch
+    {
+        "Invoiced" => "invoiced",
+        "PartiallyPaid" => "at least partially paid",
+        "FullyPaid" => "fully paid",
+        _ => state
+    };
+
+    private static bool IsRequirementSatisfied(string requiredState, Invoice? invoice)
+    {
+        if (invoice == null)
+            return false;
+        return requiredState switch
+        {
+            "Invoiced" => invoice.Status is "Sent" or "PartiallyPaid" or "Paid",
+            "PartiallyPaid" => invoice.Status is "PartiallyPaid" or "Paid",
+            "FullyPaid" => invoice.Status == "Paid",
+            _ => false
+        };
     }
 
     private async Task<Job> FindJobAsync(Guid workspaceId, Guid jobId)
