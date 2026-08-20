@@ -53,7 +53,7 @@ public class InvoiceService : IInvoiceService
     {
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, request.JobId, "create");
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
-        ValidateLineItems(request.LineItems);
+        await ValidateLineItemsAsync(request.LineItems, null);
         ValidateFinancials(request.TaxRatePercent, request.DiscountAmount, request.LineItems);
         ValidateInstallments(request.Installments, request.LineItems, request.TaxRatePercent, request.DiscountAmount);
 
@@ -62,7 +62,7 @@ public class InvoiceService : IInvoiceService
             Id = Guid.NewGuid(),
             ClientId = request.ClientId,
             JobId = request.JobId,
-            LineItems = request.LineItems.Select(i => new InvoiceLineItem { Id = Guid.NewGuid(), Description = i.Description.Trim(), Quantity = i.Quantity, UnitPrice = i.UnitPrice }).ToList(),
+            LineItems = request.LineItems.Select(i => new InvoiceLineItem { Id = Guid.NewGuid(), Description = i.Description.Trim(), Quantity = i.Quantity, UnitPrice = i.UnitPrice, MilestoneId = i.MilestoneId }).ToList(),
             Installments = request.Installments.Select(i => new InvoiceInstallment { Id = Guid.NewGuid(), Amount = i.Amount, DueDate = i.DueDate }).ToList(),
             TaxRatePercent = request.TaxRatePercent,
             DiscountAmount = request.DiscountAmount,
@@ -127,7 +127,7 @@ public class InvoiceService : IInvoiceService
             EnsureOnlyDueDateChanged(invoice, request);
 
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
-        ValidateLineItems(request.LineItems);
+        await ValidateLineItemsAsync(request.LineItems, invoiceId);
         ValidateFinancials(request.TaxRatePercent, request.DiscountAmount, request.LineItems);
         ValidateInstallments(request.Installments, request.LineItems, request.TaxRatePercent, request.DiscountAmount);
 
@@ -139,7 +139,7 @@ public class InvoiceService : IInvoiceService
         foreach (var old in invoice.LineItems.ToList())
             _context.Remove(old);
         invoice.LineItems.Clear();
-        foreach (var item in request.LineItems.Select(i => new InvoiceLineItem { Id = Guid.NewGuid(), Description = i.Description.Trim(), Quantity = i.Quantity, UnitPrice = i.UnitPrice }))
+        foreach (var item in request.LineItems.Select(i => new InvoiceLineItem { Id = Guid.NewGuid(), Description = i.Description.Trim(), Quantity = i.Quantity, UnitPrice = i.UnitPrice, MilestoneId = i.MilestoneId }))
         {
             invoice.LineItems.Add(item);
             _context.Entry(item).State = EntityState.Added;
@@ -342,12 +342,28 @@ public class InvoiceService : IInvoiceService
             throw new ValidationException("ClientId must be a Person who holds Client or Finance access on this job.");
     }
 
-    private static void ValidateLineItems(List<LineItemDto> items)
+    /// <summary>Also enforces "at most one active line item per milestone": a Milestone
+    /// tagged on this document's line items can't already be tagged on a different active
+    /// Invoice. excludingInvoiceId lets an update re-save its own existing tag without
+    /// tripping over itself.</summary>
+    private async Task ValidateLineItemsAsync(List<LineItemDto> items, Guid? excludingInvoiceId)
     {
         if (items.Count == 0)
             throw new ValidationException("At least one line item is required.");
         if (items.Any(i => i.Quantity <= 0 || i.UnitPrice < 0))
             throw new ValidationException("Line item quantity must be positive and unit price cannot be negative.");
+
+        var milestoneIds = items.Where(i => i.MilestoneId.HasValue).Select(i => i.MilestoneId!.Value).ToList();
+        if (milestoneIds.Count == 0)
+            return;
+
+        var conflicting = await _context.Invoices
+            .Where(inv => inv.IsActive && (excludingInvoiceId == null || inv.Id != excludingInvoiceId))
+            .Where(inv => inv.LineItems.Any(li => li.MilestoneId != null && milestoneIds.Contains(li.MilestoneId.Value)))
+            .Select(inv => inv.Number)
+            .FirstOrDefaultAsync();
+        if (conflicting != null)
+            throw new ValidationException($"One of these milestones is already billed on invoice {conflicting}.");
     }
 
     /// <summary>Guards against a negative total: tax rate must be non-negative, discount
@@ -372,8 +388,8 @@ public class InvoiceService : IInvoiceService
     private static void EnsureOnlyDueDateChanged(Invoice invoice, InvoiceRequest request)
     {
         var lineItemsChanged = invoice.LineItems.Count != request.LineItems.Count
-            || invoice.LineItems.OrderBy(li => li.Id).Select(li => (li.Description, li.Quantity, li.UnitPrice))
-                .Except(request.LineItems.Select(li => (li.Description.Trim(), li.Quantity, li.UnitPrice))).Any();
+            || invoice.LineItems.OrderBy(li => li.Id).Select(li => (li.Description, li.Quantity, li.UnitPrice, li.MilestoneId))
+                .Except(request.LineItems.Select(li => (li.Description.Trim(), li.Quantity, li.UnitPrice, li.MilestoneId))).Any();
 
         if (invoice.ClientId != request.ClientId
             || invoice.JobId != request.JobId

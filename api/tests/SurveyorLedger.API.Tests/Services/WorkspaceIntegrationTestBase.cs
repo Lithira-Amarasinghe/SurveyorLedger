@@ -101,6 +101,17 @@ public abstract class WorkspaceIntegrationTestBase : IAsyncLifetime
         await SeedWorkspaceAndMembersAsync();
     }
 
+    /// <summary>Grants the seeded Client account job-scoped Client access on jobId (via the
+    /// same AddParticipantAsync path real callers use - Client is job-scope only, see
+    /// SeedWorkspaceAndMembersAsync), and returns their PersonId - the id
+    /// InvoiceRequest.ClientId/QuotationRequest.ClientId expect. Requires the concrete test
+    /// class to have registered IJobService in ConfigureServices.</summary>
+    protected async Task<Guid> GrantClientBillingRoleAsync(Guid jobId)
+    {
+        await GetService<IJobService>().AddParticipantAsync(WorkspaceId, AdminId, jobId, ClientId, "Client");
+        return ClientPersonId;
+    }
+
     public async Task DisposeAsync()
     {
         await Context.Database.EnsureDeletedAsync();

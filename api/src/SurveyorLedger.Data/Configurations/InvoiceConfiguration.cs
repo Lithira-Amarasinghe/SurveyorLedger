@@ -24,6 +24,7 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
             li.Property(x => x.Description).HasMaxLength(500).IsRequired();
             li.Property(x => x.Quantity).HasColumnType("decimal(18,2)");
             li.Property(x => x.UnitPrice).HasColumnType("decimal(18,2)");
+            li.Property(x => x.MilestoneId);
         });
 
         builder.OwnsMany(x => x.Installments, i =>

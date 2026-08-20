@@ -40,7 +40,7 @@ public class QuotationService : IQuotationService
     {
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, request.JobId, "create");
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
-        ValidateLineItems(request.LineItems);
+        await ValidateLineItemsAsync(request.LineItems, null);
         ValidateTaxRate(request.TaxRatePercent);
 
         var quotation = new Quotation
@@ -103,7 +103,7 @@ public class QuotationService : IQuotationService
         var quotation = await FindQuotationAsync(workspaceId, quotationId);
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId, "edit");
         await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
-        ValidateLineItems(request.LineItems);
+        await ValidateLineItemsAsync(request.LineItems, quotationId);
         ValidateTaxRate(request.TaxRatePercent);
 
         // Line items changed after the quote was Sent - bump RevisionNumber so
@@ -165,7 +165,7 @@ public class QuotationService : IQuotationService
             ClientId = quotation.ClientId,
             JobId = quotation.JobId,
             QuotationId = quotation.Id,
-            LineItems = quotation.LineItems.Select(li => new InvoiceLineItem { Id = Guid.NewGuid(), Description = li.Description, Quantity = li.Quantity, UnitPrice = li.UnitPrice }).ToList(),
+            LineItems = quotation.LineItems.Select(li => new InvoiceLineItem { Id = Guid.NewGuid(), Description = li.Description, Quantity = li.Quantity, UnitPrice = li.UnitPrice, MilestoneId = li.MilestoneId }).ToList(),
             TaxRatePercent = quotation.TaxRatePercent,
             DiscountAmount = request.DiscountAmount,
             Status = "Draft",
@@ -265,12 +265,28 @@ public class QuotationService : IQuotationService
             throw new ValidationException("ClientId must be a Person who holds Client or Finance access on this job.");
     }
 
-    private static void ValidateLineItems(List<LineItemDto> items)
+    /// <summary>Also enforces "at most one active line item per milestone" for quotations,
+    /// independent of the same rule on invoices - a milestone can have one active tag on
+    /// each document type at once. excludingQuotationId lets an update re-save its own
+    /// existing tag without tripping over itself.</summary>
+    private async Task ValidateLineItemsAsync(List<LineItemDto> items, Guid? excludingQuotationId)
     {
         if (items.Count == 0)
             throw new ValidationException("At least one line item is required.");
         if (items.Any(i => i.Quantity <= 0 || i.UnitPrice < 0))
             throw new ValidationException("Line item quantity must be positive and unit price cannot be negative.");
+
+        var milestoneIds = items.Where(i => i.MilestoneId.HasValue).Select(i => i.MilestoneId!.Value).ToList();
+        if (milestoneIds.Count == 0)
+            return;
+
+        var conflicting = await _context.Quotations
+            .Where(q => q.IsActive && (excludingQuotationId == null || q.Id != excludingQuotationId))
+            .Where(q => q.LineItems.Any(li => li.MilestoneId != null && milestoneIds.Contains(li.MilestoneId.Value)))
+            .Select(q => q.Number)
+            .FirstOrDefaultAsync();
+        if (conflicting != null)
+            throw new ValidationException($"One of these milestones is already quoted on {conflicting}.");
     }
 
     private static void ValidateTaxRate(decimal taxRatePercent)
@@ -280,7 +296,7 @@ public class QuotationService : IQuotationService
     }
 
     private static List<QuotationLineItem> ToEntities(List<LineItemDto> items) =>
-        items.Select(i => new QuotationLineItem { Id = Guid.NewGuid(), Description = i.Description.Trim(), Quantity = i.Quantity, UnitPrice = i.UnitPrice }).ToList();
+        items.Select(i => new QuotationLineItem { Id = Guid.NewGuid(), Description = i.Description.Trim(), Quantity = i.Quantity, UnitPrice = i.UnitPrice, MilestoneId = i.MilestoneId }).ToList();
 
     private async Task<Quotation> FindQuotationAsync(Guid workspaceId, Guid quotationId)
     {

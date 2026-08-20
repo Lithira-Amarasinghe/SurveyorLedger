@@ -86,7 +86,7 @@ namespace SurveyorLedger.API.Controllers
                 ClientId = q.ClientId,
                 JobId = q.JobId,
                 Number = q.Number,
-                LineItems = q.LineItems.Select(li => new LineItemDto { Description = li.Description, Quantity = li.Quantity, UnitPrice = li.UnitPrice }).ToList(),
+                LineItems = q.LineItems.Select(li => new LineItemDto { Description = li.Description, Quantity = li.Quantity, UnitPrice = li.UnitPrice, MilestoneId = li.MilestoneId }).ToList(),
                 TaxRatePercent = q.TaxRatePercent,
                 Subtotal = subtotal,
                 Total = subtotal + tax,
