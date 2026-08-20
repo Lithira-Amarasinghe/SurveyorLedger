@@ -12,6 +12,7 @@ public class MilestoneConfiguration : IEntityTypeConfiguration<Milestone>
         builder.Property(x => x.Title).HasMaxLength(200).IsRequired();
         builder.Property(x => x.Description).HasMaxLength(2000);
         builder.Property(x => x.Status).HasMaxLength(20).IsRequired();
+        builder.Property(x => x.Amount).HasColumnType("decimal(18,2)");
         builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
         builder.Property(x => x.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
 
