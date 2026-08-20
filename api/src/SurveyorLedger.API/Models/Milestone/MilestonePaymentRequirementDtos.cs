@@ -11,11 +11,18 @@ public class SetPaymentRequirementsRequest
     public List<PaymentRequirementDto> Requirements { get; set; } = new();
 }
 
+public class LinkedInvoiceSummaryDto
+{
+    public Guid InvoiceId { get; set; }
+    public required string Number { get; set; }
+    public required string Status { get; set; }
+}
+
 public class MilestonePaymentStatusResponse
 {
     public decimal? Amount { get; set; }
-    public Guid? LinkedInvoiceId { get; set; }
-    public string? LinkedInvoiceNumber { get; set; }
-    public string? InvoiceStatus { get; set; }
+    public decimal CommittedAmount { get; set; }
+    public decimal? RemainingAmount { get; set; }
+    public List<LinkedInvoiceSummaryDto> LinkedInvoices { get; set; } = new();
     public string? NextGate { get; set; }
 }

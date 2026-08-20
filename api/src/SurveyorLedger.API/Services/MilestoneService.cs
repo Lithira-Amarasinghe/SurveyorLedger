@@ -24,7 +24,9 @@ public interface IMilestoneService
     Task<(decimal Revenue, decimal Expenses, decimal Profit)> ComputeProfitabilityAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId);
 }
 
-public record MilestonePaymentStatus(decimal? Amount, Guid? LinkedInvoiceId, string? LinkedInvoiceNumber, string? InvoiceStatus, string? NextGate);
+public record LinkedInvoiceSummary(Guid InvoiceId, string Number, string Status);
+
+public record MilestonePaymentStatus(decimal? Amount, decimal CommittedAmount, decimal? RemainingAmount, List<LinkedInvoiceSummary> LinkedInvoices, string? NextGate);
 
 /// <summary>
 /// Milestones are a job sub-resource: every action reuses JobService's job.view /
@@ -133,10 +135,11 @@ public class MilestoneService : IMilestoneService
         var applicableRules = milestone.PaymentRequirements.Where(r => r.TargetStatus == status).ToList();
         if (applicableRules.Count > 0)
         {
-            var linkedInvoice = await FindLinkedInvoiceAsync(milestoneId);
-            var unmet = applicableRules.FirstOrDefault(r => !IsRequirementSatisfied(r.RequiredState, linkedInvoice));
+            var linkedInvoices = await FindLinkedInvoicesAsync(milestoneId);
+            var committedAmount = await GetCommittedAmountAsync(jobId, milestoneId);
+            var unmet = applicableRules.FirstOrDefault(r => !IsRequirementSatisfied(r.RequiredState, milestone, linkedInvoices, committedAmount));
             if (unmet != null)
-                throw new ValidationException($"Requires the linked invoice to be {DescribeState(unmet.RequiredState)} before it can be marked {status}.");
+                throw new ValidationException($"Requires the linked invoice(s) to be {DescribeState(unmet.RequiredState)} before it can be marked {status}.");
         }
 
         milestone.Status = status;
@@ -249,14 +252,15 @@ public class MilestoneService : IMilestoneService
         await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
         var milestone = await FindMilestoneAsync(jobId, milestoneId);
 
-        var linkedInvoice = await FindLinkedInvoiceAsync(milestoneId);
-        var nextGate = await ResolveNextGateAsync(milestone, linkedInvoice);
+        var linkedInvoices = await FindLinkedInvoicesAsync(milestoneId);
+        var committedAmount = await GetCommittedAmountAsync(jobId, milestoneId);
+        var nextGate = await ResolveNextGateAsync(milestone, linkedInvoices, committedAmount);
 
         return new MilestonePaymentStatus(
             milestone.Amount,
-            linkedInvoice?.Id,
-            linkedInvoice?.Number,
-            linkedInvoice?.Status,
+            committedAmount,
+            milestone.Amount.HasValue ? milestone.Amount.Value - committedAmount : null,
+            linkedInvoices.Select(i => new LinkedInvoiceSummary(i.Id, i.Number, i.Status)).ToList(),
             nextGate);
     }
 
@@ -331,22 +335,24 @@ public class MilestoneService : IMilestoneService
         return (revenue, expenses, revenue - expenses);
     }
 
-    /// <summary>The invoice, if any, carrying a line item tagged with this milestone - at
-    /// most one, per the uniqueness rule enforced in InvoiceService.ValidateLineItemsAsync.</summary>
-    private async Task<Invoice?> FindLinkedInvoiceAsync(Guid milestoneId) =>
-        await _context.Invoices.Include(i => i.LineItems)
-            .FirstOrDefaultAsync(i => i.IsActive && i.LineItems.Any(li => li.MilestoneId == milestoneId));
+    /// <summary>Every active invoice carrying a line item tagged with this milestone -
+    /// partial billing means this is no longer at most one, unlike before the fee-ceiling
+    /// feature. Payments included since gate satisfaction needs each invoice's AmountPaid.</summary>
+    private async Task<List<Invoice>> FindLinkedInvoicesAsync(Guid milestoneId) =>
+        await _context.Invoices.Include(i => i.LineItems).Include(i => i.Payments)
+            .Where(i => i.IsActive && i.LineItems.Any(li => li.MilestoneId == milestoneId))
+            .ToListAsync();
 
     /// <summary>Human-readable description of the nearest unmet requirement for this
     /// milestone's *current* status - i.e. what would block its next transition attempt via
     /// UpdateStatusAsync, without knowing in advance which status the caller will try next.</summary>
-    private async Task<string?> ResolveNextGateAsync(Milestone milestone, Invoice? linkedInvoice)
+    private async Task<string?> ResolveNextGateAsync(Milestone milestone, List<Invoice> linkedInvoices, decimal committedAmount)
     {
         await _context.Entry(milestone).Collection(m => m.PaymentRequirements).LoadAsync();
         foreach (var rule in milestone.PaymentRequirements)
         {
-            if (!IsRequirementSatisfied(rule.RequiredState, linkedInvoice))
-                return $"Requires the linked invoice to be {DescribeState(rule.RequiredState)} before it can be marked {rule.TargetStatus}.";
+            if (!IsRequirementSatisfied(rule.RequiredState, milestone, linkedInvoices, committedAmount))
+                return $"Requires the linked invoice(s) to be {DescribeState(rule.RequiredState)} before it can be marked {rule.TargetStatus}.";
         }
         return null;
     }
@@ -359,15 +365,19 @@ public class MilestoneService : IMilestoneService
         _ => state
     };
 
-    private static bool IsRequirementSatisfied(string requiredState, Invoice? invoice)
+    /// <summary>"FullyPaid" now requires both that the milestone is fully committed (its
+    /// fee ceiling is exactly met - partial billing means "some invoice is Paid" is no
+    /// longer sufficient on its own) and that every linked invoice has actually been paid
+    /// off.</summary>
+    private static bool IsRequirementSatisfied(string requiredState, Milestone milestone, List<Invoice> linkedInvoices, decimal committedAmount)
     {
-        if (invoice == null)
+        if (linkedInvoices.Count == 0)
             return false;
         return requiredState switch
         {
-            "Invoiced" => invoice.Status is "Sent" or "PartiallyPaid" or "Paid",
-            "PartiallyPaid" => invoice.Status is "PartiallyPaid" or "Paid",
-            "FullyPaid" => invoice.Status == "Paid",
+            "Invoiced" => linkedInvoices.Any(i => i.Status is "Sent" or "PartiallyPaid" or "Paid"),
+            "PartiallyPaid" => linkedInvoices.Sum(i => i.Payments.Sum(p => p.Amount)) > 0,
+            "FullyPaid" => milestone.Amount.HasValue && committedAmount >= milestone.Amount.Value && linkedInvoices.All(i => i.Status == "Paid"),
             _ => false
         };
     }

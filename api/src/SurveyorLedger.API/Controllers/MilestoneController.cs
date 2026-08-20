@@ -91,9 +91,9 @@ namespace SurveyorLedger.API.Controllers
             return Ok(ApiResponse<MilestonePaymentStatusResponse>.Ok(new MilestonePaymentStatusResponse
             {
                 Amount = status.Amount,
-                LinkedInvoiceId = status.LinkedInvoiceId,
-                LinkedInvoiceNumber = status.LinkedInvoiceNumber,
-                InvoiceStatus = status.InvoiceStatus,
+                CommittedAmount = status.CommittedAmount,
+                RemainingAmount = status.RemainingAmount,
+                LinkedInvoices = status.LinkedInvoices.Select(i => new LinkedInvoiceSummaryDto { InvoiceId = i.InvoiceId, Number = i.Number, Status = i.Status }).ToList(),
                 NextGate = status.NextGate
             }));
         }
