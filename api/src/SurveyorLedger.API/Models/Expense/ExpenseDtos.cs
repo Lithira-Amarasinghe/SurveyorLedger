@@ -14,7 +14,7 @@ public class ExpenseRequest
 public class ExpenseResponse
 {
     public Guid ExpenseId { get; set; }
-    public Guid JobId { get; set; }
+    public Guid? JobId { get; set; }
     public string Category { get; set; }
     public decimal Amount { get; set; }
     public string? Description { get; set; }

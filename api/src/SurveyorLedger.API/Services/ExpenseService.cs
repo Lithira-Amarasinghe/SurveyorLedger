@@ -16,6 +16,13 @@ public interface IExpenseService
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid expenseId);
     Task<Expense> UploadReceiptAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid expenseId, IFormFile file);
     Task<(Expense expense, Stream content)> GetReceiptFileAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid expenseId);
+    Task<Expense> CreateWorkspaceLevelAsync(Guid workspaceId, Guid callerUserId, ExpenseRequest request);
+    Task<List<Expense>> GetAllWorkspaceLevelAsync(Guid workspaceId, Guid callerUserId);
+    Task<Expense> GetWorkspaceLevelByIdAsync(Guid workspaceId, Guid callerUserId, Guid expenseId);
+    Task<Expense> UpdateWorkspaceLevelAsync(Guid workspaceId, Guid callerUserId, Guid expenseId, ExpenseRequest request);
+    Task DeleteWorkspaceLevelAsync(Guid workspaceId, Guid callerUserId, Guid expenseId);
+    Task<Expense> UploadWorkspaceLevelReceiptAsync(Guid workspaceId, Guid callerUserId, Guid expenseId, IFormFile file);
+    Task<(Expense expense, Stream content)> GetWorkspaceLevelReceiptFileAsync(Guid workspaceId, Guid callerUserId, Guid expenseId);
 }
 
 /// <summary>
@@ -203,6 +210,142 @@ public class ExpenseService : IExpenseService
         {
             throw new ValidationException("PayeeId and PayeeType must be empty unless Category is StaffCost.");
         }
+    }
+
+    public async Task<Expense> CreateWorkspaceLevelAsync(Guid workspaceId, Guid callerUserId, ExpenseRequest request)
+    {
+        await _access.EnsureAllowedAsync(callerUserId, "expense", "create", workspaceId);
+        await ValidateAndNormalizePayeeAsync(request);
+        if (request.MilestoneId != null)
+            throw new ValidationException("MilestoneId cannot be set on a workspace-level expense - milestones belong to a job.");
+        var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
+
+        var expense = new Expense
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            JobId = null,
+            Category = request.Category,
+            Amount = request.Amount,
+            Description = request.Description,
+            IncurredDate = request.IncurredDate,
+            PayeeId = request.PayeeId,
+            PayeeType = request.PayeeType,
+            MilestoneId = null,
+            RecordedBy = callerPersonId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _context.Expenses.AddAsync(expense);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Workspace-level expense {ExpenseId} recorded in workspace {WorkspaceId} by {UserId}", expense.Id, workspaceId, callerUserId);
+        return await FindWorkspaceLevelExpenseAsync(workspaceId, expense.Id);
+    }
+
+    public async Task<List<Expense>> GetAllWorkspaceLevelAsync(Guid workspaceId, Guid callerUserId)
+    {
+        await _access.EnsureAllowedAsync(callerUserId, "expense", "view", workspaceId);
+
+        var query = _context.Expenses.Include(e => e.RecordedByUser).Include(e => e.Payee)
+            .Where(e => e.WorkspaceId == workspaceId && e.JobId == null);
+
+        if (!await _access.HasViewAllAsync(callerUserId, "expense", workspaceId))
+        {
+            var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
+            query = query.Where(e => e.Category != StaffCostCategory || e.PayeeId == callerPersonId);
+        }
+
+        return await query.OrderByDescending(e => e.IncurredDate).ToListAsync();
+    }
+
+    public async Task<Expense> GetWorkspaceLevelByIdAsync(Guid workspaceId, Guid callerUserId, Guid expenseId)
+    {
+        await _access.EnsureAllowedAsync(callerUserId, "expense", "view", workspaceId);
+        var expense = await FindWorkspaceLevelExpenseAsync(workspaceId, expenseId);
+
+        if (expense.Category == StaffCostCategory && !await _access.HasViewAllAsync(callerUserId, "expense", workspaceId))
+        {
+            var callerPersonId = await _access.ResolvePersonIdAsync(callerUserId);
+            if (expense.PayeeId != callerPersonId)
+                throw new NotFoundException("Expense not found");
+        }
+
+        return expense;
+    }
+
+    public async Task<Expense> UpdateWorkspaceLevelAsync(Guid workspaceId, Guid callerUserId, Guid expenseId, ExpenseRequest request)
+    {
+        await _access.EnsureAllowedAsync(callerUserId, "expense", "edit", workspaceId);
+        await ValidateAndNormalizePayeeAsync(request);
+        if (request.MilestoneId != null)
+            throw new ValidationException("MilestoneId cannot be set on a workspace-level expense - milestones belong to a job.");
+        var expense = await FindWorkspaceLevelExpenseAsync(workspaceId, expenseId);
+
+        expense.Category = request.Category;
+        expense.Amount = request.Amount;
+        expense.Description = request.Description;
+        expense.IncurredDate = request.IncurredDate;
+        expense.PayeeId = request.PayeeId;
+        expense.PayeeType = request.PayeeType;
+
+        await _context.SaveChangesAsync();
+        return expense;
+    }
+
+    public async Task DeleteWorkspaceLevelAsync(Guid workspaceId, Guid callerUserId, Guid expenseId)
+    {
+        await _access.EnsureAllowedAsync(callerUserId, "expense", "delete", workspaceId);
+        var expense = await FindWorkspaceLevelExpenseAsync(workspaceId, expenseId);
+
+        if (expense.ReceiptFilePath != null)
+            await _fileStorage.DeleteAsync(expense.ReceiptFilePath, CancellationToken.None);
+
+        _context.Expenses.Remove(expense);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<Expense> UploadWorkspaceLevelReceiptAsync(Guid workspaceId, Guid callerUserId, Guid expenseId, IFormFile file)
+    {
+        await _access.EnsureAllowedAsync(callerUserId, "expense", "edit", workspaceId);
+        var expense = await FindWorkspaceLevelExpenseAsync(workspaceId, expenseId);
+
+        var extension = Path.GetExtension(file.FileName);
+        if (!AllowedReceiptExtensions.Contains(extension))
+            throw new ValidationException($"File type '{extension}' is not allowed. Allowed types: {string.Join(", ", AllowedReceiptExtensions)}.");
+        if (file.Length > DocumentService.MaxFileSizeBytes)
+            throw new ValidationException($"File exceeds the {DocumentService.MaxFileSizeBytes / (1024 * 1024)}MB size limit.");
+
+        var storedFileName = $"{Guid.NewGuid():N}_{file.FileName}";
+        var relativePath = $"{workspaceId}/expenses/{expenseId}/{storedFileName}";
+
+        await using (var stream = file.OpenReadStream())
+        {
+            await _fileStorage.SaveAsync(stream, relativePath, CancellationToken.None);
+        }
+
+        expense.ReceiptFilePath = relativePath;
+        await _context.SaveChangesAsync();
+        return expense;
+    }
+
+    public async Task<(Expense expense, Stream content)> GetWorkspaceLevelReceiptFileAsync(Guid workspaceId, Guid callerUserId, Guid expenseId)
+    {
+        await _access.EnsureAllowedAsync(callerUserId, "expense", "view", workspaceId);
+        var expense = await FindWorkspaceLevelExpenseAsync(workspaceId, expenseId);
+
+        if (expense.ReceiptFilePath == null)
+            throw new NotFoundException("No receipt uploaded for this expense.");
+
+        var content = await _fileStorage.OpenAsync(expense.ReceiptFilePath, CancellationToken.None);
+        return (expense, content);
+    }
+
+    private async Task<Expense> FindWorkspaceLevelExpenseAsync(Guid workspaceId, Guid expenseId)
+    {
+        return await _context.Expenses.Include(e => e.RecordedByUser).Include(e => e.Payee)
+            .FirstOrDefaultAsync(e => e.Id == expenseId && e.WorkspaceId == workspaceId && e.JobId == null)
+            ?? throw new NotFoundException("Expense not found");
     }
 
     private async Task ValidateMilestoneAsync(Guid jobId, Guid? milestoneId)

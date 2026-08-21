@@ -70,6 +70,56 @@ namespace SurveyorLedger.API.Controllers
             return File(content, "application/octet-stream", Path.GetFileName(expense.ReceiptFilePath!));
         }
 
+        [HttpGet("/api/workspace/{workspaceId}/expense")]
+        public async Task<ActionResult<ApiResponse<List<ExpenseResponse>>>> GetAllWorkspaceLevel(Guid workspaceId)
+        {
+            var expenses = await _expenseService.GetAllWorkspaceLevelAsync(workspaceId, CallerId());
+            return Ok(ApiResponse<List<ExpenseResponse>>.Ok(expenses.Select(ToResponse).ToList()));
+        }
+
+        [HttpGet("/api/workspace/{workspaceId}/expense/{id}")]
+        public async Task<ActionResult<ApiResponse<ExpenseResponse>>> GetWorkspaceLevelById(Guid workspaceId, Guid id)
+        {
+            var expense = await _expenseService.GetWorkspaceLevelByIdAsync(workspaceId, CallerId(), id);
+            return Ok(ApiResponse<ExpenseResponse>.Ok(ToResponse(expense)));
+        }
+
+        [HttpPost("/api/workspace/{workspaceId}/expense")]
+        public async Task<ActionResult<ApiResponse<ExpenseResponse>>> CreateWorkspaceLevel(Guid workspaceId, [FromBody] ExpenseRequest request)
+        {
+            var expense = await _expenseService.CreateWorkspaceLevelAsync(workspaceId, CallerId(), request);
+            return CreatedAtAction(nameof(GetWorkspaceLevelById), new { workspaceId, id = expense.Id }, ApiResponse<ExpenseResponse>.Ok(ToResponse(expense)));
+        }
+
+        [HttpPut("/api/workspace/{workspaceId}/expense/{id}")]
+        public async Task<ActionResult<ApiResponse<ExpenseResponse>>> UpdateWorkspaceLevel(Guid workspaceId, Guid id, [FromBody] ExpenseRequest request)
+        {
+            var expense = await _expenseService.UpdateWorkspaceLevelAsync(workspaceId, CallerId(), id, request);
+            return Ok(ApiResponse<ExpenseResponse>.Ok(ToResponse(expense)));
+        }
+
+        [HttpDelete("/api/workspace/{workspaceId}/expense/{id}")]
+        public async Task<IActionResult> DeleteWorkspaceLevel(Guid workspaceId, Guid id)
+        {
+            await _expenseService.DeleteWorkspaceLevelAsync(workspaceId, CallerId(), id);
+            return NoContent();
+        }
+
+        [HttpPost("/api/workspace/{workspaceId}/expense/{id}/receipt")]
+        [RequestSizeLimit(DocumentService.MaxFileSizeBytes)]
+        public async Task<ActionResult<ApiResponse<ExpenseResponse>>> UploadWorkspaceLevelReceipt(Guid workspaceId, Guid id, IFormFile file)
+        {
+            var expense = await _expenseService.UploadWorkspaceLevelReceiptAsync(workspaceId, CallerId(), id, file);
+            return Ok(ApiResponse<ExpenseResponse>.Ok(ToResponse(expense)));
+        }
+
+        [HttpGet("/api/workspace/{workspaceId}/expense/{id}/receipt")]
+        public async Task<IActionResult> GetWorkspaceLevelReceipt(Guid workspaceId, Guid id)
+        {
+            var (expense, content) = await _expenseService.GetWorkspaceLevelReceiptFileAsync(workspaceId, CallerId(), id);
+            return File(content, "application/octet-stream", Path.GetFileName(expense.ReceiptFilePath!));
+        }
+
         private Guid CallerId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
 
         private static ExpenseResponse ToResponse(Expense e) => new()

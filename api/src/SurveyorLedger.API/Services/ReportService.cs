@@ -130,7 +130,7 @@ public class ReportService : IReportService
         var query = _context.Expenses
             .Include(e => e.Job)
             .Include(e => e.Payee)
-            .Where(e => e.WorkspaceId == workspaceId)
+            .Where(e => e.WorkspaceId == workspaceId && e.JobId != null)
             .Where(e => from == null || e.IncurredDate >= from)
             .Where(e => to == null || e.IncurredDate < to.Value.Date.AddDays(1))
             .OrderByDescending(e => e.IncurredDate);
@@ -147,8 +147,8 @@ public class ReportService : IReportService
             {
                 ExpenseId = e.Id,
                 IncurredDate = e.IncurredDate,
-                JobId = e.JobId,
-                JobNumber = e.Job.JobNumber,
+                JobId = e.JobId!.Value,
+                JobNumber = e.Job!.JobNumber,
                 JobTitle = e.Job.Title,
                 Category = e.Category,
                 PayeeName = e.Payee == null ? null : $"{e.Payee.FirstName} {e.Payee.LastName}",

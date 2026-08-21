@@ -1,8 +1,11 @@
 namespace SurveyorLedger.Data.Entities;
 
 /// <summary>
-/// A cost incurred doing a Job (staff/subcontractor/equipment/material/transport/other).
-/// Tenant isolation is transitive through JobId -> Job.WorkspaceId, same as Milestone.
+/// A cost incurred doing a Job, or a workspace-level cost not tied to any job
+/// (staff/subcontractor/equipment/material/transport/other). JobId is nullable - null
+/// means workspace-level; MilestoneId must be null in that case, since a milestone
+/// belongs to a job. Tenant isolation is via WorkspaceId directly (a first-class column
+/// here, unlike Invoice/Quotation which derive it through Job.WorkspaceId).
 /// Hard delete, no IsActive - corrects a mis-entered record, not meaningful history to
 /// preserve once wrong (same reasoning as LandSurvey/LandDeed). No approval workflow -
 /// recorded directly, matching this app's flat RBAC.
@@ -14,7 +17,7 @@ public class Expense
 {
     public Guid Id { get; set; }
     public Guid WorkspaceId { get; set; }
-    public Guid JobId { get; set; }
+    public Guid? JobId { get; set; }
     public string Category { get; set; }
     public decimal Amount { get; set; }
     public string? Description { get; set; }
@@ -26,7 +29,7 @@ public class Expense
     public Guid RecordedBy { get; set; }
     public DateTime CreatedAt { get; set; }
 
-    public Job Job { get; set; }
+    public Job? Job { get; set; }
     public Person? Payee { get; set; }
     public Person RecordedByUser { get; set; }
 }
