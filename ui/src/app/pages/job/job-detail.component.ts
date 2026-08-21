@@ -227,6 +227,14 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                     <textarea class="input-field text-sm" rows="2" placeholder="Description (optional)" [(ngModel)]="milestoneEditDescriptionDraft"></textarea>
                     <input class="input-field text-sm" type="date" [(ngModel)]="milestoneEditDueDateDraft" />
                     <input class="input-field text-sm" type="number" min="0" step="0.01" placeholder="Fee amount (optional)" [(ngModel)]="milestoneEditAmountDraft" />
+                    @if (m.committedAmount > 0) {
+                      <p class="text-xs" [class.text-primary-500]="milestoneEditAmountDraft !== null && milestoneEditAmountDraft < m.committedAmount" [class.text-neutral-500]="milestoneEditAmountDraft === null || milestoneEditAmountDraft >= m.committedAmount">
+                        Already committed: {{ m.committedAmount | number: '1.2-2' }}
+                        @if (milestoneEditAmountDraft !== null && milestoneEditAmountDraft < m.committedAmount) {
+                          — reducing below this may make the fee inconsistent with what's already billed.
+                        }
+                      </p>
+                    }
                     @if (milestoneEditError()) {
                       <p class="text-xs text-primary-500">{{ milestoneEditError() }}</p>
                     }
@@ -259,25 +267,40 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                         <span class="text-xs text-neutral-500">Due: {{ m.dueDate | date: 'mediumDate' }}</span>
                       }
                       @if (milestonePaymentStatuses()[m.milestoneId]; as pay) {
-                        @if (pay.linkedInvoiceId) {
-                          <a
-                            class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700"
-                            [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', pay.linkedInvoiceId, 'edit']"
-                          >{{ pay.amount | number: '1.2-2' }} · {{ pay.linkedInvoiceNumber }}</a>
-                          @if (pay.nextGate) {
-                            <span class="text-xs" [title]="pay.nextGate">🔒</span>
-                          } @else {
-                            <span class="text-xs" title="No payment blocking the next status">🔓</span>
-                          }
-                        } @else if (pay.amount) {
-                          <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700">{{ pay.amount | number: '1.2-2' }}</span>
+                        @if (pay.amount) {
+                          <button
+                            type="button"
+                            class="flex flex-col items-end gap-2xs text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                            (click)="toggleMilestoneDetail(m.milestoneId)"
+                            [title]="pay.nextGate ?? 'No payment blocking the next status'"
+                          >
+                            <span>{{ pay.committedAmount | number: '1.2-2' }} / {{ pay.amount | number: '1.2-2' }}</span>
+                            <span class="w-24 h-1 rounded bg-neutral-200 overflow-hidden">
+                              <span class="block h-full bg-primary-500" [style.width.%]="(pay.committedAmount / pay.amount) * 100"></span>
+                            </span>
+                          </button>
                           @if (!isClient()) {
-                            <a
-                              class="text-xs text-primary-500 hover:text-primary-600"
-                              [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', 'new']"
-                              [queryParams]="{ jobId: jobId, milestoneId: m.milestoneId }"
-                            >Bill this milestone</a>
+                            @if ((pay.remainingAmount ?? 0) > 0) {
+                              <a
+                                class="text-xs text-primary-500 hover:text-primary-600"
+                                [routerLink]="['/app/workspace', workspaceId, 'billing', 'quotations', 'new']"
+                                [queryParams]="{ jobId: jobId, milestoneId: m.milestoneId }"
+                              >Quote this</a>
+                              <a
+                                class="text-xs text-primary-500 hover:text-primary-600"
+                                [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', 'new']"
+                                [queryParams]="{ jobId: jobId, milestoneId: m.milestoneId }"
+                              >Bill directly</a>
+                            } @else {
+                              <span class="text-xs text-neutral-500">Fully committed</span>
+                            }
                           }
+                        } @else if (!isClient()) {
+                          <a
+                            class="text-xs text-primary-500 hover:text-primary-600"
+                            [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', 'new']"
+                            [queryParams]="{ jobId: jobId, milestoneId: m.milestoneId }"
+                          >Bill directly</a>
                         }
                       }
                       @if (isClient()) {
@@ -300,6 +323,25 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                       }
                     </div>
                   </div>
+                  @if (expandedMilestoneDetail() === m.milestoneId) {
+                    <div class="px-md pb-md pt-sm border-t border-neutral-200 bg-neutral-50 rounded-b space-y-xs">
+                      @if (milestonePaymentStatuses()[m.milestoneId]; as pay) {
+                        <p class="text-xs text-neutral-600">Remaining: {{ (pay.remainingAmount ?? 0) | number: '1.2-2' }}</p>
+                        @if (pay.linkedInvoices.length === 0) {
+                          <p class="text-xs text-neutral-500">No invoices linked yet.</p>
+                        } @else {
+                          <div class="flex flex-wrap gap-sm">
+                            @for (inv of pay.linkedInvoices; track inv.invoiceId) {
+                              <a
+                                class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                                [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', inv.invoiceId, 'edit']"
+                              >{{ inv.number }} · {{ inv.status }}</a>
+                            }
+                          </div>
+                        }
+                      }
+                    </div>
+                  }
                   @if (editingRulesFor() === m.milestoneId) {
                     <div class="px-md pb-md pt-sm border-t border-neutral-200 space-y-sm bg-neutral-50 rounded-b">
                       @for (rule of ruleDrafts; track $index; let i = $index) {
@@ -874,6 +916,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   milestoneError = signal('');
   milestonePaymentStatuses = signal<Record<string, MilestonePaymentStatus>>({});
   editingRulesFor = signal<string | null>(null);
+  expandedMilestoneDetail = signal<string | null>(null);
   ruleDrafts: PaymentRequirement[] = [];
   loading = signal(true);
   savingHeader = signal(false);
@@ -1298,6 +1341,10 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
         next: status => this.milestonePaymentStatuses.update(map => ({ ...map, [m.milestoneId]: status }))
       });
     });
+  }
+
+  toggleMilestoneDetail(milestoneId: string): void {
+    this.expandedMilestoneDetail.update(current => (current === milestoneId ? null : milestoneId));
   }
 
   toggleRulesEditor(milestone: Milestone): void {
