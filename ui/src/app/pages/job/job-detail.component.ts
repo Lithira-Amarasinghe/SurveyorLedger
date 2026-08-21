@@ -14,7 +14,7 @@ import { Document, DocumentService } from '../../core/document.service';
 import { DocumentRequest, DocumentRequestService } from '../../core/document-request.service';
 import { CurrentWorkspaceService } from '../../core/current-workspace.service';
 import { InvitationService } from '../../core/invitation.service';
-import { Invoice, InvoiceService, Quotation, QuotationService } from '../../core/billing.service';
+import { Invoice, InvoiceService, Payment, Quotation, QuotationService } from '../../core/billing.service';
 import { EXPENSE_CATEGORIES, Expense, ExpenseService } from '../../core/expense.service';
 import { JobBudget, JobBudgetService } from '../../core/job-budget.service';
 import { AddJobPersonModalComponent } from './add-job-person-modal/add-job-person-modal.component';
@@ -24,7 +24,7 @@ import { DocumentListComponent, DocRow } from '../../shared/document-list/docume
 import { DocumentUploadButtonComponent } from '../../shared/document-upload-button/document-upload-button.component';
 import { DocumentRequestFormComponent, DocumentRequestFormValue } from '../../shared/document-request-form/document-request-form.component';
 import { DocumentViewerModalComponent } from '../../shared/document-viewer-modal/document-viewer-modal.component';
-import { ExpenseFormModalComponent } from './expense-form-modal/expense-form-modal.component';
+import { MilestoneFormModalComponent } from './milestone-form-modal/milestone-form-modal.component';
 import { StatusBadgeComponent } from '../../shared/status-badge/status-badge.component';
 import { IconComponent } from '../../shared/icon/icon.component';
 import { HasUnsavedChanges } from '../../core/unsaved-changes.guard';
@@ -47,7 +47,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
     DocumentUploadButtonComponent,
     DocumentRequestFormComponent,
     DocumentViewerModalComponent,
-    ExpenseFormModalComponent,
+    MilestoneFormModalComponent,
     StatusBadgeComponent,
     IconComponent
   ],
@@ -221,33 +221,11 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
           @if (milestones().length > 0) {
             <div cdkDropList class="space-y-xs mb-md" (cdkDropListDropped)="onMilestoneDropped($event)">
               @for (m of milestones(); track m.milestoneId) {
-                @if (editingMilestoneId() === m.milestoneId) {
-                  <div class="rounded bg-neutral-50 p-md space-y-sm">
-                    <input class="input-field text-sm" placeholder="Title" [(ngModel)]="milestoneEditTitleDraft" />
-                    <textarea class="input-field text-sm" rows="2" placeholder="Description (optional)" [(ngModel)]="milestoneEditDescriptionDraft"></textarea>
-                    <input class="input-field text-sm" type="date" [(ngModel)]="milestoneEditDueDateDraft" />
-                    <input class="input-field text-sm" type="number" min="0" step="0.01" placeholder="Fee amount (optional)" [(ngModel)]="milestoneEditAmountDraft" />
-                    @if (m.committedAmount > 0) {
-                      <p class="text-xs" [class.text-primary-500]="milestoneEditAmountDraft !== null && milestoneEditAmountDraft < m.committedAmount" [class.text-neutral-500]="milestoneEditAmountDraft === null || milestoneEditAmountDraft >= m.committedAmount">
-                        Already committed: {{ m.committedAmount | number: '1.2-2' }}
-                        @if (milestoneEditAmountDraft !== null && milestoneEditAmountDraft < m.committedAmount) {
-                          — reducing below this may make the fee inconsistent with what's already billed.
-                        }
-                      </p>
-                    }
-                    @if (milestoneEditError()) {
-                      <p class="text-xs text-primary-500">{{ milestoneEditError() }}</p>
-                    }
-                    <div class="flex items-center justify-end gap-sm">
-                      <button type="button" class="btn-secondary text-xs" (click)="cancelEditingMilestone()">Cancel</button>
-                      <button type="button" class="btn-primary text-xs" (click)="saveMilestoneEdit(m)">Save</button>
-                    </div>
-                  </div>
-                } @else {
-                  <div cdkDrag [cdkDragDisabled]="isClient()" class="flex items-center justify-between gap-sm px-md py-sm rounded bg-neutral-50">
+                <div cdkDrag [cdkDragDisabled]="isClient()" class="rounded bg-neutral-50 overflow-hidden">
+                  <div class="flex items-center justify-between gap-sm px-md py-sm cursor-pointer" (click)="toggleMilestoneDetail(m.milestoneId)">
                     <div class="flex items-center gap-sm min-w-0">
                       @if (!isClient()) {
-                        <span cdkDragHandle class="cursor-grab text-neutral-400 select-none flex-shrink-0">⠿</span>
+                        <span cdkDragHandle class="cursor-grab text-neutral-400 select-none flex-shrink-0" (click)="$event.stopPropagation()">⠿</span>
                       }
                       <span class="flex-shrink-0">{{ milestoneStatusIcon(m.status) }}</span>
                       <div class="min-w-0">
@@ -268,75 +246,125 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                       }
                       @if (milestonePaymentStatuses()[m.milestoneId]; as pay) {
                         @if (pay.amount) {
-                          <button
-                            type="button"
-                            class="flex flex-col items-end gap-2xs text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
-                            (click)="toggleMilestoneDetail(m.milestoneId)"
-                            [title]="pay.nextGate ?? 'No payment blocking the next status'"
-                          >
-                            <span>{{ pay.committedAmount | number: '1.2-2' }} / {{ pay.amount | number: '1.2-2' }}</span>
-                            <span class="w-24 h-1 rounded bg-neutral-200 overflow-hidden">
-                              <span class="block h-full bg-primary-500" [style.width.%]="(pay.committedAmount / pay.amount) * 100"></span>
+                          <div class="flex flex-col items-end gap-2xs text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700" [title]="feeBarTitle(pay)">
+                            <span>{{ pay.paidAmount | number: '1.2-2' }} paid of {{ pay.amount | number: '1.2-2' }} fee</span>
+                            <span class="w-24 h-1.5 rounded bg-neutral-200 overflow-hidden flex">
+                              <span class="block h-full bg-green-500" [style.width.%]="feeBarPct(pay.paidAmount, pay.amount)"></span>
+                              <span class="block h-full bg-blue-400" [style.width.%]="feeBarPct(pay.invoicedAmount - pay.paidAmount, pay.amount)"></span>
+                              <span class="block h-full bg-amber-300" [style.width.%]="feeBarPct(pay.quotedAmount, pay.amount)"></span>
                             </span>
-                          </button>
-                          @if (!isClient() && (pay.remainingAmount ?? 0) === 0) {
-                            <span class="text-xs text-neutral-500">Fully committed</span>
-                          }
+                          </div>
                         }
                       }
                       @if (isClient()) {
                         <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-600">{{ m.status }}</span>
                       } @else {
-                        <select class="input-field w-32 py-xs text-xs" [ngModel]="m.status" (ngModelChange)="onMilestoneStatusChange(m, $event)">
+                        <select class="input-field w-32 py-xs text-xs" [ngModel]="m.status" (click)="$event.stopPropagation()" (ngModelChange)="onMilestoneStatusChange(m, $event)">
                           @for (s of milestoneStatuses; track s) {
                             <option [value]="s">{{ s }}</option>
                           }
                         </select>
-                        <button type="button" class="icon-btn" title="Edit" (click)="startEditingMilestone(m)">
+                        <button type="button" class="icon-btn" title="Edit" (click)="$event.stopPropagation(); startEditingMilestone(m)">
                           <app-icon name="rename" />
                         </button>
-                        <button type="button" class="icon-btn" title="Payment rules" (click)="toggleRulesEditor(m)">
+                        <button type="button" class="icon-btn" title="Payment rules" (click)="$event.stopPropagation(); toggleRulesEditor(m)">
                           <app-icon name="banknote" />
                         </button>
-                        <button type="button" class="icon-btn text-primary-500" title="Remove" (click)="confirmingRemoveMilestone.set(m)">
+                        <button type="button" class="icon-btn text-primary-500" title="Remove" (click)="$event.stopPropagation(); confirmingRemoveMilestone.set(m)">
                           <app-icon name="delete" />
                         </button>
                       }
                     </div>
                   </div>
+
                   @if (expandedMilestoneDetail() === m.milestoneId) {
-                    <div class="px-md pb-md pt-sm border-t border-neutral-200 bg-neutral-50 rounded-b space-y-xs">
+                    <div class="px-md pb-md pt-sm border-t border-neutral-200 space-y-md">
                       @if (milestonePaymentStatuses()[m.milestoneId]; as pay) {
-                        <p class="text-xs text-neutral-600">Remaining: {{ (pay.remainingAmount ?? 0) | number: '1.2-2' }}</p>
+                        @if (m.amount) {
+                          <div class="space-y-xs">
+                            <div class="h-2 rounded-full bg-neutral-100 overflow-hidden flex">
+                              <span class="h-full bg-green-500" [style.width.%]="feeBarPct(pay.paidAmount, m.amount)"></span>
+                              <span class="h-full bg-blue-400" [style.width.%]="feeBarPct(pay.invoicedAmount - pay.paidAmount, m.amount)"></span>
+                              <span class="h-full bg-amber-300" [style.width.%]="feeBarPct(pay.quotedAmount, m.amount)"></span>
+                            </div>
+                            <div class="flex flex-wrap gap-md text-xs text-neutral-600">
+                              <span class="flex items-center gap-2xs"><span class="w-2 h-2 rounded-full bg-green-500"></span>Paid {{ pay.paidAmount | number: '1.2-2' }}</span>
+                              <span class="flex items-center gap-2xs"><span class="w-2 h-2 rounded-full bg-blue-400"></span>Invoiced, unpaid {{ (pay.invoicedAmount - pay.paidAmount) | number: '1.2-2' }}</span>
+                              <span class="flex items-center gap-2xs"><span class="w-2 h-2 rounded-full bg-amber-300"></span>Quoted, not invoiced {{ pay.quotedAmount | number: '1.2-2' }}</span>
+                              <span class="flex items-center gap-2xs"><span class="w-2 h-2 rounded-full bg-neutral-200"></span>Not yet quoted {{ (pay.remainingAmount ?? 0) | number: '1.2-2' }}</span>
+                            </div>
+                          </div>
+                        }
+                        <div class="grid grid-cols-2 gap-md text-sm">
+                          <div>
+                            <span class="block text-xs text-neutral-500">Quoted or invoiced against this fee</span>
+                            <span class="text-neutral-900 font-medium">{{ pay.committedAmount | number: '1.2-2' }}@if (m.amount) { of {{ m.amount | number: '1.2-2' }} }</span>
+                          </div>
+                          <div>
+                            <span class="block text-xs text-neutral-500">Still available to quote</span>
+                            <span class="text-neutral-900 font-medium">{{ (pay.remainingAmount ?? 0) | number: '1.2-2' }}</span>
+                          </div>
+                        </div>
                         @if (pay.linkedQuotations.length > 0) {
-                          <p class="text-xs text-neutral-500">Linked quotations:</p>
-                          <div class="flex flex-wrap gap-sm">
-                            @for (q of pay.linkedQuotations; track q.quotationId) {
-                              <a
-                                class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
-                                [routerLink]="['/app/workspace', workspaceId, 'billing', 'quotations', q.quotationId, 'edit']"
-                              >{{ q.number }} · {{ q.status }}</a>
-                            }
+                          <div>
+                            <span class="block text-xs font-medium text-neutral-500 mb-xs">Linked quotations</span>
+                            <div class="flex flex-wrap gap-sm">
+                              @for (q of pay.linkedQuotations; track q.quotationId) {
+                                <a
+                                  class="text-xs px-sm py-xs rounded bg-white border border-neutral-200 text-neutral-700 hover:border-neutral-300"
+                                  [routerLink]="['/app/workspace', workspaceId, 'billing', 'quotations', q.quotationId, 'edit']"
+                                  (click)="$event.stopPropagation()"
+                                >{{ q.number }} · {{ q.status }}</a>
+                              }
+                            </div>
                           </div>
                         }
-                        @if (pay.linkedInvoices.length === 0) {
-                          <p class="text-xs text-neutral-500">No invoices linked yet.</p>
-                        } @else {
-                          <p class="text-xs text-neutral-500">Linked invoices:</p>
-                          <div class="flex flex-wrap gap-sm">
-                            @for (inv of pay.linkedInvoices; track inv.invoiceId) {
-                              <a
-                                class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
-                                [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', inv.invoiceId, 'edit']"
-                              >{{ inv.number }} · {{ inv.status }}</a>
-                            }
-                          </div>
-                        }
+                        <div>
+                          <span class="block text-xs font-medium text-neutral-500 mb-xs">Linked invoices</span>
+                          @if (pay.linkedInvoices.length === 0) {
+                            <p class="text-xs text-neutral-500">None yet.</p>
+                          } @else {
+                            <div class="flex flex-wrap gap-sm">
+                              @for (inv of pay.linkedInvoices; track inv.invoiceId) {
+                                <a
+                                  class="text-xs px-sm py-xs rounded bg-white border border-neutral-200 text-neutral-700 hover:border-neutral-300"
+                                  [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', inv.invoiceId, 'edit']"
+                                  (click)="$event.stopPropagation()"
+                                >{{ inv.number }} · {{ inv.status }}</a>
+                              }
+                            </div>
+                          }
+                        </div>
                       }
+                      <div>
+                        <div class="flex items-center justify-between mb-xs">
+                          <span class="text-xs font-medium text-neutral-500">Expenses on this milestone</span>
+                          <span class="text-xs text-neutral-600">{{ milestoneExpensesTotal(m.milestoneId) | number: '1.2-2' }}@if (m.amount) { of {{ m.amount | number: '1.2-2' }} fee }</span>
+                        </div>
+                        @if (milestoneOverspent(m)) {
+                          <p class="text-xs text-amber-600 mb-xs">⚠ Expenses exceed the milestone fee.</p>
+                        }
+                        @if (milestoneExpenses(m.milestoneId).length > 0) {
+                          <div class="flex flex-wrap gap-sm mb-xs">
+                            @for (e of milestoneExpenses(m.milestoneId); track e.expenseId) {
+                              <span class="text-xs px-sm py-xs rounded bg-white border border-neutral-200 text-neutral-700">{{ e.category }} · {{ e.amount | number: '1.2-2' }}</span>
+                            }
+                          </div>
+                        } @else {
+                          <p class="text-xs text-neutral-500 mb-xs">No expenses tagged to this milestone yet.</p>
+                        }
+                        <a
+                          class="text-xs text-primary-500 hover:text-primary-600"
+                          [routerLink]="['/app/workspace', workspaceId, 'jobs', jobId, 'expenses', 'new']"
+                          [queryParams]="{ milestoneId: m.milestoneId }"
+                          (click)="$event.stopPropagation()"
+                        >+ Add expense to this milestone</a>
+                      </div>
                     </div>
                   }
+
                   @if (editingRulesFor() === m.milestoneId) {
-                    <div class="px-md pb-md pt-sm border-t border-neutral-200 space-y-sm bg-neutral-50 rounded-b">
+                    <div class="px-md pb-md pt-sm border-t border-neutral-200 space-y-sm">
                       @for (rule of ruleDrafts; track $index; let i = $index) {
                         <div class="flex items-center gap-sm text-sm">
                           <span class="text-neutral-600">Requires</span>
@@ -360,32 +388,26 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                       </div>
                     </div>
                   }
-                }
+                </div>
               }
             </div>
           }
           @if (!isClient()) {
-            @if (addingMilestone()) {
-              <div class="rounded bg-neutral-50 p-md space-y-sm">
-                <input class="input-field text-sm" placeholder="Title" [(ngModel)]="milestoneTitleDraft" />
-                <textarea class="input-field text-sm" rows="2" placeholder="Description (optional)" [(ngModel)]="milestoneDescriptionDraft"></textarea>
-                <input class="input-field text-sm" type="date" [(ngModel)]="milestoneDueDateDraft" />
-                <input class="input-field text-sm" type="number" min="0" step="0.01" placeholder="Fee amount (optional)" [(ngModel)]="milestoneAmountDraft" />
-                @if (milestoneError()) {
-                  <p class="text-xs text-primary-500">{{ milestoneError() }}</p>
-                }
-                <div class="flex items-center justify-end gap-sm">
-                  <button type="button" class="btn-secondary text-xs" (click)="cancelAddMilestone()">Cancel</button>
-                  <button type="button" class="btn-primary text-xs" (click)="submitMilestone()">Add</button>
-                </div>
-              </div>
-            } @else {
-              <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="addingMilestone.set(true)">
-                + Add milestone
-              </button>
-            }
+            <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="addingMilestone.set(true)">
+              + Add milestone
+            </button>
           }
         </div>
+
+        @if (addingMilestone() || editingMilestoneId()) {
+          <app-milestone-form-modal
+            [workspaceId]="workspaceId"
+            [jobId]="jobId"
+            [editing]="findMilestone(editingMilestoneId() ?? '') ?? null"
+            (cancel)="addingMilestone.set(false); editingMilestoneId.set(null)"
+            (saved)="onMilestoneSaved($event)"
+          />
+        }
 
         @if (j.canViewBudget) {
           <div class="card">
@@ -446,33 +468,166 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
         }
 
         <div class="card">
-          <h2 class="text-sm font-semibold text-neutral-900 mb-md">Financial summary</h2>
+          <div class="flex items-center justify-between mb-md">
+            <h2 class="text-sm font-semibold text-neutral-900">Financial summary</h2>
+            <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="showFinanceDetails.set(!showFinanceDetails())">
+              {{ showFinanceDetails() ? 'Hide details' : 'Show details' }}
+            </button>
+          </div>
           @if (financeMessage()) {
             <p class="text-xs text-primary-600 mb-md">{{ financeMessage() }}</p>
           }
-          <div class="grid grid-cols-2 sm:grid-cols-3 gap-md text-sm">
-            <div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-sm">
+            <div class="rounded border border-neutral-200 border-t-2 border-t-amber-400 px-md py-sm">
+              <span class="block text-xs text-neutral-500">Quoted</span>
+              <span class="block text-base font-semibold text-neutral-900">{{ financialSummary().quotedTotal | number: '1.2-2' }}</span>
+            </div>
+            <div class="rounded border border-neutral-200 border-t-2 border-t-blue-400 px-md py-sm">
               <span class="block text-xs text-neutral-500">Invoiced</span>
-              <span class="font-semibold text-neutral-900">{{ financialSummary().invoicedTotal | number: '1.2-2' }}</span>
+              <span class="block text-base font-semibold text-neutral-900">{{ financialSummary().invoicedTotal | number: '1.2-2' }}</span>
             </div>
-            <div>
+            <div class="rounded border border-neutral-200 border-t-2 border-t-green-500 px-md py-sm">
               <span class="block text-xs text-neutral-500">Paid</span>
-              <span class="font-semibold text-neutral-900">{{ financialSummary().paidTotal | number: '1.2-2' }}</span>
+              <span class="block text-base font-semibold text-neutral-900">{{ financialSummary().paidTotal | number: '1.2-2' }}</span>
             </div>
-            <div>
+            <div class="rounded border border-neutral-200 border-t-2 px-md py-sm" [class.border-t-red-500]="financialSummary().outstanding > 0" [class.border-t-neutral-300]="financialSummary().outstanding === 0">
               <span class="block text-xs text-neutral-500">Outstanding</span>
-              <span class="font-semibold text-neutral-900">{{ financialSummary().outstanding | number: '1.2-2' }}</span>
-            </div>
-            <div>
-              <span class="block text-xs text-neutral-500">Expenses</span>
-              <span class="font-semibold text-neutral-900">{{ financialSummary().expensesTotal | number: '1.2-2' }}</span>
-            </div>
-            <div>
-              <span class="block text-xs text-neutral-500">Margin (paid - costs)</span>
-              <span class="font-semibold" [class.text-primary-500]="financialSummary().margin < 0">{{ financialSummary().margin | number: '1.2-2' }}</span>
+              <span class="block text-base font-semibold text-neutral-900">{{ financialSummary().outstanding | number: '1.2-2' }}</span>
             </div>
           </div>
+
+          <div class="flex items-center justify-between px-md py-sm rounded bg-neutral-50 mt-sm text-sm">
+            <span class="text-neutral-500">Expenses</span>
+            <span class="font-medium text-neutral-900">{{ financialSummary().expensesTotal | number: '1.2-2' }}</span>
+          </div>
+
+          <div
+            class="flex items-center justify-between px-md py-sm rounded mt-sm"
+            [class.bg-green-50]="financialSummary().margin >= 0"
+            [class.bg-primary-50]="financialSummary().margin < 0"
+          >
+            <span class="text-sm" [class.text-green-700]="financialSummary().margin >= 0" [class.text-primary-600]="financialSummary().margin < 0">
+              Profit <span class="text-xs opacity-75">(invoiced − expenses)</span>
+            </span>
+            <span class="text-lg font-semibold" [class.text-green-700]="financialSummary().margin >= 0" [class.text-primary-600]="financialSummary().margin < 0">
+              {{ financialSummary().margin | number: '1.2-2' }}
+            </span>
+          </div>
+
+          @if (showFinanceDetails()) {
+            <div class="mt-md pt-md border-t border-neutral-200 space-y-md">
+              <div>
+                <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-xs">Quotation pipeline</h3>
+                @if (jobQuotations().length === 0) {
+                  <p class="text-xs text-neutral-500">No quotations yet.</p>
+                } @else {
+                  <div class="flex flex-wrap gap-sm">
+                    @for (group of quotationStatusBreakdown(); track group.status) {
+                      <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700">{{ group.status }}: {{ group.count }} · {{ group.total | number: '1.2-2' }}</span>
+                    }
+                  </div>
+                }
+              </div>
+              <div>
+                <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-xs">Expenses by category</h3>
+                @if (jobExpenses().length === 0) {
+                  <p class="text-xs text-neutral-500">No expenses yet.</p>
+                } @else {
+                  <div class="space-y-2xs">
+                    @for (group of expenseCategoryBreakdown(); track group.category) {
+                      <div class="flex items-center justify-between text-xs px-md py-xs rounded bg-neutral-50">
+                        <span class="text-neutral-600">{{ group.category }}</span>
+                        <span class="text-neutral-900 font-medium">{{ group.total | number: '1.2-2' }}</span>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+              <div>
+                <h3 class="text-xs font-semibold text-neutral-500 uppercase mb-xs">Invoice status</h3>
+                @if (jobInvoices().length === 0) {
+                  <p class="text-xs text-neutral-500">No invoices yet.</p>
+                } @else {
+                  <div class="flex flex-wrap gap-sm">
+                    @for (group of invoiceStatusBreakdown(); track group.status) {
+                      <span class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700">{{ group.status }}: {{ group.count }} · {{ group.total | number: '1.2-2' }}</span>
+                    }
+                  </div>
+                }
+              </div>
+            </div>
+          }
         </div>
+
+        @if (jobPayments().length > 0) {
+          <div class="card">
+            <div class="flex items-center justify-between mb-md">
+              <h2 class="text-sm font-semibold text-neutral-900">Payments</h2>
+              <span class="text-xs text-neutral-500">{{ jobPayments().length }} recorded</span>
+            </div>
+            <div class="card p-0 overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-neutral-100 text-neutral-600 text-xs uppercase">
+                  <tr>
+                    <th class="text-left px-lg py-sm font-medium">Date</th>
+                    <th class="text-left px-lg py-sm font-medium">Invoice</th>
+                    <th class="text-left px-lg py-sm font-medium">Method</th>
+                    <th class="text-left px-lg py-sm font-medium">Reference</th>
+                    <th class="text-left px-lg py-sm font-medium">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (p of jobPayments(); track p.paymentId) {
+                    <tr class="border-t border-neutral-200 cursor-pointer hover:bg-neutral-50" (click)="toggleExpandedPayment(p.paymentId)">
+                      <td class="px-lg py-sm text-neutral-600">{{ p.receivedAt | date: 'mediumDate' }}</td>
+                      <td class="px-lg py-sm">
+                        <a
+                          class="text-xs px-sm py-xs rounded bg-neutral-100 text-primary-600 hover:bg-neutral-200 font-medium"
+                          [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', p.invoiceId, 'edit']"
+                          (click)="$event.stopPropagation()"
+                        >{{ p.invoiceNumber }}</a>
+                      </td>
+                      <td class="px-lg py-sm text-neutral-600">{{ paymentMethodLabel(p.method) }}</td>
+                      <td class="px-lg py-sm text-neutral-600">{{ p.referenceNumber ?? '—' }}</td>
+                      <td class="px-lg py-sm text-neutral-900 font-medium">{{ p.amount | number: '1.2-2' }}</td>
+                    </tr>
+                    @if (expandedPaymentId() === p.paymentId) {
+                      <tr class="bg-neutral-50 border-t border-neutral-200">
+                        <td colspan="5" class="px-lg py-sm">
+                          <div class="grid grid-cols-2 sm:grid-cols-4 gap-md text-xs">
+                            <div>
+                              <span class="block text-neutral-500">Receipt number</span>
+                              <span class="text-neutral-900 font-medium">{{ p.receiptNumber }}</span>
+                            </div>
+                            <div>
+                              <span class="block text-neutral-500">Proof of payment</span>
+                              <span class="text-neutral-900 font-medium">{{ p.hasProofFile ? 'Attached' : 'Not provided' }}</span>
+                            </div>
+                            <div>
+                              <span class="block text-neutral-500">Recorded on</span>
+                              <span class="text-neutral-900 font-medium">{{ p.createdAt | date: 'medium' }}</span>
+                            </div>
+                            <div>
+                              <span class="block text-neutral-500">Share of invoice</span>
+                              <span class="text-neutral-900 font-medium">{{ invoiceShareLabel(p) }}</span>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    }
+                  }
+                </tbody>
+                <tfoot>
+                  <tr class="border-t border-neutral-300 bg-neutral-50 font-medium">
+                    <td class="px-lg py-sm text-neutral-600" colspan="4">Total received</td>
+                    <td class="px-lg py-sm text-neutral-900">{{ jobPaymentsTotal() | number: '1.2-2' }}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        }
 
         <div class="card">
           <div class="flex items-center justify-between mb-md">
@@ -524,6 +679,13 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                     }
                   }
                 </tbody>
+                <tfoot>
+                  <tr class="border-t border-neutral-300 bg-neutral-50 font-medium">
+                    <td class="px-lg py-sm text-neutral-600">Total</td>
+                    <td class="px-lg py-sm text-neutral-900">{{ jobInvoicesTotal() | number: '1.2-2' }}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           }
@@ -556,6 +718,13 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                     </tr>
                   }
                 </tbody>
+                <tfoot>
+                  <tr class="border-t border-neutral-300 bg-neutral-50 font-medium">
+                    <td class="px-lg py-sm text-neutral-600">Total</td>
+                    <td class="px-lg py-sm text-neutral-900">{{ jobQuotationsTotal() | number: '1.2-2' }}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           }
@@ -567,7 +736,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
         <div class="card">
           <div class="flex items-center justify-between mb-md">
             <h2 class="text-sm font-semibold text-neutral-900">Expenses</h2>
-            <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="openExpenseModal()">+ Expense</button>
+            <a class="text-xs text-primary-500 hover:text-primary-600" [routerLink]="['/app/workspace', workspaceId, 'jobs', jobId, 'expenses', 'new']">+ Expense</a>
           </div>
           @if (jobExpenses().length === 0) {
             <p class="text-sm text-neutral-500">No expenses recorded on this job yet.</p>
@@ -599,23 +768,25 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                 </thead>
                 <tbody>
                   @for (expense of filteredExpenses(); track expense.expenseId) {
-                    <tr class="border-t border-neutral-200">
+                    <tr
+                      class="border-t border-neutral-200 hover:bg-neutral-50 cursor-pointer"
+                      [routerLink]="['/app/workspace', workspaceId, 'jobs', jobId, 'expenses', expense.expenseId, 'edit']"
+                    >
                       <td class="px-lg py-sm text-neutral-600">{{ expense.incurredDate | date: 'mediumDate' }}</td>
                       <td class="px-lg py-sm text-neutral-900">{{ expense.category }}</td>
                       <td class="px-lg py-sm">
                         @if (expense.milestoneId) {
-                          <button type="button" class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700 hover:bg-neutral-200" (click)="expenseMilestoneFilter.set(expense.milestoneId)">
+                          <button type="button" class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700 hover:bg-neutral-200" (click)="$event.stopPropagation(); expenseMilestoneFilter.set(expense.milestoneId)">
                             {{ milestoneTitle(expense.milestoneId) }}
                           </button>
                         } @else {
-                          <span class="text-neutral-400">—</span>
+                          <span class="text-xs px-sm py-xs rounded bg-neutral-50 text-neutral-500">Job-level</span>
                         }
                       </td>
                       <td class="px-lg py-sm text-neutral-600">{{ expense.payeeName ?? '—' }}</td>
                       <td class="px-lg py-sm text-neutral-600">{{ expense.amount | number: '1.2-2' }}</td>
                       <td class="px-lg py-sm text-right whitespace-nowrap">
-                        <button type="button" class="text-xs text-neutral-500 hover:text-neutral-700 mr-sm" (click)="openExpenseModal(expense)">Edit</button>
-                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="confirmingDeleteExpense.set(expense)">Delete</button>
+                        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="$event.stopPropagation(); confirmingDeleteExpense.set(expense)">Delete</button>
                       </td>
                     </tr>
                   }
@@ -682,18 +853,6 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
       @if (viewingBlobUrl(); as url) {
         <app-document-viewer-modal [document]="doc" [blobUrl]="url" (closed)="closeViewer()" />
       }
-    }
-
-    @if (showExpenseModal()) {
-      <app-expense-form-modal
-        [workspaceId]="workspaceId"
-        [jobId]="jobId"
-        [participants]="effectiveParticipants()"
-        [milestones]="milestones()"
-        [editing]="editingExpense()"
-        (cancel)="showExpenseModal.set(false); editingExpense.set(null)"
-        (saved)="onExpenseSaved()"
-      />
     }
 
     @if (confirmingRemoveRole(); as item) {
@@ -824,6 +983,8 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   documentError = signal('');
   documentRequests = signal<DocumentRequest[]>([]);
   jobInvoices = signal<Invoice[]>([]);
+  jobPayments = signal<(Payment & { invoiceNumber: string })[]>([]);
+  expandedPaymentId = signal<string | null>(null);
   jobQuotations = signal<Quotation[]>([]);
   jobExpenses = signal<Expense[]>([]);
   jobBudget = signal<JobBudget | null>(null);
@@ -832,8 +993,6 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   budgetCostDraft = 0;
   budgetError = signal('');
   savingBudget = signal(false);
-  showExpenseModal = signal(false);
-  editingExpense = signal<Expense | null>(null);
   expenseCategories = EXPENSE_CATEGORIES;
   expenseCategoryFilter = '';
   expenseMilestoneFilter = signal<string | null>(null);
@@ -843,9 +1002,52 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     const paidTotal = this.jobInvoices().reduce((sum, i) => sum + i.amountPaid, 0);
     const outstanding = invoicedTotal - paidTotal;
     const expensesTotal = this.jobExpenses().reduce((sum, e) => sum + e.amount, 0);
-    const margin = paidTotal - expensesTotal;
-    return { invoicedTotal, paidTotal, outstanding, expensesTotal, margin };
+    const margin = invoicedTotal - expensesTotal;
+    const quotedTotal = this.jobQuotations()
+      .filter(q => q.status !== 'Rejected' && q.status !== 'Expired')
+      .reduce((sum, q) => sum + q.total, 0);
+    return { quotedTotal, invoicedTotal, paidTotal, outstanding, expensesTotal, margin };
   });
+
+  showFinanceDetails = signal(false);
+
+  jobInvoicesTotal(): number {
+    return this.jobInvoices().reduce((sum, i) => sum + i.total, 0);
+  }
+
+  jobQuotationsTotal(): number {
+    return this.jobQuotations().reduce((sum, q) => sum + q.total, 0);
+  }
+
+  quotationStatusBreakdown(): { status: string; count: number; total: number }[] {
+    const groups = new Map<string, { status: string; count: number; total: number }>();
+    for (const q of this.jobQuotations()) {
+      const g = groups.get(q.status) ?? { status: q.status, count: 0, total: 0 };
+      g.count++;
+      g.total += q.total;
+      groups.set(q.status, g);
+    }
+    return [...groups.values()];
+  }
+
+  invoiceStatusBreakdown(): { status: string; count: number; total: number }[] {
+    const groups = new Map<string, { status: string; count: number; total: number }>();
+    for (const i of this.jobInvoices()) {
+      const g = groups.get(i.status) ?? { status: i.status, count: 0, total: 0 };
+      g.count++;
+      g.total += i.total;
+      groups.set(i.status, g);
+    }
+    return [...groups.values()];
+  }
+
+  expenseCategoryBreakdown(): { category: string; total: number }[] {
+    const groups = new Map<string, number>();
+    for (const e of this.jobExpenses()) {
+      groups.set(e.category, (groups.get(e.category) ?? 0) + e.amount);
+    }
+    return [...groups.entries()].map(([category, total]) => ({ category, total })).sort((a, b) => b.total - a.total);
+  }
 
   financeMessage = signal('');
   confirmingDeleteExpense = signal<Expense | null>(null);
@@ -866,18 +1068,16 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     return this.milestones().find(m => m.milestoneId === milestoneId)?.title ?? 'Unknown milestone';
   }
 
-  openExpenseModal(expense: Expense | null = null): void {
-    this.editingExpense.set(expense);
-    this.showExpenseModal.set(true);
+  milestoneExpenses(milestoneId: string): Expense[] {
+    return this.jobExpenses().filter(e => e.milestoneId === milestoneId);
   }
 
-  onExpenseSaved(): void {
-    this.showExpenseModal.set(false);
-    this.editingExpense.set(null);
-    this.expenseService.getAll(this.workspaceId, this.jobId).subscribe(list => {
-      this.jobExpenses.set(list);
-      this.financeMessage.set('Expense saved.');
-    });
+  milestoneExpensesTotal(milestoneId: string): number {
+    return this.milestoneExpenses(milestoneId).reduce((sum, e) => sum + e.amount, 0);
+  }
+
+  milestoneOverspent(m: Milestone): boolean {
+    return !!m.amount && this.milestoneExpensesTotal(m.milestoneId) > m.amount;
   }
 
   doDeleteExpense(expense: Expense): void {
@@ -957,11 +1157,6 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     return [...rows, ...this.landDocumentRows()];
   });
   addingMilestone = signal(false);
-  milestoneTitleDraft = '';
-  milestoneDescriptionDraft = '';
-  milestoneDueDateDraft = '';
-  milestoneAmountDraft: number | null = null;
-  milestoneError = signal('');
   milestonePaymentStatuses = signal<Record<string, MilestonePaymentStatus>>({});
   editingRulesFor = signal<string | null>(null);
   expandedMilestoneDetail = signal<string | null>(null);
@@ -979,11 +1174,6 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   confirmingRemoveLand = signal<Land | null>(null);
   confirmingRemoveMilestone = signal<Milestone | null>(null);
   editingMilestoneId = signal<string | null>(null);
-  milestoneEditTitleDraft = '';
-  milestoneEditDescriptionDraft = '';
-  milestoneEditDueDateDraft = '';
-  milestoneEditAmountDraft: number | null = null;
-  milestoneEditError = signal('');
   milestonesCompletedCount = computed(() => this.milestones().filter(m => m.status === 'Completed').length);
   confirmingRevokeInvite = signal<string | null>(null);
 
@@ -1068,6 +1258,7 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
         this.documents.set(documents);
         this.documentRequests.set(documentRequests);
         this.jobInvoices.set(invoices);
+        this.loadJobPayments(invoices);
         this.jobQuotations.set(quotations);
         this.jobExpenses.set(expenses);
         this.loadPreviews(this.documentRows());
@@ -1311,49 +1502,8 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     this.expandedLandId.set(null);
   }
 
-  cancelAddMilestone(): void {
-    this.addingMilestone.set(false);
-    this.milestoneTitleDraft = '';
-    this.milestoneDescriptionDraft = '';
-    this.milestoneDueDateDraft = '';
-    this.milestoneAmountDraft = null;
-    this.milestoneError.set('');
-  }
-
-  submitMilestone(): void {
-    if (!this.milestoneTitleDraft.trim()) {
-      this.milestoneError.set('Title is required.');
-      return;
-    }
-    this.milestoneService
-      .create(this.workspaceId, this.jobId, {
-        title: this.milestoneTitleDraft.trim(),
-        description: this.milestoneDescriptionDraft.trim() || null,
-        dueDate: this.milestoneDueDateDraft || null,
-        amount: this.milestoneAmountDraft
-      })
-      .subscribe({
-        next: (milestone) => {
-          this.milestones.update(list => [...list, milestone]);
-          this.loadMilestonePaymentStatuses([milestone]);
-          this.cancelAddMilestone();
-        },
-        error: (err) => this.milestoneError.set(err.error?.message ?? 'Could not add milestone.')
-      });
-  }
-
   startEditingMilestone(milestone: Milestone): void {
     this.editingMilestoneId.set(milestone.milestoneId);
-    this.milestoneEditTitleDraft = milestone.title;
-    this.milestoneEditDescriptionDraft = milestone.description ?? '';
-    this.milestoneEditDueDateDraft = milestone.dueDate ? milestone.dueDate.substring(0, 10) : '';
-    this.milestoneEditAmountDraft = milestone.amount;
-    this.milestoneEditError.set('');
-  }
-
-  cancelEditingMilestone(): void {
-    this.editingMilestoneId.set(null);
-    this.milestoneEditError.set('');
   }
 
   isMilestoneOverdue(milestone: Milestone): boolean {
@@ -1361,26 +1511,51 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
     return new Date(milestone.dueDate) < new Date(new Date().toDateString());
   }
 
-  saveMilestoneEdit(milestone: Milestone): void {
-    if (!this.milestoneEditTitleDraft.trim()) {
-      this.milestoneEditError.set('Title is required.');
+  onMilestoneSaved(milestone: Milestone): void {
+    const wasAdd = this.addingMilestone();
+    this.milestones.update(list => (wasAdd ? [...list, milestone] : list.map(m => (m.milestoneId === milestone.milestoneId ? milestone : m))));
+    this.loadMilestonePaymentStatuses([milestone]);
+    this.addingMilestone.set(false);
+    this.editingMilestoneId.set(null);
+  }
+
+  jobPaymentsTotal(): number {
+    return this.jobPayments().reduce((sum, p) => sum + p.amount, 0);
+  }
+
+  paymentMethodLabel(method: string): string {
+    return method === 'BankTransfer' ? 'Bank transfer' : method;
+  }
+
+  toggleExpandedPayment(paymentId: string): void {
+    this.expandedPaymentId.update(current => (current === paymentId ? null : paymentId));
+  }
+
+  invoiceShareLabel(p: Payment & { invoiceNumber: string }): string {
+    const invoice = this.jobInvoices().find(i => i.invoiceId === p.invoiceId);
+    if (!invoice || invoice.total <= 0) return '—';
+    const pct = Math.round((p.amount / invoice.total) * 100);
+    return `${pct}% of ${invoice.total.toFixed(2)}`;
+  }
+
+  private loadJobPayments(invoices: Invoice[]): void {
+    const withPayments = invoices.filter(i => i.amountPaid > 0);
+    if (withPayments.length === 0) {
+      this.jobPayments.set([]);
       return;
     }
-    this.milestoneService
-      .update(this.workspaceId, this.jobId, milestone.milestoneId, {
-        title: this.milestoneEditTitleDraft.trim(),
-        description: this.milestoneEditDescriptionDraft.trim() || null,
-        dueDate: this.milestoneEditDueDateDraft || null,
-        amount: this.milestoneEditAmountDraft
-      })
-      .subscribe({
-        next: (updated) => {
-          this.milestones.update(list => list.map(m => (m.milestoneId === updated.milestoneId ? updated : m)));
-          this.loadMilestonePaymentStatuses([updated]);
-          this.cancelEditingMilestone();
-        },
-        error: (err) => this.milestoneEditError.set(err.error?.message ?? 'Could not save milestone.')
-      });
+    forkJoin(
+      withPayments.map(inv =>
+        this.invoiceService.getPayments(this.workspaceId, inv.invoiceId).pipe(
+          map(payments => payments.map(p => ({ ...p, invoiceNumber: inv.number })))
+        )
+      )
+    ).subscribe({
+      next: results => {
+        const flat = results.flat().sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
+        this.jobPayments.set(flat);
+      }
+    });
   }
 
   private loadMilestonePaymentStatuses(milestones: Milestone[]): void {
@@ -1389,6 +1564,19 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
         next: status => this.milestonePaymentStatuses.update(map => ({ ...map, [m.milestoneId]: status }))
       });
     });
+  }
+
+  feeBarPct(amount: number, fee: number): number {
+    if (!fee) return 0;
+    return Math.max(0, Math.min(100, (amount / fee) * 100));
+  }
+
+  feeBarTitle(pay: MilestonePaymentStatus): string {
+    return `${pay.paidAmount.toFixed(2)} paid, ${(pay.invoicedAmount - pay.paidAmount).toFixed(2)} invoiced unpaid, ${pay.quotedAmount.toFixed(2)} quoted not yet invoiced`;
+  }
+
+  findMilestone(milestoneId: string): Milestone | undefined {
+    return this.milestones().find(m => m.milestoneId === milestoneId);
   }
 
   toggleMilestoneDetail(milestoneId: string): void {

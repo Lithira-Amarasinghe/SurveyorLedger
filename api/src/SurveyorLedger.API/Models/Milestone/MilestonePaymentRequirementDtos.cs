@@ -29,6 +29,9 @@ public class MilestonePaymentStatusResponse
 {
     public decimal? Amount { get; set; }
     public decimal CommittedAmount { get; set; }
+    public decimal QuotedAmount { get; set; }
+    public decimal InvoicedAmount { get; set; }
+    public decimal PaidAmount { get; set; }
     public decimal? RemainingAmount { get; set; }
     public List<LinkedInvoiceSummaryDto> LinkedInvoices { get; set; } = new();
     public List<LinkedQuotationSummaryDto> LinkedQuotations { get; set; } = new();

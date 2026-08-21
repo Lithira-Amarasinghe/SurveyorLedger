@@ -69,6 +69,10 @@ import { Milestone } from '../../../core/milestone.service';
             </div>
           </div>
 
+          @if (feeWarning(); as warning) {
+            <p class="text-xs text-amber-600">⚠ {{ warning }}</p>
+          }
+
           <div>
             <label class="block text-xs font-medium text-neutral-700 mb-xs">Description (optional)</label>
             <textarea class="input-field" rows="2" name="description" [(ngModel)]="description"></textarea>
@@ -100,6 +104,7 @@ export class ExpenseFormModalComponent implements OnInit {
   @Input() participants: JobParticipant[] = [];
   @Input() milestones: Milestone[] = [];
   @Input() editing: Expense | null = null;
+  @Input() presetMilestoneId: string | null = null;
   @Output() cancel = new EventEmitter<void>();
   @Output() saved = new EventEmitter<Expense>();
 
@@ -129,7 +134,16 @@ export class ExpenseFormModalComponent implements OnInit {
       this.milestoneId = this.editing.milestoneId;
     } else {
       this.incurredDate = new Date().toISOString().substring(0, 10);
+      this.milestoneId = this.presetMilestoneId;
     }
+  }
+
+  feeWarning(): string | null {
+    if (!this.milestoneId || this.amount <= 0) return null;
+    const m = this.milestones.find(x => x.milestoneId === this.milestoneId);
+    if (!m?.amount) return null;
+    if (this.amount > m.amount) return `This expense (${this.amount.toFixed(2)}) exceeds the milestone fee (${m.amount.toFixed(2)}).`;
+    return null;
   }
 
   onFileChange(event: Event): void {

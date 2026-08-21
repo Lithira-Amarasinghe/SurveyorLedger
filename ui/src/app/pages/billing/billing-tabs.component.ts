@@ -23,13 +23,6 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
         Quotations
       </a>
       <a
-        [routerLink]="['/app/workspace', workspaceId, 'billing', 'clients']"
-        routerLinkActive="border-primary-500 text-primary-600"
-        class="px-md py-sm text-sm font-medium text-neutral-600 border-b-2 border-transparent hover:text-neutral-900"
-      >
-        Clients
-      </a>
-      <a
         [routerLink]="['/app/workspace', workspaceId, 'billing', 'expenses']"
         routerLinkActive="border-primary-500 text-primary-600"
         class="px-md py-sm text-sm font-medium text-neutral-600 border-b-2 border-transparent hover:text-neutral-900"

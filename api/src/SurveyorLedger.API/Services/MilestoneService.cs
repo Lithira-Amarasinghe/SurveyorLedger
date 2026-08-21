@@ -27,7 +27,13 @@ public record LinkedInvoiceSummary(Guid InvoiceId, string Number, string Status)
 
 public record LinkedQuotationSummary(Guid QuotationId, string Number, string Status);
 
-public record MilestonePaymentStatus(decimal? Amount, decimal CommittedAmount, decimal? RemainingAmount, List<LinkedInvoiceSummary> LinkedInvoices, List<LinkedQuotationSummary> LinkedQuotations, string? NextGate);
+/// <summary>Breaks CommittedAmount into a bar-friendly progression: QuotedAmount is fee
+/// promised on an active quotation line but not yet invoiced, InvoicedAmount is fee that has
+/// reached an invoice (direct or via a quotation line), PaidAmount is the share of that
+/// invoiced amount actually collected (each invoice's AmountPaid split pro-rata across its
+/// lines by amount, since payments are recorded against the invoice total, not per line).
+/// QuotedAmount + InvoicedAmount == CommittedAmount always.</summary>
+public record MilestonePaymentStatus(decimal? Amount, decimal CommittedAmount, decimal QuotedAmount, decimal InvoicedAmount, decimal PaidAmount, decimal? RemainingAmount, List<LinkedInvoiceSummary> LinkedInvoices, List<LinkedQuotationSummary> LinkedQuotations, string? NextGate);
 
 /// <summary>
 /// Milestones are a job sub-resource: every action reuses JobService's job.view /
@@ -258,9 +264,36 @@ public class MilestoneService : IMilestoneService
         var committedAmount = await GetCommittedAmountAsync(jobId, milestoneId);
         var nextGate = await ResolveNextGateAsync(milestone, linkedInvoices, committedAmount);
 
+        // Every invoice line tagged with this milestone (direct or copied from a quotation
+        // line) is "invoiced"; the rest of committedAmount is quoted-but-not-yet-invoiced.
+        var invoicedAmount = linkedInvoices
+            .SelectMany(i => i.LineItems)
+            .Where(li => li.MilestoneId == milestoneId)
+            .Sum(li => li.Quantity * li.UnitPrice);
+        var quotedAmount = committedAmount - invoicedAmount;
+
+        // Payments land against an invoice's total, not a line, so a milestone's paid share
+        // of each invoice is its milestone-tagged lines' proportion of that invoice's total.
+        // Total/AmountPaid aren't stored columns (InvoiceService.ComputeInvoiceTotals owns that
+        // math) - injecting IInvoiceService here would be circular since it depends on
+        // IMilestoneService, so the same subtotal/tax/discount/payments formula is inlined.
+        var paidAmount = 0m;
+        foreach (var invoice in linkedInvoices)
+        {
+            var invoiceSubtotal = invoice.LineItems.Sum(li => li.Quantity * li.UnitPrice);
+            var invoiceTotal = invoiceSubtotal - invoice.DiscountAmount + invoiceSubtotal * invoice.TaxRatePercent / 100m;
+            if (invoiceTotal <= 0) continue;
+            var invoiceAmountPaid = invoice.Payments.Sum(p => p.Amount);
+            var milestoneShare = invoice.LineItems.Where(li => li.MilestoneId == milestoneId).Sum(li => li.Quantity * li.UnitPrice);
+            paidAmount += invoiceAmountPaid * (milestoneShare / invoiceTotal);
+        }
+
         return new MilestonePaymentStatus(
             milestone.Amount,
             committedAmount,
+            quotedAmount,
+            invoicedAmount,
+            paidAmount,
             milestone.Amount.HasValue ? milestone.Amount.Value - committedAmount : null,
             linkedInvoices.Select(i => new LinkedInvoiceSummary(i.Id, i.Number, i.Status)).ToList(),
             linkedQuotations.Select(q => new LinkedQuotationSummary(q.Id, q.Number, q.Status)).ToList(),

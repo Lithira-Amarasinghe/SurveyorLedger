@@ -61,7 +61,7 @@ import { SendDocumentModalComponent } from '../../../shared/send-document-modal/
                       (click)="$event.stopPropagation()"
                     >Print</a>
                     <button class="text-xs text-primary-500 hover:text-primary-600 mr-md" (click)="$event.stopPropagation(); openSend(quotation)">Send</button>
-                    @if (quotation.status !== 'Rejected' && quotation.status !== 'Expired') {
+                    @if (quotation.status === 'Accepted') {
                       <a
                         class="text-xs text-primary-500 hover:text-primary-600"
                         [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', 'new']"

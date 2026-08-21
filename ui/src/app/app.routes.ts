@@ -16,6 +16,7 @@ import { QuotationListComponent } from './pages/billing/quotations/quotation-lis
 import { InvoiceListComponent } from './pages/billing/invoices/invoice-list.component';
 import { BillingDocumentFormPageComponent } from './pages/billing/document-form/billing-document-form-page.component';
 import { WorkspaceExpenseListComponent } from './pages/billing/expenses/workspace-expense-list.component';
+import { ExpenseFormPageComponent } from './pages/job/expense-form-page/expense-form-page.component';
 import { AcceptInviteComponent } from './pages/invite/accept-invite.component';
 import { PublicDocumentUploadComponent } from './pages/document-upload/public-document-upload.component';
 import { PublicSetLocationComponent } from './pages/set-location/public-set-location.component';
@@ -73,6 +74,8 @@ export const routes: Routes = [
           { path: '', component: WorkspaceOverviewComponent },
           { path: 'jobs', component: JobListComponent },
           { path: 'jobs/:jobId', component: JobDetailComponent, canDeactivate: [unsavedChangesGuard] },
+          { path: 'jobs/:jobId/expenses/new', component: ExpenseFormPageComponent },
+          { path: 'jobs/:jobId/expenses/:expenseId/edit', component: ExpenseFormPageComponent },
           { path: 'lands', component: LandListComponent },
           // Order matters: 'new' must be matched before ':landId' or it'd be swallowed as a param.
           // No canDeactivate here - an abandoned create form has nothing saved yet to warn about.

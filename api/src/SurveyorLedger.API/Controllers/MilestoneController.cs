@@ -98,6 +98,9 @@ namespace SurveyorLedger.API.Controllers
             {
                 Amount = status.Amount,
                 CommittedAmount = status.CommittedAmount,
+                QuotedAmount = status.QuotedAmount,
+                InvoicedAmount = status.InvoicedAmount,
+                PaidAmount = status.PaidAmount,
                 RemainingAmount = status.RemainingAmount,
                 LinkedInvoices = status.LinkedInvoices.Select(i => new LinkedInvoiceSummaryDto { InvoiceId = i.InvoiceId, Number = i.Number, Status = i.Status }).ToList(),
                 LinkedQuotations = status.LinkedQuotations.Select(q => new LinkedQuotationSummaryDto { QuotationId = q.QuotationId, Number = q.Number, Status = q.Status }).ToList(),

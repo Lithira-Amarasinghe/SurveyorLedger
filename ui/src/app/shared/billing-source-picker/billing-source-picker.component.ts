@@ -1,8 +1,9 @@
 import { Component, EventEmitter, Input, Output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { LineItem } from '../../core/billing.service';
-import { Milestone } from '../../core/milestone.service';
+import { Milestone, MilestonePaymentStatus } from '../../core/milestone.service';
 import { QuotationLineSource } from '../line-item-editor/line-item-editor.component';
+import { MilestoneFeeRowComponent } from '../milestone-fee-row/milestone-fee-row.component';
 
 /**
  * "+ Add from..." modal - replaces the old per-line milestone/quotation dropdowns with an
@@ -13,35 +14,37 @@ import { QuotationLineSource } from '../line-item-editor/line-item-editor.compon
 @Component({
   selector: 'app-billing-source-picker',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, MilestoneFeeRowComponent],
   template: `
     <div class="fixed inset-0 z-50 bg-neutral-900/40 flex items-center justify-center px-lg" (click)="cancel.emit()">
       <div class="card w-full max-w-lg max-h-[80vh] flex flex-col" (click)="$event.stopPropagation()">
         <h2 class="text-base font-semibold text-neutral-900 mb-md">Add from…</h2>
 
-        <div class="flex gap-sm border-b border-neutral-200 mb-md">
-          <button
-            type="button"
-            class="px-md py-sm text-sm font-medium border-b-2"
-            [class.border-primary-500]="tab() === 'milestones'"
-            [class.text-primary-600]="tab() === 'milestones'"
-            [class.border-transparent]="tab() !== 'milestones'"
-            [class.text-neutral-600]="tab() !== 'milestones'"
-            (click)="tab.set('milestones')"
-          >Milestones</button>
-          <button
-            type="button"
-            class="px-md py-sm text-sm font-medium border-b-2"
-            [class.border-primary-500]="tab() === 'quotations'"
-            [class.text-primary-600]="tab() === 'quotations'"
-            [class.border-transparent]="tab() !== 'quotations'"
-            [class.text-neutral-600]="tab() !== 'quotations'"
-            (click)="tab.set('quotations')"
-          >Quotations</button>
-        </div>
+        @if (showQuotationsTab) {
+          <div class="flex gap-sm border-b border-neutral-200 mb-md">
+            <button
+              type="button"
+              class="px-md py-sm text-sm font-medium border-b-2"
+              [class.border-primary-500]="tab() === 'milestones'"
+              [class.text-primary-600]="tab() === 'milestones'"
+              [class.border-transparent]="tab() !== 'milestones'"
+              [class.text-neutral-600]="tab() !== 'milestones'"
+              (click)="tab.set('milestones')"
+            >Milestones</button>
+            <button
+              type="button"
+              class="px-md py-sm text-sm font-medium border-b-2"
+              [class.border-primary-500]="tab() === 'quotations'"
+              [class.text-primary-600]="tab() === 'quotations'"
+              [class.border-transparent]="tab() !== 'quotations'"
+              [class.text-neutral-600]="tab() !== 'quotations'"
+              (click)="tab.set('quotations')"
+            >Quotations</button>
+          </div>
+        }
 
         <div class="flex-1 overflow-y-auto space-y-xs">
-          @if (tab() === 'milestones') {
+          @if (tab() === 'milestones' || !showQuotationsTab) {
             @if (availableMilestones().length === 0) {
               <p class="text-sm text-neutral-500">No milestones with remaining fee.</p>
             } @else {
@@ -51,11 +54,10 @@ import { QuotationLineSource } from '../line-item-editor/line-item-editor.compon
               @for (m of availableMilestones(); track m.milestoneId) {
                 <button
                   type="button"
-                  class="w-full flex items-center justify-between px-md py-sm rounded bg-neutral-50 hover:bg-neutral-100 text-left"
+                  class="w-full flex items-center px-md py-sm rounded bg-neutral-50 hover:bg-neutral-100 text-left"
                   (click)="addMilestone(m)"
                 >
-                  <span class="text-sm text-neutral-900">{{ m.title }}</span>
-                  <span class="text-xs text-neutral-600">{{ remainingFor(m) | number: '1.2-2' }} remaining</span>
+                  <app-milestone-fee-row [milestone]="m" [status]="paymentStatuses[m.milestoneId] ?? null" [rightLabelOverride]="(remainingFor(m) | number: '1.2-2') + ' remaining'" />
                 </button>
               }
             }
@@ -103,8 +105,10 @@ import { QuotationLineSource } from '../line-item-editor/line-item-editor.compon
 })
 export class BillingSourcePickerComponent {
   @Input() milestones: Milestone[] = [];
+  @Input() paymentStatuses: Record<string, MilestonePaymentStatus> = {};
   @Input() quotationLines: QuotationLineSource[] = [];
   @Input() existingItems: LineItem[] = [];
+  @Input() showQuotationsTab = true;
   @Output() cancel = new EventEmitter<void>();
   @Output() addLines = new EventEmitter<LineItem[]>();
 

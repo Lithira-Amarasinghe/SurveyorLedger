@@ -48,6 +48,9 @@ export interface LinkedQuotationSummary {
 export interface MilestonePaymentStatus {
   amount: number | null;
   committedAmount: number;
+  quotedAmount: number;
+  invoicedAmount: number;
+  paidAmount: number;
   remainingAmount: number | null;
   linkedInvoices: LinkedInvoiceSummary[];
   linkedQuotations: LinkedQuotationSummary[];

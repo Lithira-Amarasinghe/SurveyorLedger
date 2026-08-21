@@ -6,16 +6,19 @@ import {
   Installment, Invoice, InvoiceRequest, InvoiceService, LineItem,
   Quotation, QuotationRequest, QuotationService, QuotationStatus
 } from '../../../core/billing.service';
-import { Milestone, MilestoneService } from '../../../core/milestone.service';
+import { Milestone, MilestonePaymentStatus, MilestoneService } from '../../../core/milestone.service';
+import { JobService } from '../../../core/job.service';
+import { ToastService } from '../../../core/toast.service';
 import { LineItemEditorComponent, QuotationLineSource } from '../../../shared/line-item-editor/line-item-editor.component';
 import { InstallmentEditorComponent } from '../../../shared/installment-editor/installment-editor.component';
+import { PaymentsPanelComponent } from '../../../shared/payments-panel/payments-panel.component';
 
 type DocumentType = 'invoice' | 'quotation';
 
 @Component({
   selector: 'app-billing-document-form-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, LineItemEditorComponent, InstallmentEditorComponent],
+  imports: [CommonModule, FormsModule, LineItemEditorComponent, InstallmentEditorComponent, PaymentsPanelComponent],
   template: `
     <div class="p-lg max-w-2xl mx-auto space-y-lg">
       <div class="flex items-center justify-between">
@@ -33,6 +36,10 @@ type DocumentType = 'invoice' | 'quotation';
             <div class="rounded bg-neutral-50 px-md py-sm text-xs text-neutral-600 mb-md">
               Workspace-level {{ documentType }} - not tied to any job.
             </div>
+          } @else if (jobLabel()) {
+            <div class="rounded bg-neutral-50 px-md py-sm text-xs text-neutral-600 mb-md">
+              Job: {{ jobLabel() }}
+            </div>
           }
           <form class="space-y-md" (ngSubmit)="submit()">
             @if (isLocked()) {
@@ -45,7 +52,9 @@ type DocumentType = 'invoice' | 'quotation';
               <app-line-item-editor
                 [items]="lineItems"
                 [milestones]="milestones()"
+                [milestonePaymentStatuses]="milestonePaymentStatuses()"
                 [quotationLines]="documentType === 'invoice' ? quotationLines() : []"
+                [allowQuotationsTab]="documentType === 'invoice'"
                 (itemsChange)="lineItems = $event"
               />
 
@@ -102,12 +111,20 @@ type DocumentType = 'invoice' | 'quotation';
 
             <div class="flex justify-end gap-sm pt-sm">
               <button type="button" class="btn-secondary" (click)="goBack()">Cancel</button>
-              <button type="submit" class="btn-primary" [disabled]="saving() || lineItems.length === 0">
+              <button type="submit" class="btn-primary" [disabled]="saving() || !hasValidLineItems()">
                 {{ saving() ? 'Saving…' : editingId ? 'Save' : 'Create' }}
               </button>
             </div>
           </form>
         </div>
+
+        @if (documentType === 'invoice' && editingId && editingInvoice()) {
+          <app-payments-panel
+            [workspaceId]="workspaceId"
+            [invoice]="editingInvoice()!"
+            (invoiceUpdated)="reloadInvoice()"
+          />
+        }
       }
     </div>
   `
@@ -119,7 +136,9 @@ export class BillingDocumentFormPageComponent implements OnInit {
   editingId: string | null = null;
 
   milestones = signal<Milestone[]>([]);
+  milestonePaymentStatuses = signal<Record<string, MilestonePaymentStatus>>({});
   quotationLines = signal<QuotationLineSource[]>([]);
+  jobLabel = signal<string | null>(null);
 
   lineItems: LineItem[] = [{ description: '', quantity: 1, unitPrice: 0 }];
   taxRatePercent = 0;
@@ -133,14 +152,16 @@ export class BillingDocumentFormPageComponent implements OnInit {
   saving = signal(false);
   error = signal('');
 
-  private editingInvoice: Invoice | null = null;
+  editingInvoice = signal<Invoice | null>(null);
 
   constructor(
     private route: ActivatedRoute,
     private router: Router,
     private invoiceService: InvoiceService,
     private quotationService: QuotationService,
-    private milestoneService: MilestoneService
+    private milestoneService: MilestoneService,
+    private jobService: JobService,
+    private toast: ToastService
   ) {}
 
   ngOnInit(): void {
@@ -167,7 +188,7 @@ export class BillingDocumentFormPageComponent implements OnInit {
           this.lineItems = invoice.lineItems.length > 0 ? [...invoice.lineItems] : [{ description: '', quantity: 1, unitPrice: 0 }];
           this.taxRatePercent = invoice.taxRatePercent;
           this.status = invoice.status;
-          this.editingInvoice = invoice;
+          this.editingInvoice.set(invoice);
           this.discountAmount = invoice.discountAmount;
           this.dueDate = invoice.dueDate ? invoice.dueDate.substring(0, 10) : '';
           this.installments = invoice.installments.map(i => ({ amount: i.amount, dueDate: i.dueDate.substring(0, 10) }));
@@ -224,9 +245,29 @@ export class BillingDocumentFormPageComponent implements OnInit {
     }
   }
 
+  reloadInvoice(): void {
+    if (!this.editingId || this.documentType !== 'invoice') return;
+    this.invoiceService.getById(this.workspaceId, this.editingId).subscribe({
+      next: invoice => {
+        this.editingInvoice.set(invoice);
+        this.status = invoice.status;
+      }
+    });
+  }
+
   private loadMilestones(): void {
     if (!this.jobId) return;
-    this.milestoneService.list(this.workspaceId, this.jobId).subscribe({ next: milestones => this.milestones.set(milestones) });
+    this.milestoneService.list(this.workspaceId, this.jobId).subscribe({
+      next: milestones => {
+        this.milestones.set(milestones);
+        milestones.forEach(m => {
+          this.milestoneService.getPaymentStatus(this.workspaceId, this.jobId!, m.milestoneId).subscribe({
+            next: status => this.milestonePaymentStatuses.update(map => ({ ...map, [m.milestoneId]: status }))
+          });
+        });
+      }
+    });
+    this.jobService.getById(this.workspaceId, this.jobId).subscribe({ next: job => this.jobLabel.set(`${job.jobNumber} - ${job.title}`) });
   }
 
   private loadQuotationLines(): void {
@@ -235,7 +276,7 @@ export class BillingDocumentFormPageComponent implements OnInit {
       next: quotations => {
         const sources: QuotationLineSource[] = [];
         for (const q of quotations) {
-          if (q.status === 'Rejected' || q.status === 'Expired') continue;
+          if (q.status !== 'Accepted') continue;
           for (const li of q.lineItems) {
             const remaining = li.remainingAmount ?? 0;
             if (!li.id || remaining <= 0) continue;
@@ -248,7 +289,7 @@ export class BillingDocumentFormPageComponent implements OnInit {
   }
 
   isLocked(): boolean {
-    return this.documentType === 'invoice' && !!this.editingInvoice && this.editingInvoice.amountPaid > 0;
+    return this.documentType === 'invoice' && !!this.editingInvoice() && this.editingInvoice()!.amountPaid > 0;
   }
 
   documentTotal(): number {
@@ -265,8 +306,17 @@ export class BillingDocumentFormPageComponent implements OnInit {
     }
   }
 
+  hasValidLineItems(): boolean {
+    return this.lineItems.length > 0 && this.lineItems.every(li => li.description.trim() !== '');
+  }
+
   submit(): void {
-    if (this.lineItems.length === 0) return;
+    if (!this.hasValidLineItems()) {
+      const message = this.lineItems.length === 0 ? 'Add at least one line item before saving.' : 'Remove blank line items before saving.';
+      this.error.set(message);
+      this.toast.error(message);
+      return;
+    }
     this.error.set('');
     this.saving.set(true);
 
