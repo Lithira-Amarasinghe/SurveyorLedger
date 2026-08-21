@@ -15,6 +15,7 @@ import { LandDetailComponent } from './pages/land/land-detail.component';
 import { QuotationListComponent } from './pages/billing/quotations/quotation-list.component';
 import { InvoiceListComponent } from './pages/billing/invoices/invoice-list.component';
 import { BillingDocumentFormPageComponent } from './pages/billing/document-form/billing-document-form-page.component';
+import { WorkspaceExpenseListComponent } from './pages/billing/expenses/workspace-expense-list.component';
 import { AcceptInviteComponent } from './pages/invite/accept-invite.component';
 import { PublicDocumentUploadComponent } from './pages/document-upload/public-document-upload.component';
 import { PublicSetLocationComponent } from './pages/set-location/public-set-location.component';
@@ -83,6 +84,7 @@ export const routes: Routes = [
           { path: 'billing/invoices', component: InvoiceListComponent },
           { path: 'billing/invoices/new', component: BillingDocumentFormPageComponent, data: { documentType: 'invoice' } },
           { path: 'billing/invoices/:invoiceId/edit', component: BillingDocumentFormPageComponent, data: { documentType: 'invoice' } },
+          { path: 'billing/expenses', component: WorkspaceExpenseListComponent },
           { path: 'members', component: MembersComponent },
           { path: 'roles', component: RolesComponent },
           { path: 'reports', component: ReportsComponent },

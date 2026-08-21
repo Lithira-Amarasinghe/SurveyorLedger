@@ -96,7 +96,7 @@ import { Milestone } from '../../../core/milestone.service';
 })
 export class ExpenseFormModalComponent implements OnInit {
   @Input() workspaceId = '';
-  @Input() jobId = '';
+  @Input() jobId: string | null = null;
   @Input() participants: JobParticipant[] = [];
   @Input() milestones: Milestone[] = [];
   @Input() editing: Expense | null = null;
@@ -152,14 +152,21 @@ export class ExpenseFormModalComponent implements OnInit {
       milestoneId: this.milestoneId ?? undefined
     };
 
-    const save$ = this.editing
-      ? this.expenseService.update(this.workspaceId, this.jobId, this.editing.expenseId, request)
-      : this.expenseService.create(this.workspaceId, this.jobId, request);
+    const save$ = this.jobId
+      ? this.editing
+        ? this.expenseService.update(this.workspaceId, this.jobId, this.editing.expenseId, request)
+        : this.expenseService.create(this.workspaceId, this.jobId, request)
+      : this.editing
+        ? this.expenseService.updateWorkspaceLevel(this.workspaceId, this.editing.expenseId, request)
+        : this.expenseService.createWorkspaceLevel(this.workspaceId, request);
 
     save$.subscribe({
       next: expense => {
         if (this.receiptFile) {
-          this.expenseService.uploadReceipt(this.workspaceId, this.jobId, expense.expenseId, this.receiptFile).subscribe({
+          const upload$ = this.jobId
+            ? this.expenseService.uploadReceipt(this.workspaceId, this.jobId, expense.expenseId, this.receiptFile)
+            : this.expenseService.uploadWorkspaceLevelReceipt(this.workspaceId, expense.expenseId, this.receiptFile);
+          upload$.subscribe({
             next: updated => { this.loading.set(false); this.saved.emit(updated); },
             error: () => { this.loading.set(false); this.saved.emit(expense); }
           });
