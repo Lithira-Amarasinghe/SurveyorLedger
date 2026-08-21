@@ -1,11 +1,13 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { LineItem } from '../../core/billing.service';
 import { Milestone } from '../../core/milestone.service';
+import { BillingSourcePickerComponent } from '../billing-source-picker/billing-source-picker.component';
 
 export interface QuotationLineSource {
   id: string;
+  quotationId: string;
   quotationNumber: string;
   description: string;
   milestoneId?: string;
@@ -15,30 +17,39 @@ export interface QuotationLineSource {
 @Component({
   selector: 'app-line-item-editor',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, BillingSourcePickerComponent],
   template: `
     <div>
       <label class="block text-xs font-medium text-neutral-700 mb-xs">Line items</label>
       <div class="space-y-sm">
         @for (item of items; track $index; let i = $index) {
           <div class="flex gap-sm items-start">
-            <input
-              class="input-field flex-1"
-              placeholder="Description"
-              [ngModel]="item.description"
-              (ngModelChange)="updateItem(i, 'description', $event)"
-              [name]="'desc-' + i"
-            />
-            <input
-              class="input-field w-20"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="Qty"
-              [ngModel]="item.quantity"
-              (ngModelChange)="updateItem(i, 'quantity', $event)"
-              [name]="'qty-' + i"
-            />
+            <div class="flex-1">
+              <input
+                class="input-field w-full"
+                placeholder="Description"
+                [ngModel]="item.description"
+                (ngModelChange)="updateItem(i, 'description', $event)"
+                [name]="'desc-' + i"
+              />
+              @if (sourceLabel(item); as label) {
+                <span class="block text-xs text-neutral-500 mt-2xs">{{ label }}</span>
+              }
+            </div>
+            @if (!item.milestoneId && !item.quotationLineId) {
+              <input
+                class="input-field w-20"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Qty"
+                [ngModel]="item.quantity"
+                (ngModelChange)="updateItem(i, 'quantity', $event)"
+                [name]="'qty-' + i"
+              />
+            } @else {
+              <span class="input-field w-20 flex items-center justify-center text-neutral-500">×1</span>
+            }
             <div>
               <input
                 class="input-field w-28"
@@ -54,43 +65,31 @@ export interface QuotationLineSource {
                 <span class="block text-xs text-neutral-500 mt-2xs">max {{ sourceRemainingFor(item) | number: '1.2-2' }} remaining</span>
               }
             </div>
-            @if (quotationLines.length > 0) {
-              <select
-                class="input-field w-48"
-                [ngModel]="item.quotationLineId ?? ''"
-                (ngModelChange)="onSourceChange(i, $event)"
-                [name]="'source-' + i"
-              >
-                <option value="">No quotation (direct)</option>
-                @for (source of quotationLines; track source.id) {
-                  <option [value]="source.id">{{ source.quotationNumber }}: {{ source.description }} — {{ source.remainingAmount | number: '1.2-2' }} remaining</option>
-                }
-              </select>
-            }
-            @if (milestones.length > 0) {
-              <select
-                class="input-field w-40"
-                [ngModel]="item.milestoneId ?? ''"
-                (ngModelChange)="updateItem(i, 'milestoneId', $event || undefined)"
-                [name]="'milestone-' + i"
-                [disabled]="!!item.quotationLineId"
-              >
-                <option value="">No milestone (other fee)</option>
-                @for (m of milestones; track m.milestoneId) {
-                  <option [value]="m.milestoneId">{{ m.title }}</option>
-                }
-              </select>
-            }
             <button type="button" class="text-primary-500 hover:text-primary-600 px-sm py-sm" (click)="removeItem(i)" title="Remove line">✕</button>
           </div>
         }
       </div>
-      <button type="button" class="text-xs text-primary-500 hover:text-primary-600 mt-sm" (click)="addItem()">+ Add line item</button>
+      <div class="flex gap-md mt-sm">
+        <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="addItem()">+ Add line item</button>
+        @if (milestones.length > 0 || quotationLines.length > 0) {
+          <button type="button" class="text-xs text-primary-500 hover:text-primary-600" (click)="showPicker.set(true)">+ Add from…</button>
+        }
+      </div>
 
       <div class="mt-sm text-sm text-neutral-700 text-right">
         Subtotal: {{ subtotal() | number: '1.2-2' }}
       </div>
     </div>
+
+    @if (showPicker()) {
+      <app-billing-source-picker
+        [milestones]="milestones"
+        [quotationLines]="quotationLines"
+        [existingItems]="items"
+        (cancel)="showPicker.set(false)"
+        (addLines)="onAddLines($event)"
+      />
+    }
   `
 })
 export class LineItemEditorComponent {
@@ -98,6 +97,8 @@ export class LineItemEditorComponent {
   @Input() milestones: Milestone[] = [];
   @Input() quotationLines: QuotationLineSource[] = [];
   @Output() itemsChange = new EventEmitter<LineItem[]>();
+
+  showPicker = signal(false);
 
   addItem(): void {
     this.itemsChange.emit([...this.items, { description: '', quantity: 1, unitPrice: 0 }]);
@@ -116,23 +117,21 @@ export class LineItemEditorComponent {
     this.itemsChange.emit(updated);
   }
 
-  onSourceChange(index: number, quotationLineId: string): void {
-    const updated = this.items.map((item, i) => {
-      if (i !== index) return item;
-      if (!quotationLineId) {
-        const { quotationLineId: _drop, ...rest } = item;
-        return rest;
-      }
-      const source = this.quotationLines.find(s => s.id === quotationLineId);
-      if (!source) return item;
-      return {
-        ...item,
-        quotationLineId: source.id,
-        description: source.description,
-        milestoneId: source.milestoneId
-      };
-    });
-    this.itemsChange.emit(updated);
+  onAddLines(newLines: LineItem[]): void {
+    this.itemsChange.emit([...this.items, ...newLines]);
+    this.showPicker.set(false);
+  }
+
+  sourceLabel(item: LineItem): string | null {
+    if (item.quotationLineId) {
+      const source = this.quotationLines.find(s => s.id === item.quotationLineId);
+      return source ? `From ${source.quotationNumber}` : 'From a quotation line';
+    }
+    if (item.milestoneId) {
+      const m = this.milestones.find(m => m.milestoneId === item.milestoneId);
+      return m ? `Milestone: ${m.title}` : null;
+    }
+    return null;
   }
 
   sourceRemainingFor(item: LineItem): number {

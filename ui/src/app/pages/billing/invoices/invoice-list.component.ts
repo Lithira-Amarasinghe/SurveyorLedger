@@ -44,10 +44,11 @@ import { SendDocumentModalComponent } from '../../../shared/send-document-modal/
             </thead>
             <tbody>
               @for (invoice of invoices(); track invoice.invoiceId) {
-                <tr class="border-t border-neutral-200 hover:bg-neutral-50">
-                  <td class="px-lg py-sm text-neutral-900">
-                    <a [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', invoice.invoiceId, 'edit']">{{ invoice.number }}</a>
-                  </td>
+                <tr
+                  class="border-t border-neutral-200 hover:bg-neutral-50 cursor-pointer"
+                  [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', invoice.invoiceId, 'edit']"
+                >
+                  <td class="px-lg py-sm text-neutral-900">{{ invoice.number }}</td>
                   <td class="px-lg py-sm text-neutral-600">{{ invoice.total | number: '1.2-2' }}</td>
                   <td class="px-lg py-sm text-neutral-600">{{ invoice.balance | number: '1.2-2' }}</td>
                   <td class="px-lg py-sm">
@@ -60,10 +61,11 @@ import { SendDocumentModalComponent } from '../../../shared/send-document-modal/
                     <a
                       class="text-xs text-neutral-500 hover:text-neutral-700 mr-md"
                       [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', invoice.invoiceId, 'print']"
+                      (click)="$event.stopPropagation()"
                     >Print</a>
-                    <button class="text-xs text-primary-500 hover:text-primary-600 mr-md" (click)="openSend(invoice)">Send</button>
+                    <button class="text-xs text-primary-500 hover:text-primary-600 mr-md" (click)="$event.stopPropagation(); openSend(invoice)">Send</button>
                     @if (invoice.balance > 0 && invoice.status !== 'Cancelled') {
-                      <button class="text-xs text-primary-500 hover:text-primary-600" (click)="openPayment(invoice)">Record payment</button>
+                      <button class="text-xs text-primary-500 hover:text-primary-600" (click)="$event.stopPropagation(); openPayment(invoice)">Record payment</button>
                     }
                   </td>
                 </tr>

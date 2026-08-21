@@ -279,28 +279,9 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                               <span class="block h-full bg-primary-500" [style.width.%]="(pay.committedAmount / pay.amount) * 100"></span>
                             </span>
                           </button>
-                          @if (!isClient()) {
-                            @if ((pay.remainingAmount ?? 0) > 0) {
-                              <a
-                                class="text-xs text-primary-500 hover:text-primary-600"
-                                [routerLink]="['/app/workspace', workspaceId, 'billing', 'quotations', 'new']"
-                                [queryParams]="{ jobId: jobId, milestoneId: m.milestoneId }"
-                              >Quote this</a>
-                              <a
-                                class="text-xs text-primary-500 hover:text-primary-600"
-                                [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', 'new']"
-                                [queryParams]="{ jobId: jobId, milestoneId: m.milestoneId }"
-                              >Bill directly</a>
-                            } @else {
-                              <span class="text-xs text-neutral-500">Fully committed</span>
-                            }
+                          @if (!isClient() && (pay.remainingAmount ?? 0) === 0) {
+                            <span class="text-xs text-neutral-500">Fully committed</span>
                           }
-                        } @else if (!isClient()) {
-                          <a
-                            class="text-xs text-primary-500 hover:text-primary-600"
-                            [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', 'new']"
-                            [queryParams]="{ jobId: jobId, milestoneId: m.milestoneId }"
-                          >Bill directly</a>
                         }
                       }
                       @if (isClient()) {
@@ -327,9 +308,21 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                     <div class="px-md pb-md pt-sm border-t border-neutral-200 bg-neutral-50 rounded-b space-y-xs">
                       @if (milestonePaymentStatuses()[m.milestoneId]; as pay) {
                         <p class="text-xs text-neutral-600">Remaining: {{ (pay.remainingAmount ?? 0) | number: '1.2-2' }}</p>
+                        @if (pay.linkedQuotations.length > 0) {
+                          <p class="text-xs text-neutral-500">Linked quotations:</p>
+                          <div class="flex flex-wrap gap-sm">
+                            @for (q of pay.linkedQuotations; track q.quotationId) {
+                              <a
+                                class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                                [routerLink]="['/app/workspace', workspaceId, 'billing', 'quotations', q.quotationId, 'edit']"
+                              >{{ q.number }} · {{ q.status }}</a>
+                            }
+                          </div>
+                        }
                         @if (pay.linkedInvoices.length === 0) {
                           <p class="text-xs text-neutral-500">No invoices linked yet.</p>
                         } @else {
+                          <p class="text-xs text-neutral-500">Linked invoices:</p>
                           <div class="flex flex-wrap gap-sm">
                             @for (inv of pay.linkedInvoices; track inv.invoiceId) {
                               <a
@@ -505,7 +498,10 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                 </thead>
                 <tbody>
                   @for (invoice of jobInvoices(); track invoice.invoiceId) {
-                    <tr class="border-t border-neutral-200">
+                    <tr
+                      class="border-t border-neutral-200 hover:bg-neutral-50 cursor-pointer"
+                      [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', invoice.invoiceId, 'edit']"
+                    >
                       <td class="px-lg py-sm text-neutral-900">{{ invoice.number }}</td>
                       <td class="px-lg py-sm text-neutral-600">{{ invoice.total | number: '1.2-2' }}</td>
                       <td class="px-lg py-sm"><app-status-badge [status]="invoice.status" /></td>
@@ -550,7 +546,10 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                 </thead>
                 <tbody>
                   @for (quotation of jobQuotations(); track quotation.quotationId) {
-                    <tr class="border-t border-neutral-200">
+                    <tr
+                      class="border-t border-neutral-200 hover:bg-neutral-50 cursor-pointer"
+                      [routerLink]="['/app/workspace', workspaceId, 'billing', 'quotations', quotation.quotationId, 'edit']"
+                    >
                       <td class="px-lg py-sm text-neutral-900">{{ quotation.number }}</td>
                       <td class="px-lg py-sm text-neutral-600">{{ quotation.total | number: '1.2-2' }}</td>
                       <td class="px-lg py-sm"><app-status-badge [status]="quotation.status" /></td>
@@ -1051,8 +1050,8 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
       milestones: this.milestoneService.list(this.workspaceId, this.jobId),
       documents: this.documentService.list(this.workspaceId, this.jobId),
       documentRequests: this.documentRequestService.list(this.workspaceId, this.jobId),
-      invoices: this.invoiceService.search(this.workspaceId, undefined, this.jobId),
-      quotations: this.quotationService.search(this.workspaceId, undefined, this.jobId),
+      invoices: this.invoiceService.search(this.workspaceId, this.jobId),
+      quotations: this.quotationService.search(this.workspaceId, this.jobId),
       expenses: this.expenseService.getAll(this.workspaceId, this.jobId)
     }).subscribe({
       next: ({ job, participants, effectiveParticipants, pendingInvitations, lands, milestones, documents, documentRequests, invoices, quotations, expenses }) => {

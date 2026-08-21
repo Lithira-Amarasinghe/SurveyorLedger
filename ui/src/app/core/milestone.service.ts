@@ -39,11 +39,18 @@ export interface LinkedInvoiceSummary {
   status: string;
 }
 
+export interface LinkedQuotationSummary {
+  quotationId: string;
+  number: string;
+  status: string;
+}
+
 export interface MilestonePaymentStatus {
   amount: number | null;
   committedAmount: number;
   remainingAmount: number | null;
   linkedInvoices: LinkedInvoiceSummary[];
+  linkedQuotations: LinkedQuotationSummary[];
   nextGate: string | null;
 }
 

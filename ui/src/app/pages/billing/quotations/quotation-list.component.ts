@@ -43,10 +43,11 @@ import { SendDocumentModalComponent } from '../../../shared/send-document-modal/
             </thead>
             <tbody>
               @for (quotation of quotations(); track quotation.quotationId) {
-                <tr class="border-t border-neutral-200 hover:bg-neutral-50">
-                  <td class="px-lg py-sm text-neutral-900">
-                    <a [routerLink]="['/app/workspace', workspaceId, 'billing', 'quotations', quotation.quotationId, 'edit']">{{ quotation.number }}</a>
-                  </td>
+                <tr
+                  class="border-t border-neutral-200 hover:bg-neutral-50 cursor-pointer"
+                  [routerLink]="['/app/workspace', workspaceId, 'billing', 'quotations', quotation.quotationId, 'edit']"
+                >
+                  <td class="px-lg py-sm text-neutral-900">{{ quotation.number }}</td>
                   <td class="px-lg py-sm text-neutral-600">{{ quotation.total | number: '1.2-2' }}</td>
                   <td class="px-lg py-sm text-neutral-600">{{ quotation.invoicedAmount | number: '1.2-2' }} / {{ quotation.total | number: '1.2-2' }}</td>
                   <td class="px-lg py-sm">
@@ -57,13 +58,15 @@ import { SendDocumentModalComponent } from '../../../shared/send-document-modal/
                     <a
                       class="text-xs text-neutral-500 hover:text-neutral-700 mr-md"
                       [routerLink]="['/app/workspace', workspaceId, 'billing', 'quotations', quotation.quotationId, 'print']"
+                      (click)="$event.stopPropagation()"
                     >Print</a>
-                    <button class="text-xs text-primary-500 hover:text-primary-600 mr-md" (click)="openSend(quotation)">Send</button>
+                    <button class="text-xs text-primary-500 hover:text-primary-600 mr-md" (click)="$event.stopPropagation(); openSend(quotation)">Send</button>
                     @if (quotation.status !== 'Rejected' && quotation.status !== 'Expired') {
                       <a
                         class="text-xs text-primary-500 hover:text-primary-600"
                         [routerLink]="['/app/workspace', workspaceId, 'billing', 'invoices', 'new']"
                         [queryParams]="{ jobId: quotation.jobId, fromQuotation: quotation.quotationId }"
+                        (click)="$event.stopPropagation()"
                       >Create invoice</a>
                     }
                   </td>

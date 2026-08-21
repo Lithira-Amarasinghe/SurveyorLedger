@@ -19,8 +19,7 @@ export type QuotationStatus = 'Draft' | 'Sent' | 'Accepted' | 'Rejected' | 'Expi
 
 export interface Quotation {
   quotationId: string;
-  clientId: string;
-  jobId: string;
+  jobId: string | null;
   number: string;
   lineItems: LineItem[];
   taxRatePercent: number;
@@ -36,8 +35,7 @@ export interface Quotation {
 }
 
 export interface QuotationRequest {
-  clientId: string;
-  jobId: string;
+  jobId: string | null;
   lineItems: LineItem[];
   taxRatePercent: number;
   validUntil?: string;
@@ -49,8 +47,7 @@ export type PaymentMethod = 'Cash' | 'BankTransfer' | 'Cheque';
 
 export interface Invoice {
   invoiceId: string;
-  clientId: string;
-  jobId: string;
+  jobId: string | null;
   number: string;
   lineItems: LineItem[];
   taxRatePercent: number;
@@ -69,8 +66,7 @@ export interface Invoice {
 }
 
 export interface InvoiceRequest {
-  clientId: string;
-  jobId: string;
+  jobId: string | null;
   lineItems: LineItem[];
   taxRatePercent: number;
   discountAmount: number;
@@ -120,9 +116,8 @@ export class QuotationService {
     return `${environment.apiBaseUrl}/workspace/${workspaceId}/quotations`;
   }
 
-  search(workspaceId: string, clientId?: string, jobId?: string): Observable<Quotation[]> {
+  search(workspaceId: string, jobId?: string): Observable<Quotation[]> {
     let params = new HttpParams();
-    if (clientId) params = params.set('clientId', clientId);
     if (jobId) params = params.set('jobId', jobId);
     return this.http.get<ApiResponse<Quotation[]>>(this.base(workspaceId), { params }).pipe(map(res => res.data));
   }
@@ -156,9 +151,8 @@ export class InvoiceService {
     return `${environment.apiBaseUrl}/workspace/${workspaceId}/invoices`;
   }
 
-  search(workspaceId: string, clientId?: string, jobId?: string): Observable<Invoice[]> {
+  search(workspaceId: string, jobId?: string): Observable<Invoice[]> {
     let params = new HttpParams();
-    if (clientId) params = params.set('clientId', clientId);
     if (jobId) params = params.set('jobId', jobId);
     return this.http.get<ApiResponse<Invoice[]>>(this.base(workspaceId), { params }).pipe(map(res => res.data));
   }

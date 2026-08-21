@@ -16,7 +16,9 @@ import { JobService, JobParticipant } from '../../core/job.service';
         <h2 class="text-base font-semibold text-neutral-900">Send {{ documentLabel }} {{ documentNumber }}</h2>
         <p class="text-xs text-neutral-500 mt-xs">Sends a link plus a PDF to each selected recipient.</p>
 
-        @if (loading()) {
+        @if (!jobId) {
+          <p class="text-sm text-neutral-500 mt-lg">Recipient selection isn't available yet for workspace-level documents.</p>
+        } @else if (loading()) {
           <p class="text-sm text-neutral-500 mt-lg">Loading job participants…</p>
         } @else if (participants().length === 0) {
           <p class="text-sm text-neutral-500 mt-lg">No Client or Finance participant on this job yet.</p>
@@ -48,7 +50,7 @@ import { JobService, JobParticipant } from '../../core/job.service';
 })
 export class SendDocumentModalComponent implements OnInit {
   @Input() workspaceId = '';
-  @Input() jobId = '';
+  @Input() jobId: string | null = null;
   @Input() documentLabel = '';
   @Input() documentNumber = '';
   @Output() cancel = new EventEmitter<void>();
@@ -63,6 +65,7 @@ export class SendDocumentModalComponent implements OnInit {
   constructor(private jobService: JobService) {}
 
   ngOnInit(): void {
+    if (!this.jobId) return;
     this.loading.set(true);
     this.jobService.getParticipants(this.workspaceId, this.jobId).subscribe({
       next: all => {
