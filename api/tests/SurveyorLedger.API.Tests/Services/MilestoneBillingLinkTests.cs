@@ -56,7 +56,6 @@ public class MilestoneBillingLinkTests : WorkspaceIntegrationTestBase
 
     private InvoiceRequest InvoiceRequestFor(Guid? milestoneId) => new()
     {
-        ClientId = _clientPersonId,
         JobId = _jobId,
         LineItems = new() { new LineItemDto { Description = "Deed Verified", Quantity = 1, UnitPrice = 25000m, MilestoneId = milestoneId } },
         TaxRatePercent = 0,
@@ -90,7 +89,6 @@ public class MilestoneBillingLinkTests : WorkspaceIntegrationTestBase
         await SeedAsync();
         var quotationRequest = new QuotationRequest
         {
-            ClientId = _clientPersonId,
             JobId = _jobId,
             LineItems = new() { new LineItemDto { Description = "Deed Verified", Quantity = 1, UnitPrice = 25000m, MilestoneId = _milestoneId } },
             TaxRatePercent = 0

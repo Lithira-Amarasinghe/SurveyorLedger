@@ -56,7 +56,7 @@ public class MilestonePaymentGatingTests : WorkspaceIntegrationTestBase
         var milestone = await SeedMilestoneAsync(25000m);
         await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = _clientPersonId, JobId = _jobId,
+            JobId = _jobId,
             LineItems = new() { new LineItemDto { Description = "Deed Verified", Quantity = 1, UnitPrice = 25000m, MilestoneId = milestone.Id } },
             TaxRatePercent = 0, DiscountAmount = 0, Installments = new()
         });
@@ -84,7 +84,7 @@ public class MilestonePaymentGatingTests : WorkspaceIntegrationTestBase
         var milestone = await SeedMilestoneAsync(25000m);
         var invoice = await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = _clientPersonId, JobId = _jobId,
+            JobId = _jobId,
             LineItems = new() { new LineItemDto { Description = "Deed Verified", Quantity = 1, UnitPrice = 25000m, MilestoneId = milestone.Id } },
             TaxRatePercent = 0, DiscountAmount = 0, Installments = new()
         });
@@ -107,7 +107,7 @@ public class MilestonePaymentGatingTests : WorkspaceIntegrationTestBase
         var milestone = await SeedMilestoneAsync(25000m);
         var invoice = await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = _clientPersonId, JobId = _jobId,
+            JobId = _jobId,
             LineItems = new() { new LineItemDto { Description = "Deed Verified", Quantity = 1, UnitPrice = 25000m, MilestoneId = milestone.Id } },
             TaxRatePercent = 0, DiscountAmount = 0, Installments = new()
         });

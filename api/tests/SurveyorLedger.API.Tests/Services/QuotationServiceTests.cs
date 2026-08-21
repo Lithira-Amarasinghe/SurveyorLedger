@@ -73,7 +73,6 @@ public class QuotationServiceTests : WorkspaceIntegrationTestBase
 
     private static QuotationRequest MakeRequest(Guid clientId, Guid jobId, string? status = null) => new()
     {
-        ClientId = clientId,
         JobId = jobId,
         LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 50000m } },
         TaxRatePercent = 10m,
@@ -117,7 +116,7 @@ public class QuotationServiceTests : WorkspaceIntegrationTestBase
         var (job, clientPersonId) = await SeedJobWithClientParticipantAsync();
         var quotation = await _quotationService.CreateAsync(WorkspaceId, AdminId, new QuotationRequest
         {
-            ClientId = clientPersonId, JobId = job.Id,
+            JobId = job.Id,
             LineItems = new() { new LineItemDto { Description = "Survey", Quantity = 1, UnitPrice = 50000m } },
             TaxRatePercent = 0
         });
@@ -125,7 +124,7 @@ public class QuotationServiceTests : WorkspaceIntegrationTestBase
 
         var updated = await _quotationService.UpdateAsync(WorkspaceId, AdminId, quotation.Id, new QuotationRequest
         {
-            ClientId = clientPersonId, JobId = job.Id,
+            JobId = job.Id,
             LineItems = new()
             {
                 new LineItemDto { Id = originalLineId, Description = "Survey", Quantity = 1, UnitPrice = 55000m },
@@ -148,7 +147,7 @@ public class QuotationServiceTests : WorkspaceIntegrationTestBase
         var (job, clientPersonId) = await SeedJobWithClientParticipantAsync();
         var quotation = await _quotationService.CreateAsync(WorkspaceId, AdminId, new QuotationRequest
         {
-            ClientId = clientPersonId, JobId = job.Id,
+            JobId = job.Id,
             LineItems = new()
             {
                 new LineItemDto { Description = "Survey", Quantity = 1, UnitPrice = 50000m },
@@ -160,14 +159,14 @@ public class QuotationServiceTests : WorkspaceIntegrationTestBase
 
         await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = clientPersonId, JobId = job.Id,
+            JobId = job.Id,
             LineItems = new() { new LineItemDto { Description = "Survey (advance)", Quantity = 1, UnitPrice = 20000m, QuotationLineId = surveyLineId } },
             TaxRatePercent = 0, DiscountAmount = 0, Installments = new()
         });
 
         var requestWithoutSurveyLine = new QuotationRequest
         {
-            ClientId = clientPersonId, JobId = job.Id,
+            JobId = job.Id,
             LineItems = new() { new LineItemDto { Id = quotation.LineItems.Single(li => li.Description == "Plan").Id, Description = "Plan", Quantity = 1, UnitPrice = 20000m } },
             TaxRatePercent = 0
         };
@@ -181,7 +180,7 @@ public class QuotationServiceTests : WorkspaceIntegrationTestBase
         var (job, clientPersonId) = await SeedJobWithClientParticipantAsync();
         var quotation = await _quotationService.CreateAsync(WorkspaceId, AdminId, new QuotationRequest
         {
-            ClientId = clientPersonId, JobId = job.Id,
+            JobId = job.Id,
             LineItems = new() { new LineItemDto { Description = "Survey", Quantity = 1, UnitPrice = 50000m } },
             TaxRatePercent = 0
         });
@@ -189,14 +188,14 @@ public class QuotationServiceTests : WorkspaceIntegrationTestBase
 
         await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = clientPersonId, JobId = job.Id,
+            JobId = job.Id,
             LineItems = new() { new LineItemDto { Description = "Survey (advance)", Quantity = 1, UnitPrice = 30000m, QuotationLineId = surveyLineId } },
             TaxRatePercent = 0, DiscountAmount = 0, Installments = new()
         });
 
         var shrunkRequest = new QuotationRequest
         {
-            ClientId = clientPersonId, JobId = job.Id,
+            JobId = job.Id,
             LineItems = new() { new LineItemDto { Id = surveyLineId, Description = "Survey", Quantity = 1, UnitPrice = 25000m } },
             TaxRatePercent = 0
         };

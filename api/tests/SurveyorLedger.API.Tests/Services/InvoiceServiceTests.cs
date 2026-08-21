@@ -118,7 +118,6 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
         _invoiceService = GetService<IInvoiceService>();
         var invoice = await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = clientPersonId,
             JobId = jobId,
             LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 100000m } },
             TaxRatePercent = 0,
@@ -196,30 +195,6 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
-    public async Task CreateAsync_ClientIdNotOnJob_Throws()
-    {
-        _invoiceService = GetService<IInvoiceService>();
-        var (job, _, _) = await SeedJobWithClientParticipantAsync();
-        var strangerPerson = new Person
-        {
-            Id = Guid.NewGuid(), FirstName = "Stranger", LastName = "Person", Email = "stranger@test.local",
-            IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
-        };
-        Context.People.Add(strangerPerson);
-        await Context.SaveChangesAsync();
-
-        await Assert.ThrowsAsync<ValidationException>(() => _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
-        {
-            ClientId = strangerPerson.Id,
-            JobId = job.Id,
-            LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 1000m } },
-            TaxRatePercent = 0,
-            DiscountAmount = 0,
-            Status = "Draft"
-        }));
-    }
-
-    [Fact]
     public async Task GetByIdAsync_ClientRoleOnJob_CanView()
     {
         _invoiceService = GetService<IInvoiceService>();
@@ -282,7 +257,6 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
 
         var invoice = await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = clientPersonId,
             JobId = job.Id,
             LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 100000m } },
             TaxRatePercent = 0,
@@ -306,7 +280,6 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
 
         await Assert.ThrowsAsync<ValidationException>(() => _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = clientPersonId,
             JobId = job.Id,
             LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 100000m } },
             TaxRatePercent = 0,
@@ -324,7 +297,6 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
 
         var invoice = await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = clientPersonId,
             JobId = job.Id,
             LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 100000m } },
             TaxRatePercent = 0,
@@ -355,7 +327,6 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
 
         await Assert.ThrowsAsync<ConflictException>(() => _invoiceService.UpdateAsync(WorkspaceId, AdminId, invoiceId, new InvoiceRequest
         {
-            ClientId = clientPersonId,
             JobId = job.Id,
             LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 5000m } }, // shrunk below AmountPaid
             TaxRatePercent = 0,
@@ -376,7 +347,6 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
 
         var updated = await _invoiceService.UpdateAsync(WorkspaceId, AdminId, invoiceId, new InvoiceRequest
         {
-            ClientId = invoice.ClientId,
             JobId = invoice.JobId,
             LineItems = invoice.LineItems.Select(li => new LineItemDto { Description = li.Description, Quantity = li.Quantity, UnitPrice = li.UnitPrice }).ToList(),
             TaxRatePercent = invoice.TaxRatePercent,
@@ -397,7 +367,6 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
 
         await Assert.ThrowsAsync<ValidationException>(() => _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = clientPersonId,
             JobId = job.Id,
             LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 1000m } },
             TaxRatePercent = 0,

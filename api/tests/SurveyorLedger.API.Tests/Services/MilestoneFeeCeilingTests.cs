@@ -55,7 +55,7 @@ public class MilestoneFeeCeilingTests : WorkspaceIntegrationTestBase
 
     private InvoiceRequest DirectInvoiceFor(Guid milestoneId, decimal amount) => new()
     {
-        ClientId = _clientPersonId, JobId = _jobId,
+        JobId = _jobId,
         LineItems = new() { new LineItemDto { Description = "Land Survey", Quantity = 1, UnitPrice = amount, MilestoneId = milestoneId } },
         TaxRatePercent = 0, DiscountAmount = 0, Installments = new()
     };
@@ -66,7 +66,7 @@ public class MilestoneFeeCeilingTests : WorkspaceIntegrationTestBase
         var milestone = await SeedMilestoneAsync(80000m);
         await _quotationService.CreateAsync(WorkspaceId, AdminId, new QuotationRequest
         {
-            ClientId = _clientPersonId, JobId = _jobId,
+            JobId = _jobId,
             LineItems = new() { new LineItemDto { Description = "Land Survey", Quantity = 1, UnitPrice = 30000m, MilestoneId = milestone.Id } },
             TaxRatePercent = 0
         });
@@ -81,7 +81,7 @@ public class MilestoneFeeCeilingTests : WorkspaceIntegrationTestBase
         var milestone = await SeedMilestoneAsync(80000m);
         await _quotationService.CreateAsync(WorkspaceId, AdminId, new QuotationRequest
         {
-            ClientId = _clientPersonId, JobId = _jobId,
+            JobId = _jobId,
             LineItems = new() { new LineItemDto { Description = "Land Survey", Quantity = 1, UnitPrice = 50000m, MilestoneId = milestone.Id } },
             TaxRatePercent = 0
         });
@@ -98,7 +98,7 @@ public class MilestoneFeeCeilingTests : WorkspaceIntegrationTestBase
 
         var request = new QuotationRequest
         {
-            ClientId = _clientPersonId, JobId = _jobId,
+            JobId = _jobId,
             LineItems = new() { new LineItemDto { Description = "Land Survey", Quantity = 1, UnitPrice = 40000m, MilestoneId = milestone.Id } },
             TaxRatePercent = 0
         };
@@ -112,7 +112,7 @@ public class MilestoneFeeCeilingTests : WorkspaceIntegrationTestBase
         var milestone = await SeedMilestoneAsync(80000m);
         var quotation = await _quotationService.CreateAsync(WorkspaceId, AdminId, new QuotationRequest
         {
-            ClientId = _clientPersonId, JobId = _jobId,
+            JobId = _jobId,
             LineItems = new() { new LineItemDto { Description = "Land Survey", Quantity = 1, UnitPrice = 80000m, MilestoneId = milestone.Id } },
             TaxRatePercent = 0
         });
@@ -122,7 +122,7 @@ public class MilestoneFeeCeilingTests : WorkspaceIntegrationTestBase
         // counted via the quotation line, not double-charged against the ceiling.
         var invoice = await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = _clientPersonId, JobId = _jobId,
+            JobId = _jobId,
             LineItems = new() { new LineItemDto { Description = "Land Survey", Quantity = 1, UnitPrice = 80000m, QuotationLineId = quotationLineId } },
             TaxRatePercent = 0, DiscountAmount = 0, Installments = new()
         });
@@ -137,7 +137,7 @@ public class MilestoneFeeCeilingTests : WorkspaceIntegrationTestBase
         var milestone = await SeedMilestoneAsync(null);
         await _quotationService.CreateAsync(WorkspaceId, AdminId, new QuotationRequest
         {
-            ClientId = _clientPersonId, JobId = _jobId,
+            JobId = _jobId,
             LineItems = new() { new LineItemDto { Description = "Land Survey", Quantity = 1, UnitPrice = 999999m, MilestoneId = milestone.Id } },
             TaxRatePercent = 0
         });
@@ -153,7 +153,7 @@ public class MilestoneFeeCeilingTests : WorkspaceIntegrationTestBase
         var otherMilestone = await _milestoneService.CreateAsync(WorkspaceId, AdminId, _jobId, new MilestoneRequest { Title = "Plan Preparation", Amount = 20000m });
         var quotation = await _quotationService.CreateAsync(WorkspaceId, AdminId, new QuotationRequest
         {
-            ClientId = _clientPersonId, JobId = _jobId,
+            JobId = _jobId,
             LineItems = new() { new LineItemDto { Description = "Land Survey", Quantity = 1, UnitPrice = 80000m, MilestoneId = milestone.Id } },
             TaxRatePercent = 0
         });
@@ -161,7 +161,7 @@ public class MilestoneFeeCeilingTests : WorkspaceIntegrationTestBase
 
         var request = new InvoiceRequest
         {
-            ClientId = _clientPersonId, JobId = _jobId,
+            JobId = _jobId,
             LineItems = new() { new LineItemDto { Description = "Land Survey", Quantity = 1, UnitPrice = 80000m, QuotationLineId = quotationLineId, MilestoneId = otherMilestone.Id } },
             TaxRatePercent = 0, DiscountAmount = 0, Installments = new()
         };

@@ -74,7 +74,7 @@ public class ReportServiceTests : WorkspaceIntegrationTestBase
         var (job, clientPersonId) = await SeedJobWithClientAsync();
         var invoice = await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = clientPersonId, JobId = job.Id,
+            JobId = job.Id,
             LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 100000m } },
             TaxRatePercent = 0, DiscountAmount = 0, Status = "Sent"
         });
@@ -111,7 +111,7 @@ public class ReportServiceTests : WorkspaceIntegrationTestBase
         var (job, clientPersonId) = await SeedJobWithClientAsync();
         var invoice = await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = clientPersonId, JobId = job.Id,
+            JobId = job.Id,
             LineItems = new List<LineItemDto> { new() { Description = "Survey", Quantity = 1, UnitPrice = 100000m } },
             TaxRatePercent = 0, DiscountAmount = 0, Status = "Sent"
         });
@@ -147,14 +147,14 @@ public class ReportServiceTests : WorkspaceIntegrationTestBase
 
         var unpaid = await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = clientPersonId, JobId = job.Id,
+            JobId = job.Id,
             LineItems = new List<LineItemDto> { new() { Description = "A", Quantity = 1, UnitPrice = 5000m } },
             TaxRatePercent = 0, DiscountAmount = 0, Status = "Sent"
         });
 
         var paid = await _invoiceService.CreateAsync(WorkspaceId, AdminId, new InvoiceRequest
         {
-            ClientId = clientPersonId, JobId = job.Id,
+            JobId = job.Id,
             LineItems = new List<LineItemDto> { new() { Description = "B", Quantity = 1, UnitPrice = 3000m } },
             TaxRatePercent = 0, DiscountAmount = 0, Status = "Sent"
         });

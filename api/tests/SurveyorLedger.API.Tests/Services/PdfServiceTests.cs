@@ -13,13 +13,12 @@ public class PdfServiceTests
         {
             Id = Guid.NewGuid(),
             Number = "INV-0001",
-            ClientId = Guid.NewGuid(),
+            WorkspaceId = Guid.NewGuid(),
             JobId = Guid.NewGuid(),
             Status = "Sent",
             LineItems = new List<InvoiceLineItem> { new() { Id = Guid.NewGuid(), Description = "Survey work", Quantity = 2, UnitPrice = 5000m } },
             TaxRatePercent = 10,
             DiscountAmount = 0,
-            Client = new Person { Id = Guid.NewGuid(), FirstName = "Acme", LastName = "Ltd", IsActive = true, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };

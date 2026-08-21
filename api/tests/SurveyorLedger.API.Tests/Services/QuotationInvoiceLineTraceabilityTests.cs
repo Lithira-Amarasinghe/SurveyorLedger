@@ -50,7 +50,7 @@ public class QuotationInvoiceLineTraceabilityTests : WorkspaceIntegrationTestBas
 
         return await _quotationService.CreateAsync(WorkspaceId, AdminId, new QuotationRequest
         {
-            ClientId = _clientPersonId, JobId = _jobId,
+            JobId = _jobId,
             LineItems = new() { new LineItemDto { Description = "Land Survey", Quantity = 1, UnitPrice = 80000m } },
             TaxRatePercent = 0
         });
@@ -58,7 +58,7 @@ public class QuotationInvoiceLineTraceabilityTests : WorkspaceIntegrationTestBas
 
     private InvoiceRequest InvoiceFor(Guid quotationLineId, decimal amount) => new()
     {
-        ClientId = _clientPersonId, JobId = _jobId,
+        JobId = _jobId,
         LineItems = new() { new LineItemDto { Description = "Land Survey (partial)", Quantity = 1, UnitPrice = amount, QuotationLineId = quotationLineId } },
         TaxRatePercent = 0, DiscountAmount = 0, Installments = new()
     };
@@ -94,11 +94,9 @@ public class QuotationInvoiceLineTraceabilityTests : WorkspaceIntegrationTestBas
         var quotation = await SeedQuotationAsync();
         var lineId = quotation.LineItems[0].Id;
         var otherJob = await _jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Job B" });
-        var otherClientPersonId = await GrantClientBillingRoleAsync(otherJob.Id);
 
         var request = InvoiceFor(lineId, 10000m);
         request.JobId = otherJob.Id;
-        request.ClientId = otherClientPersonId;
 
         await Assert.ThrowsAsync<ValidationException>(() => _invoiceService.CreateAsync(WorkspaceId, AdminId, request));
     }
