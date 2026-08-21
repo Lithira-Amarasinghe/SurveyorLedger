@@ -9,7 +9,7 @@ import {
 import { Job, JobService } from '../../../core/job.service';
 import { Milestone, MilestoneService } from '../../../core/milestone.service';
 import { BillingRecipientPickerComponent } from '../../../shared/billing-recipient-picker/billing-recipient-picker.component';
-import { LineItemEditorComponent } from '../../../shared/line-item-editor/line-item-editor.component';
+import { LineItemEditorComponent, QuotationLineSource } from '../../../shared/line-item-editor/line-item-editor.component';
 import { InstallmentEditorComponent } from '../../../shared/installment-editor/installment-editor.component';
 
 type DocumentType = 'invoice' | 'quotation';
@@ -44,20 +44,6 @@ type DocumentType = 'invoice' | 'quotation';
               </div>
             }
 
-            @if (fromQuotation(); as quotation) {
-              <div class="rounded bg-neutral-50 p-md">
-                <p class="text-xs font-medium text-neutral-700 mb-sm">Draw from {{ quotation.number }}</p>
-                <div class="space-y-xs">
-                  @for (item of quotation.lineItems; track $index; let i = $index) {
-                    <label class="flex items-center gap-sm text-sm text-neutral-700">
-                      <input type="checkbox" [checked]="isDrawn(i)" (change)="toggleDraw(i, item)" />
-                      {{ item.description }} - {{ item.quantity * item.unitPrice | number: '1.2-2' }}
-                    </label>
-                  }
-                </div>
-              </div>
-            }
-
             @if (isLocked()) {
               <div class="rounded bg-amber-50 border border-amber-200 px-md py-sm text-xs text-amber-800">
                 This invoice already has recorded payments - the amount is locked. Only the due date can be changed.
@@ -67,7 +53,12 @@ type DocumentType = 'invoice' | 'quotation';
             <fieldset [disabled]="isLocked()" class="space-y-md" [class.opacity-60]="isLocked()">
               <app-billing-recipient-picker [workspaceId]="workspaceId" [jobId]="jobId" [value]="clientId" (valueChange)="clientId = $event" />
 
-              <app-line-item-editor [items]="lineItems" [milestones]="milestones()" (itemsChange)="lineItems = $event" />
+              <app-line-item-editor
+                [items]="lineItems"
+                [milestones]="milestones()"
+                [quotationLines]="documentType === 'invoice' ? quotationLines() : []"
+                (itemsChange)="lineItems = $event"
+              />
 
               <div class="grid grid-cols-2 gap-sm">
                 <div>
@@ -140,8 +131,7 @@ export class BillingDocumentFormPageComponent implements OnInit {
 
   jobs = signal<Job[]>([]);
   milestones = signal<Milestone[]>([]);
-  fromQuotation = signal<Quotation | null>(null);
-  drawnIndexes = new Set<number>();
+  quotationLines = signal<QuotationLineSource[]>([]);
 
   clientId: string | null = null;
   lineItems: LineItem[] = [{ description: '', quantity: 1, unitPrice: 0 }];
@@ -179,6 +169,7 @@ export class BillingDocumentFormPageComponent implements OnInit {
         this.jobService.list(this.workspaceId).subscribe({ next: jobs => this.jobs.set(jobs) });
       } else {
         this.loadMilestones();
+        this.loadQuotationLines();
       }
     }
 
@@ -191,6 +182,7 @@ export class BillingDocumentFormPageComponent implements OnInit {
         next: invoice => {
           this.jobId = invoice.jobId;
           this.loadMilestones();
+          this.loadQuotationLines();
           this.clientId = invoice.clientId;
           this.lineItems = invoice.lineItems.length > 0 ? [...invoice.lineItems] : [{ description: '', quantity: 1, unitPrice: 0 }];
           this.taxRatePercent = invoice.taxRatePercent;
@@ -228,11 +220,11 @@ export class BillingDocumentFormPageComponent implements OnInit {
       this.loading.set(true);
       this.quotationService.getById(this.workspaceId, fromQuotationId).subscribe({
         next: quotation => {
-          this.fromQuotation.set(quotation);
           this.clientId = quotation.clientId;
           this.jobId = quotation.jobId;
           this.loadMilestones();
-          this.lineItems = [];
+          this.loadQuotationLines();
+          this.lineItems = [{ description: '', quantity: 1, unitPrice: 0 }];
           this.loading.set(false);
         },
         error: err => {
@@ -244,7 +236,9 @@ export class BillingDocumentFormPageComponent implements OnInit {
       this.loading.set(true);
       this.milestoneService.getById(this.workspaceId, this.jobId, milestoneId).subscribe({
         next: milestone => {
-          this.lineItems = [{ description: milestone.title, quantity: 1, unitPrice: milestone.amount ?? 0, milestoneId: milestone.milestoneId }];
+          const amount = milestone.remainingAmount ?? milestone.amount ?? 0;
+          this.lineItems = [{ description: milestone.title, quantity: 1, unitPrice: amount, milestoneId: milestone.milestoneId }];
+          if (this.documentType === 'invoice') this.loadQuotationLines();
           this.loading.set(false);
         },
         error: () => this.loading.set(false)
@@ -257,23 +251,28 @@ export class BillingDocumentFormPageComponent implements OnInit {
     this.milestoneService.list(this.workspaceId, this.jobId).subscribe({ next: milestones => this.milestones.set(milestones) });
   }
 
+  private loadQuotationLines(): void {
+    if (!this.jobId || this.documentType !== 'invoice') return;
+    this.quotationService.search(this.workspaceId, undefined, this.jobId).subscribe({
+      next: quotations => {
+        const sources: QuotationLineSource[] = [];
+        for (const q of quotations) {
+          if (q.status === 'Rejected' || q.status === 'Expired') continue;
+          for (const li of q.lineItems) {
+            const remaining = li.remainingAmount ?? 0;
+            if (!li.id || remaining <= 0) continue;
+            sources.push({ id: li.id, quotationNumber: q.number, description: li.description, milestoneId: li.milestoneId, remainingAmount: remaining });
+          }
+        }
+        this.quotationLines.set(sources);
+      }
+    });
+  }
+
   onJobChange(): void {
     this.clientId = null;
     this.loadMilestones();
-  }
-
-  isDrawn(index: number): boolean {
-    return this.drawnIndexes.has(index);
-  }
-
-  toggleDraw(index: number, item: LineItem): void {
-    if (this.drawnIndexes.has(index)) {
-      this.drawnIndexes.delete(index);
-      this.lineItems = this.lineItems.filter(li => li !== item);
-    } else {
-      this.drawnIndexes.add(index);
-      this.lineItems = [...this.lineItems, { ...item }];
-    }
+    this.loadQuotationLines();
   }
 
   isLocked(): boolean {
@@ -303,7 +302,6 @@ export class BillingDocumentFormPageComponent implements OnInit {
       const request: InvoiceRequest = {
         clientId: this.clientId,
         jobId: this.jobId,
-        quotationId: this.fromQuotation()?.quotationId,
         lineItems: this.lineItems,
         taxRatePercent: this.taxRatePercent,
         discountAmount: this.discountAmount,
