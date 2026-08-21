@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { EXPENSE_CATEGORIES, Expense, ExpenseCategory, ExpenseRequest, ExpenseService, PAYEE_TYPES, PayeeType } from '../../../core/expense.service';
 import { JobParticipant } from '../../../core/job.service';
+import { Milestone } from '../../../core/milestone.service';
 
 @Component({
   selector: 'app-expense-form-modal',
@@ -22,6 +23,18 @@ import { JobParticipant } from '../../../core/job.service';
               }
             </select>
           </div>
+
+          @if (milestones.length > 0) {
+            <div>
+              <label class="block text-xs font-medium text-neutral-700 mb-xs">Milestone (optional)</label>
+              <select class="input-field" name="milestoneId" [(ngModel)]="milestoneId">
+                <option [ngValue]="null">No milestone</option>
+                @for (m of milestones; track m.milestoneId) {
+                  <option [ngValue]="m.milestoneId">{{ m.title }}</option>
+                }
+              </select>
+            </div>
+          }
 
           @if (category === 'StaffCost') {
             <div class="grid grid-cols-2 gap-sm">
@@ -85,6 +98,7 @@ export class ExpenseFormModalComponent implements OnInit {
   @Input() workspaceId = '';
   @Input() jobId = '';
   @Input() participants: JobParticipant[] = [];
+  @Input() milestones: Milestone[] = [];
   @Input() editing: Expense | null = null;
   @Output() cancel = new EventEmitter<void>();
   @Output() saved = new EventEmitter<Expense>();
@@ -94,6 +108,7 @@ export class ExpenseFormModalComponent implements OnInit {
   category: ExpenseCategory = 'Other';
   payeeId: string | null = null;
   payeeType: PayeeType = 'Salary';
+  milestoneId: string | null = null;
   amount = 0;
   incurredDate = '';
   description = '';
@@ -111,6 +126,7 @@ export class ExpenseFormModalComponent implements OnInit {
       this.description = this.editing.description ?? '';
       this.payeeId = this.editing.payeeId;
       this.payeeType = this.editing.payeeType ?? 'Salary';
+      this.milestoneId = this.editing.milestoneId;
     } else {
       this.incurredDate = new Date().toISOString().substring(0, 10);
     }
@@ -132,7 +148,8 @@ export class ExpenseFormModalComponent implements OnInit {
       description: this.description || undefined,
       incurredDate: this.incurredDate,
       payeeId: this.category === 'StaffCost' ? this.payeeId! : undefined,
-      payeeType: this.category === 'StaffCost' ? this.payeeType : undefined
+      payeeType: this.category === 'StaffCost' ? this.payeeType : undefined,
+      milestoneId: this.milestoneId ?? undefined
     };
 
     const save$ = this.editing

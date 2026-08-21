@@ -15,7 +15,7 @@ import { DocumentRequest, DocumentRequestService } from '../../core/document-req
 import { CurrentWorkspaceService } from '../../core/current-workspace.service';
 import { InvitationService } from '../../core/invitation.service';
 import { Invoice, InvoiceService, Quotation, QuotationService } from '../../core/billing.service';
-import { Expense, ExpenseService } from '../../core/expense.service';
+import { EXPENSE_CATEGORIES, Expense, ExpenseService } from '../../core/expense.service';
 import { JobBudget, JobBudgetService } from '../../core/job-budget.service';
 import { AddJobPersonModalComponent } from './add-job-person-modal/add-job-person-modal.component';
 import { AddLandWidgetComponent } from './add-land-widget/add-land-widget.component';
@@ -573,22 +573,45 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
           @if (jobExpenses().length === 0) {
             <p class="text-sm text-neutral-500">No expenses recorded on this job yet.</p>
           } @else {
+            <div class="flex items-center gap-sm mb-sm">
+              <select class="input-field w-40 py-xs text-xs" [(ngModel)]="expenseCategoryFilter">
+                <option value="">All categories</option>
+                @for (c of expenseCategories; track c) {
+                  <option [value]="c">{{ c }}</option>
+                }
+              </select>
+              @if (expenseMilestoneFilter()) {
+                <button type="button" class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700 hover:bg-neutral-200" (click)="expenseMilestoneFilter.set(null)">
+                  {{ milestoneTitle(expenseMilestoneFilter()!) }} ✕
+                </button>
+              }
+            </div>
             <div class="card p-0 overflow-x-auto">
               <table class="w-full text-sm">
                 <thead class="bg-neutral-100 text-neutral-600 text-xs uppercase">
                   <tr>
                     <th class="text-left px-lg py-sm font-medium">Date</th>
                     <th class="text-left px-lg py-sm font-medium">Category</th>
+                    <th class="text-left px-lg py-sm font-medium">Milestone</th>
                     <th class="text-left px-lg py-sm font-medium">Payee</th>
                     <th class="text-left px-lg py-sm font-medium">Amount</th>
                     <th class="text-left px-lg py-sm font-medium"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  @for (expense of jobExpenses(); track expense.expenseId) {
+                  @for (expense of filteredExpenses(); track expense.expenseId) {
                     <tr class="border-t border-neutral-200">
                       <td class="px-lg py-sm text-neutral-600">{{ expense.incurredDate | date: 'mediumDate' }}</td>
                       <td class="px-lg py-sm text-neutral-900">{{ expense.category }}</td>
+                      <td class="px-lg py-sm">
+                        @if (expense.milestoneId) {
+                          <button type="button" class="text-xs px-sm py-xs rounded bg-neutral-100 text-neutral-700 hover:bg-neutral-200" (click)="expenseMilestoneFilter.set(expense.milestoneId)">
+                            {{ milestoneTitle(expense.milestoneId) }}
+                          </button>
+                        } @else {
+                          <span class="text-neutral-400">—</span>
+                        }
+                      </td>
                       <td class="px-lg py-sm text-neutral-600">{{ expense.payeeName ?? '—' }}</td>
                       <td class="px-lg py-sm text-neutral-600">{{ expense.amount | number: '1.2-2' }}</td>
                       <td class="px-lg py-sm text-right whitespace-nowrap">
@@ -598,6 +621,13 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                     </tr>
                   }
                 </tbody>
+                <tfoot>
+                  <tr class="border-t border-neutral-300 bg-neutral-50 font-medium">
+                    <td class="px-lg py-sm text-neutral-600" colspan="4">Total</td>
+                    <td class="px-lg py-sm text-neutral-900">{{ filteredExpensesTotal() | number: '1.2-2' }}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           }
@@ -660,6 +690,7 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
         [workspaceId]="workspaceId"
         [jobId]="jobId"
         [participants]="effectiveParticipants()"
+        [milestones]="milestones()"
         [editing]="editingExpense()"
         (cancel)="showExpenseModal.set(false); editingExpense.set(null)"
         (saved)="onExpenseSaved()"
@@ -804,6 +835,9 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   savingBudget = signal(false);
   showExpenseModal = signal(false);
   editingExpense = signal<Expense | null>(null);
+  expenseCategories = EXPENSE_CATEGORIES;
+  expenseCategoryFilter = '';
+  expenseMilestoneFilter = signal<string | null>(null);
 
   financialSummary = computed(() => {
     const invoicedTotal = this.jobInvoices().reduce((sum, i) => sum + i.total, 0);
@@ -817,6 +851,21 @@ export class JobDetailComponent implements OnInit, HasUnsavedChanges {
   financeMessage = signal('');
   confirmingDeleteExpense = signal<Expense | null>(null);
   confirmingClearBudget = signal(false);
+
+  filteredExpenses(): Expense[] {
+    return this.jobExpenses().filter(e =>
+      (!this.expenseCategoryFilter || e.category === this.expenseCategoryFilter) &&
+      (!this.expenseMilestoneFilter() || e.milestoneId === this.expenseMilestoneFilter())
+    );
+  }
+
+  filteredExpensesTotal(): number {
+    return this.filteredExpenses().reduce((sum, e) => sum + e.amount, 0);
+  }
+
+  milestoneTitle(milestoneId: string): string {
+    return this.milestones().find(m => m.milestoneId === milestoneId)?.title ?? 'Unknown milestone';
+  }
 
   openExpenseModal(expense: Expense | null = null): void {
     this.editingExpense.set(expense);
