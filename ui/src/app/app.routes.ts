@@ -8,6 +8,7 @@ import { DashboardComponent } from './pages/dashboard/dashboard.component';
 import { WorkspaceOverviewComponent } from './pages/workspace/overview.component';
 import { MembersComponent } from './pages/workspace/members.component';
 import { RolesComponent } from './pages/workspace/roles.component';
+import { WorkspaceSettingsComponent } from './pages/workspace/settings.component';
 import { JobListComponent } from './pages/job/job-list.component';
 import { JobDetailComponent } from './pages/job/job-detail.component';
 import { LandListComponent } from './pages/land/land-list.component';
@@ -90,6 +91,7 @@ export const routes: Routes = [
           { path: 'billing/expenses', component: WorkspaceExpenseListComponent },
           { path: 'members', component: MembersComponent },
           { path: 'roles', component: RolesComponent },
+          { path: 'settings', component: WorkspaceSettingsComponent },
           { path: 'reports', component: ReportsComponent },
         ]
       },

@@ -14,6 +14,13 @@ public class WorkspaceConfiguration : IEntityTypeConfiguration<Workspace>
         builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
         builder.Property(x => x.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
 
+        builder.Property(x => x.LetterheadCompanyName).HasMaxLength(255);
+        builder.Property(x => x.LetterheadAddress).HasMaxLength(1000);
+        builder.Property(x => x.LetterheadPhone).HasMaxLength(50);
+        builder.Property(x => x.LetterheadEmail).HasMaxLength(255);
+        builder.Property(x => x.LetterheadRegistrationNumber).HasMaxLength(100);
+        builder.Property(x => x.LetterheadLogoPath).HasMaxLength(500);
+
         builder.HasIndex(x => x.OwnerId);
         builder.HasIndex(x => x.CreatedAt);
         builder.HasIndex(x => x.IsActive);

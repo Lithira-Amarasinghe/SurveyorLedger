@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -86,6 +87,18 @@ public abstract class WorkspaceIntegrationTestBase : IAsyncLifetime
         services.AddScoped<IScopeIdResolver, ScopeIdResolver>();
         services.AddScoped<IUserAccessGrantService, UserAccessGrantService>();
         services.AddScoped<IScopedAccessService, ScopedAccessService>();
+        // WorkspaceService needs this for the letterhead logo upload - registered here rather
+        // than per test file since every concrete test class resolves WorkspaceService through
+        // this same provider. A test file that also registers its own IFileStorageService
+        // (for document/receipt tests) overrides these two harmlessly - last registration wins.
+        services.AddScoped<IFileStorageService, LocalFileStorageService>();
+        services.AddSingleton<IConfiguration>(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Storage:UploadsRootPath"] = Path.Combine(Path.GetTempPath(), $"sl-base-test-{Guid.NewGuid():N}")
+                })
+                .Build());
         services.AddLogging(b => b.AddProvider(NullLoggerProvider.Instance));
         ConfigureServices(services);
 

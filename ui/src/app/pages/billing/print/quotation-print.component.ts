@@ -2,11 +2,12 @@ import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { Quotation, QuotationService } from '../../../core/billing.service';
+import { LetterheadHeaderComponent } from '../../../shared/letterhead-header/letterhead-header.component';
 
 @Component({
   selector: 'app-quotation-print',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, LetterheadHeaderComponent],
   template: `
     @if (loading()) {
       <p class="p-lg text-sm text-neutral-500">Loading…</p>
@@ -16,6 +17,8 @@ import { Quotation, QuotationService } from '../../../core/billing.service';
           <h1 class="text-lg font-semibold">Quotation {{ quotation.number }}</h1>
           <button type="button" class="btn-primary" (click)="print()">Print / Save as PDF</button>
         </div>
+
+        <app-letterhead-header [workspaceId]="workspaceId" />
 
         <h1 class="text-xl font-semibold text-neutral-900">Quotation {{ quotation.number }}</h1>
         <p class="text-sm text-neutral-600">
@@ -60,13 +63,14 @@ export class QuotationPrintComponent implements OnInit {
   quotation = signal<Quotation | null>(null);
   loading = signal(true);
   error = signal('');
+  workspaceId = '';
 
   constructor(private quotationService: QuotationService, private route: ActivatedRoute) {}
 
   ngOnInit(): void {
-    const workspaceId = this.route.snapshot.paramMap.get('id') ?? '';
+    this.workspaceId = this.route.snapshot.paramMap.get('id') ?? '';
     const quotationId = this.route.snapshot.paramMap.get('quotationId') ?? '';
-    this.quotationService.getById(workspaceId, quotationId).subscribe({
+    this.quotationService.getById(this.workspaceId, quotationId).subscribe({
       next: quotation => {
         this.quotation.set(quotation);
         this.loading.set(false);

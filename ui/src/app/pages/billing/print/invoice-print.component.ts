@@ -2,11 +2,12 @@ import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { Invoice, InvoiceService } from '../../../core/billing.service';
+import { LetterheadHeaderComponent } from '../../../shared/letterhead-header/letterhead-header.component';
 
 @Component({
   selector: 'app-invoice-print',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, LetterheadHeaderComponent],
   template: `
     @if (loading()) {
       <p class="p-lg text-sm text-neutral-500">Loading…</p>
@@ -16,6 +17,8 @@ import { Invoice, InvoiceService } from '../../../core/billing.service';
           <h1 class="text-lg font-semibold">Invoice {{ invoice.number }}</h1>
           <button type="button" class="btn-primary" (click)="print()">Print / Save as PDF</button>
         </div>
+
+        <app-letterhead-header [workspaceId]="workspaceId" />
 
         <h1 class="text-xl font-semibold text-neutral-900">Invoice {{ invoice.number }}</h1>
         <p class="text-sm text-neutral-600">
@@ -62,13 +65,14 @@ export class InvoicePrintComponent implements OnInit {
   invoice = signal<Invoice | null>(null);
   loading = signal(true);
   error = signal('');
+  workspaceId = '';
 
   constructor(private invoiceService: InvoiceService, private route: ActivatedRoute) {}
 
   ngOnInit(): void {
-    const workspaceId = this.route.snapshot.paramMap.get('id') ?? '';
+    this.workspaceId = this.route.snapshot.paramMap.get('id') ?? '';
     const invoiceId = this.route.snapshot.paramMap.get('invoiceId') ?? '';
-    this.invoiceService.getById(workspaceId, invoiceId).subscribe({
+    this.invoiceService.getById(this.workspaceId, invoiceId).subscribe({
       next: invoice => {
         this.invoice.set(invoice);
         this.loading.set(false);

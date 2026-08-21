@@ -5,10 +5,15 @@ using SurveyorLedger.Data.Entities;
 
 namespace SurveyorLedger.API.Services;
 
+/// <summary>Loaded once by the caller (InvoiceService/QuotationService already have the
+/// workspace + file storage on hand) and passed in - PdfService itself stays
+/// storage-agnostic, same as how `invoice.Job` is passed in via the entity, not re-fetched.</summary>
+public record PdfLetterhead(string? CompanyName, string? Address, string? Phone, string? Email, string? RegistrationNumber, byte[]? LogoBytes);
+
 public interface IPdfService
 {
-    byte[] GenerateInvoicePdf(Invoice invoice, (decimal Total, decimal AmountPaid, decimal Balance, bool IsOverdue, int DaysOverdue) totals);
-    byte[] GenerateQuotationPdf(Quotation quotation);
+    byte[] GenerateInvoicePdf(Invoice invoice, (decimal Total, decimal AmountPaid, decimal Balance, bool IsOverdue, int DaysOverdue) totals, PdfLetterhead? letterhead = null);
+    byte[] GenerateQuotationPdf(Quotation quotation, PdfLetterhead? letterhead = null);
 }
 
 /// <summary>
@@ -22,7 +27,7 @@ public class PdfService : IPdfService
         QuestPDF.Settings.License = LicenseType.Community;
     }
 
-    public byte[] GenerateInvoicePdf(Invoice invoice, (decimal Total, decimal AmountPaid, decimal Balance, bool IsOverdue, int DaysOverdue) totals)
+    public byte[] GenerateInvoicePdf(Invoice invoice, (decimal Total, decimal AmountPaid, decimal Balance, bool IsOverdue, int DaysOverdue) totals, PdfLetterhead? letterhead = null)
     {
         var subtotal = invoice.LineItems.Sum(li => li.Quantity * li.UnitPrice);
         return QuestPDF.Fluent.Document.Create(container =>
@@ -31,7 +36,11 @@ public class PdfService : IPdfService
             {
                 page.Size(PageSizes.A4);
                 page.Margin(2, Unit.Centimetre);
-                page.Header().Text($"Invoice {invoice.Number}").FontSize(18).Bold();
+                page.Header().Column(col =>
+                {
+                    RenderLetterhead(col, letterhead);
+                    col.Item().Text($"Invoice {invoice.Number}").FontSize(18).Bold();
+                });
                 page.Content().Column(col =>
                 {
                     if (invoice.Job != null)
@@ -68,7 +77,7 @@ public class PdfService : IPdfService
         }).GeneratePdf();
     }
 
-    public byte[] GenerateQuotationPdf(Quotation quotation)
+    public byte[] GenerateQuotationPdf(Quotation quotation, PdfLetterhead? letterhead = null)
     {
         var subtotal = quotation.LineItems.Sum(li => li.Quantity * li.UnitPrice);
         var tax = subtotal * quotation.TaxRatePercent / 100m;
@@ -78,7 +87,11 @@ public class PdfService : IPdfService
             {
                 page.Size(PageSizes.A4);
                 page.Margin(2, Unit.Centimetre);
-                page.Header().Text($"Quotation {quotation.Number}").FontSize(18).Bold();
+                page.Header().Column(col =>
+                {
+                    RenderLetterhead(col, letterhead);
+                    col.Item().Text($"Quotation {quotation.Number}").FontSize(18).Bold();
+                });
                 page.Content().Column(col =>
                 {
                     if (quotation.Job != null)
@@ -110,5 +123,33 @@ public class PdfService : IPdfService
                 });
             });
         }).GeneratePdf();
+    }
+
+    /// <summary>No-ops entirely when nothing is set, so a workspace without a letterhead
+    /// renders exactly as before this feature existed.</summary>
+    private static void RenderLetterhead(ColumnDescriptor col, PdfLetterhead? letterhead)
+    {
+        if (letterhead == null) return;
+        var hasText = letterhead.CompanyName != null || letterhead.Address != null || letterhead.Phone != null || letterhead.Email != null || letterhead.RegistrationNumber != null;
+        if (!hasText && letterhead.LogoBytes == null) return;
+
+        col.Item().PaddingBottom(10).Row(row =>
+        {
+            if (letterhead.LogoBytes != null)
+                row.ConstantItem(50).Height(50).Image(letterhead.LogoBytes).FitArea();
+
+            row.RelativeItem().PaddingLeft(letterhead.LogoBytes != null ? 10 : 0).Column(text =>
+            {
+                if (letterhead.CompanyName != null)
+                    text.Item().Text(letterhead.CompanyName).FontSize(14).Bold();
+                if (letterhead.Address != null)
+                    text.Item().Text(letterhead.Address).FontSize(9);
+                var contact = string.Join(" · ", new[] { letterhead.Phone, letterhead.Email }.Where(s => s != null));
+                if (contact.Length > 0)
+                    text.Item().Text(contact).FontSize(9);
+                if (letterhead.RegistrationNumber != null)
+                    text.Item().Text($"Reg. {letterhead.RegistrationNumber}").FontSize(8);
+            });
+        });
     }
 }

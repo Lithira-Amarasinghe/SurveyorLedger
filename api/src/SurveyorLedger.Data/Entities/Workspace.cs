@@ -11,6 +11,13 @@ public class Workspace
     public DateTime UpdatedAt { get; set; }
     public bool IsActive { get; set; } = true;
 
+    public string? LetterheadCompanyName { get; set; }
+    public string? LetterheadAddress { get; set; }
+    public string? LetterheadPhone { get; set; }
+    public string? LetterheadEmail { get; set; }
+    public string? LetterheadRegistrationNumber { get; set; }
+    public string? LetterheadLogoPath { get; set; }
+
     public UserAccount Owner { get; set; }
     public ICollection<Subscription> Subscriptions { get; set; } = new List<Subscription>();
     public ICollection<UserAccess> UserAccesses { get; set; } = new List<UserAccess>();

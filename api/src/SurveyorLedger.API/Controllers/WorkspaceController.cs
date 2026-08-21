@@ -146,6 +146,62 @@ namespace SurveyorLedger.API.Controllers
             return NoContent();
         }
 
+        [HttpGet("{id}/letterhead")]
+        public async Task<ActionResult<ApiResponse<LetterheadResponse>>> GetLetterhead(Guid id)
+        {
+            var callerUserId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
+            var letterhead = await _workspaceService.GetLetterheadAsync(id, callerUserId);
+            return Ok(ApiResponse<LetterheadResponse>.Ok(ToResponse(letterhead)));
+        }
+
+        [HttpPut("{id}/letterhead")]
+        public async Task<ActionResult<ApiResponse<LetterheadResponse>>> UpdateLetterhead(Guid id, [FromBody] LetterheadRequest request)
+        {
+            var callerUserId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
+            var letterhead = await _workspaceService.UpdateLetterheadAsync(id, callerUserId, request);
+            return Ok(ApiResponse<LetterheadResponse>.Ok(ToResponse(letterhead)));
+        }
+
+        [HttpPost("{id}/letterhead/logo")]
+        public async Task<ActionResult<ApiResponse<LetterheadResponse>>> UploadLetterheadLogo(Guid id, IFormFile file)
+        {
+            var callerUserId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
+            var letterhead = await _workspaceService.UploadLetterheadLogoAsync(id, callerUserId, file);
+            return Ok(ApiResponse<LetterheadResponse>.Ok(ToResponse(letterhead)));
+        }
+
+        [HttpDelete("{id}/letterhead/logo")]
+        public async Task<ActionResult<ApiResponse<LetterheadResponse>>> DeleteLetterheadLogo(Guid id)
+        {
+            var callerUserId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
+            var letterhead = await _workspaceService.DeleteLetterheadLogoAsync(id, callerUserId);
+            return Ok(ApiResponse<LetterheadResponse>.Ok(ToResponse(letterhead)));
+        }
+
+        [HttpGet("{id}/letterhead/logo")]
+        public async Task<IActionResult> GetLetterheadLogo(Guid id)
+        {
+            var callerUserId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
+            var (content, path) = await _workspaceService.GetLetterheadLogoFileAsync(id, callerUserId);
+            var contentType = Path.GetExtension(path).ToLowerInvariant() switch
+            {
+                ".png" => "image/png",
+                ".jpg" or ".jpeg" => "image/jpeg",
+                _ => "application/octet-stream"
+            };
+            return File(content, contentType);
+        }
+
+        private static LetterheadResponse ToResponse(WorkspaceLetterhead l) => new()
+        {
+            CompanyName = l.CompanyName,
+            Address = l.Address,
+            Phone = l.Phone,
+            Email = l.Email,
+            RegistrationNumber = l.RegistrationNumber,
+            HasLogo = l.HasLogo
+        };
+
         private static WorkspaceResponse ToResponse(WorkspaceWithAccess w) => new()
         {
             WorkspaceId = w.Workspace.Id,

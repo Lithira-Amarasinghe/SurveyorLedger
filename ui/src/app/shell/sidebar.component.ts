@@ -79,6 +79,14 @@ import { CurrentWorkspaceService } from '../core/current-workspace.service';
             >
               Reports
             </a>
+            <a
+              [routerLink]="['/app/workspace', ws.workspaceId, 'settings']"
+              routerLinkActive="bg-primary-50 text-primary-600"
+              class="flex items-center gap-sm px-md py-sm rounded text-sm text-neutral-700 hover:bg-neutral-100"
+              (click)="navigate.emit()"
+            >
+              Settings
+            </a>
           }
         </div>
 

@@ -24,16 +24,18 @@ public class QuotationService : IQuotationService
 {
     private readonly ApplicationDbContext _context;
     private readonly IScopedAccessService _access;
+    private readonly IFileStorageService _fileStorage;
     private readonly IPdfService _pdfService;
     private readonly IEmailService _emailService;
     private readonly IInvoiceService _invoiceService;
     private readonly IMilestoneService _milestoneService;
     private readonly ILogger<QuotationService> _logger;
 
-    public QuotationService(ApplicationDbContext context, IScopedAccessService access, IPdfService pdfService, IEmailService emailService, IInvoiceService invoiceService, IMilestoneService milestoneService, ILogger<QuotationService> logger)
+    public QuotationService(ApplicationDbContext context, IScopedAccessService access, IFileStorageService fileStorage, IPdfService pdfService, IEmailService emailService, IInvoiceService invoiceService, IMilestoneService milestoneService, ILogger<QuotationService> logger)
     {
         _context = context;
         _access = access;
+        _fileStorage = fileStorage;
         _pdfService = pdfService;
         _emailService = emailService;
         _invoiceService = invoiceService;
@@ -192,7 +194,8 @@ public class QuotationService : IQuotationService
                 ? "Every recipient must hold Client or Finance access on this quotation's job."
                 : "Every recipient must be able to view quotations in this workspace.");
 
-        var pdfBytes = _pdfService.GenerateQuotationPdf(quotation);
+        var letterhead = await LoadLetterheadAsync(workspaceId);
+        var pdfBytes = _pdfService.GenerateQuotationPdf(quotation, letterhead);
         var linkUrl = quotation.JobId.HasValue
             ? $"{appBaseUrl.TrimEnd('/')}/app/jobs/{quotation.JobId}"
             : $"{appBaseUrl.TrimEnd('/')}/app/workspace/{workspaceId}/billing/quotations";
@@ -354,5 +357,28 @@ public class QuotationService : IQuotationService
         return await _context.Quotations.Include(q => q.LineItems).Include(q => q.Job)
             .FirstOrDefaultAsync(q => q.Id == quotationId && q.WorkspaceId == workspaceId)
             ?? throw new NotFoundException("Quotation not found");
+    }
+
+    /// <summary>Same shape as InvoiceService.LoadLetterheadAsync - null when the workspace
+    /// has no letterhead text/logo at all, so PdfService's no-op check is a single null check.</summary>
+    private async Task<PdfLetterhead?> LoadLetterheadAsync(Guid workspaceId)
+    {
+        var workspace = await _context.Workspaces.AsNoTracking().FirstOrDefaultAsync(w => w.Id == workspaceId);
+        if (workspace == null) return null;
+
+        var hasText = workspace.LetterheadCompanyName != null || workspace.LetterheadAddress != null
+            || workspace.LetterheadPhone != null || workspace.LetterheadEmail != null || workspace.LetterheadRegistrationNumber != null;
+        byte[]? logoBytes = null;
+        if (workspace.LetterheadLogoPath != null)
+        {
+            await using var stream = await _fileStorage.OpenAsync(workspace.LetterheadLogoPath, CancellationToken.None);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            logoBytes = ms.ToArray();
+        }
+        if (!hasText && logoBytes == null) return null;
+
+        return new PdfLetterhead(workspace.LetterheadCompanyName, workspace.LetterheadAddress, workspace.LetterheadPhone,
+            workspace.LetterheadEmail, workspace.LetterheadRegistrationNumber, logoBytes);
     }
 }

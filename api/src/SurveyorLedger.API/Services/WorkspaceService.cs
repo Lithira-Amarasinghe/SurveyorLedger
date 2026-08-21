@@ -1,4 +1,5 @@
 using System.Data;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using SurveyorLedger.API.Models.Workspace;
 using SurveyorLedger.Core;
@@ -25,6 +26,9 @@ public record PermissionInfo(string Name, string Resource, string Action, string
 
 public record RoleWithPermissions(Guid Id, string Name, string? Description, List<PermissionInfo> Permissions);
 
+public record WorkspaceLetterhead(
+    string? CompanyName, string? Address, string? Phone, string? Email, string? RegistrationNumber, bool HasLogo);
+
 public interface IWorkspaceService
 {
     Task<WorkspaceWithAccess> CreateWorkspaceAsync(Guid userId, WorkspaceRequest request);
@@ -45,6 +49,12 @@ public interface IWorkspaceService
     /// of carrying its own hardcoded copy that can drift out of sync.
     /// </summary>
     Task<List<string>> GetEligibleRoleNamesAsync(string scopeType);
+
+    Task<WorkspaceLetterhead> GetLetterheadAsync(Guid workspaceId, Guid callerUserId);
+    Task<WorkspaceLetterhead> UpdateLetterheadAsync(Guid workspaceId, Guid callerUserId, LetterheadRequest request);
+    Task<WorkspaceLetterhead> UploadLetterheadLogoAsync(Guid workspaceId, Guid callerUserId, IFormFile file);
+    Task<WorkspaceLetterhead> DeleteLetterheadLogoAsync(Guid workspaceId, Guid callerUserId);
+    Task<(Stream Content, string Path)> GetLetterheadLogoFileAsync(Guid workspaceId, Guid callerUserId);
 }
 
 public class WorkspaceService : IWorkspaceService
@@ -52,13 +62,17 @@ public class WorkspaceService : IWorkspaceService
     private readonly ApplicationDbContext _context;
     private readonly ICasbinService _casbinService;
     private readonly IUserAccessGrantService _grantService;
+    private readonly IFileStorageService _fileStorage;
     private readonly ILogger<WorkspaceService> _logger;
 
-    public WorkspaceService(ApplicationDbContext context, ICasbinService casbinService, IUserAccessGrantService grantService, ILogger<WorkspaceService> logger)
+    private static readonly HashSet<string> AllowedLogoExtensions = new(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg" };
+
+    public WorkspaceService(ApplicationDbContext context, ICasbinService casbinService, IUserAccessGrantService grantService, IFileStorageService fileStorage, ILogger<WorkspaceService> logger)
     {
         _context = context;
         _casbinService = casbinService;
         _grantService = grantService;
+        _fileStorage = fileStorage;
         _logger = logger;
     }
 
@@ -484,6 +498,103 @@ public class WorkspaceService : IWorkspaceService
         var allowed = await _casbinService.EnforceAsync(callerUserId.ToString(), "workspace", "manage_members", workspaceId.ToString());
         if (!allowed)
             throw new ForbiddenException("You do not have permission to manage members of this workspace.");
+    }
+
+    private async Task<Workspace> FindWorkspaceForViewAsync(Guid workspaceId, Guid callerUserId)
+    {
+        var allowed = await _casbinService.EnforceAsync(callerUserId.ToString(), "workspace", "view", workspaceId.ToString());
+        if (!allowed)
+            throw new ForbiddenException("You do not have access to this workspace.");
+        return await _context.Workspaces.FirstOrDefaultAsync(w => w.Id == workspaceId && w.IsActive)
+            ?? throw new NotFoundException("Workspace not found");
+    }
+
+    private async Task<Workspace> FindWorkspaceForEditAsync(Guid workspaceId, Guid callerUserId)
+    {
+        var allowed = await _casbinService.EnforceAsync(callerUserId.ToString(), "workspace", "edit", workspaceId.ToString());
+        if (!allowed)
+            throw new ForbiddenException("You do not have permission to edit this workspace's settings.");
+        return await _context.Workspaces.FirstOrDefaultAsync(w => w.Id == workspaceId && w.IsActive)
+            ?? throw new NotFoundException("Workspace not found");
+    }
+
+    private static WorkspaceLetterhead ToLetterhead(Workspace w) => new(
+        w.LetterheadCompanyName, w.LetterheadAddress, w.LetterheadPhone, w.LetterheadEmail,
+        w.LetterheadRegistrationNumber, w.LetterheadLogoPath != null);
+
+    public async Task<WorkspaceLetterhead> GetLetterheadAsync(Guid workspaceId, Guid callerUserId)
+    {
+        var workspace = await FindWorkspaceForViewAsync(workspaceId, callerUserId);
+        return ToLetterhead(workspace);
+    }
+
+    public async Task<WorkspaceLetterhead> UpdateLetterheadAsync(Guid workspaceId, Guid callerUserId, LetterheadRequest request)
+    {
+        var workspace = await FindWorkspaceForEditAsync(workspaceId, callerUserId);
+
+        workspace.LetterheadCompanyName = request.CompanyName?.Trim();
+        workspace.LetterheadAddress = request.Address?.Trim();
+        workspace.LetterheadPhone = request.Phone?.Trim();
+        workspace.LetterheadEmail = request.Email?.Trim();
+        workspace.LetterheadRegistrationNumber = request.RegistrationNumber?.Trim();
+        workspace.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+        return ToLetterhead(workspace);
+    }
+
+    public async Task<WorkspaceLetterhead> UploadLetterheadLogoAsync(Guid workspaceId, Guid callerUserId, IFormFile file)
+    {
+        var workspace = await FindWorkspaceForEditAsync(workspaceId, callerUserId);
+
+        var extension = Path.GetExtension(file.FileName);
+        if (!AllowedLogoExtensions.Contains(extension))
+            throw new ValidationException($"File type '{extension}' is not allowed. Allowed types: {string.Join(", ", AllowedLogoExtensions)}.");
+        if (file.Length > DocumentService.MaxFileSizeBytes)
+            throw new ValidationException($"File exceeds the {DocumentService.MaxFileSizeBytes / (1024 * 1024)}MB size limit.");
+
+        var storedFileName = $"{Guid.NewGuid():N}{extension}";
+        var relativePath = $"{workspaceId}/letterhead/{storedFileName}";
+
+        await using (var stream = file.OpenReadStream())
+        {
+            await _fileStorage.SaveAsync(stream, relativePath, CancellationToken.None);
+        }
+
+        var previousPath = workspace.LetterheadLogoPath;
+        workspace.LetterheadLogoPath = relativePath;
+        workspace.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        if (previousPath != null)
+            await _fileStorage.DeleteAsync(previousPath, CancellationToken.None);
+
+        return ToLetterhead(workspace);
+    }
+
+    public async Task<WorkspaceLetterhead> DeleteLetterheadLogoAsync(Guid workspaceId, Guid callerUserId)
+    {
+        var workspace = await FindWorkspaceForEditAsync(workspaceId, callerUserId);
+
+        if (workspace.LetterheadLogoPath != null)
+        {
+            await _fileStorage.DeleteAsync(workspace.LetterheadLogoPath, CancellationToken.None);
+            workspace.LetterheadLogoPath = null;
+            workspace.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+        }
+
+        return ToLetterhead(workspace);
+    }
+
+    public async Task<(Stream Content, string Path)> GetLetterheadLogoFileAsync(Guid workspaceId, Guid callerUserId)
+    {
+        var workspace = await FindWorkspaceForViewAsync(workspaceId, callerUserId);
+        if (workspace.LetterheadLogoPath == null)
+            throw new NotFoundException("No logo uploaded.");
+
+        var content = await _fileStorage.OpenAsync(workspace.LetterheadLogoPath, CancellationToken.None);
+        return (content, workspace.LetterheadLogoPath);
     }
 
     private void AddAudit(string action, string resourceType, Guid resourceId, Guid? workspaceId, Guid userId, string? oldValue, string? newValue)

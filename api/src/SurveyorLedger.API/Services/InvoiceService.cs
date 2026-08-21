@@ -278,7 +278,8 @@ public class InvoiceService : IInvoiceService
                 : "Every recipient must be able to view invoices in this workspace.");
 
         var totals = ComputeInvoiceTotals(invoice);
-        var pdfBytes = _pdfService.GenerateInvoicePdf(invoice, totals);
+        var letterhead = await LoadLetterheadAsync(workspaceId);
+        var pdfBytes = _pdfService.GenerateInvoicePdf(invoice, totals, letterhead);
         var linkUrl = invoice.JobId.HasValue
             ? $"{appBaseUrl.TrimEnd('/')}/app/jobs/{invoice.JobId}"
             : $"{appBaseUrl.TrimEnd('/')}/app/workspace/{workspaceId}/billing/invoices";
@@ -534,5 +535,28 @@ public class InvoiceService : IInvoiceService
         return await _context.Invoices.Include(i => i.Payments).Include(i => i.LineItems).Include(i => i.Installments).Include(i => i.Job)
             .FirstOrDefaultAsync(i => i.Id == invoiceId && i.WorkspaceId == workspaceId)
             ?? throw new NotFoundException("Invoice not found");
+    }
+
+    /// <summary>Null when the workspace has no letterhead text/logo at all, so PdfService's
+    /// no-op check stays a single null check at the call site.</summary>
+    private async Task<PdfLetterhead?> LoadLetterheadAsync(Guid workspaceId)
+    {
+        var workspace = await _context.Workspaces.AsNoTracking().FirstOrDefaultAsync(w => w.Id == workspaceId);
+        if (workspace == null) return null;
+
+        var hasText = workspace.LetterheadCompanyName != null || workspace.LetterheadAddress != null
+            || workspace.LetterheadPhone != null || workspace.LetterheadEmail != null || workspace.LetterheadRegistrationNumber != null;
+        byte[]? logoBytes = null;
+        if (workspace.LetterheadLogoPath != null)
+        {
+            await using var stream = await _fileStorage.OpenAsync(workspace.LetterheadLogoPath, CancellationToken.None);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            logoBytes = ms.ToArray();
+        }
+        if (!hasText && logoBytes == null) return null;
+
+        return new PdfLetterhead(workspace.LetterheadCompanyName, workspace.LetterheadAddress, workspace.LetterheadPhone,
+            workspace.LetterheadEmail, workspace.LetterheadRegistrationNumber, logoBytes);
     }
 }

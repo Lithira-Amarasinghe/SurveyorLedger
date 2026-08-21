@@ -57,6 +57,23 @@ export interface Role {
   permissions: Permission[];
 }
 
+export interface Letterhead {
+  companyName: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  registrationNumber: string | null;
+  hasLogo: boolean;
+}
+
+export interface LetterheadRequest {
+  companyName?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  registrationNumber?: string;
+}
+
 interface ApiResponse<T> {
   success: boolean;
   data: T;
@@ -106,5 +123,31 @@ export class WorkspaceService {
 
   getRoles(workspaceId: string): Observable<Role[]> {
     return this.http.get<ApiResponse<Role[]>>(`${this.apiUrl}/${workspaceId}/roles`).pipe(map(res => res.data));
+  }
+
+  getLetterhead(workspaceId: string): Observable<Letterhead> {
+    return this.http.get<ApiResponse<Letterhead>>(`${this.apiUrl}/${workspaceId}/letterhead`).pipe(map(res => res.data));
+  }
+
+  updateLetterhead(workspaceId: string, request: LetterheadRequest): Observable<Letterhead> {
+    return this.http.put<ApiResponse<Letterhead>>(`${this.apiUrl}/${workspaceId}/letterhead`, request).pipe(map(res => res.data));
+  }
+
+  uploadLetterheadLogo(workspaceId: string, file: File): Observable<Letterhead> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post<ApiResponse<Letterhead>>(`${this.apiUrl}/${workspaceId}/letterhead/logo`, form).pipe(map(res => res.data));
+  }
+
+  deleteLetterheadLogo(workspaceId: string): Observable<Letterhead> {
+    return this.http.delete<ApiResponse<Letterhead>>(`${this.apiUrl}/${workspaceId}/letterhead/logo`).pipe(map(res => res.data));
+  }
+
+  letterheadLogoUrl(workspaceId: string): string {
+    return `${this.apiUrl}/${workspaceId}/letterhead/logo`;
+  }
+
+  getLetterheadLogoBlob(workspaceId: string): Observable<Blob> {
+    return this.http.get(this.letterheadLogoUrl(workspaceId), { responseType: 'blob' });
   }
 }
