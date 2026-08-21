@@ -12,7 +12,7 @@ export type PayeeType = (typeof PAYEE_TYPES)[number];
 
 export interface Expense {
   expenseId: string;
-  jobId: string;
+  jobId: string | null;
   category: ExpenseCategory;
   amount: number;
   description: string | null;
@@ -21,6 +21,7 @@ export interface Expense {
   payeeId: string | null;
   payeeName: string | null;
   payeeType: PayeeType | null;
+  milestoneId: string | null;
   recordedByName: string;
   createdAt: string;
 }
@@ -32,6 +33,7 @@ export interface ExpenseRequest {
   incurredDate: string;
   payeeId?: string;
   payeeType?: PayeeType;
+  milestoneId?: string;
 }
 
 interface ApiResponse<T> {
@@ -74,5 +76,37 @@ export class ExpenseService {
 
   receiptUrl(workspaceId: string, jobId: string, expenseId: string): string {
     return `${this.base(workspaceId, jobId)}/${expenseId}/receipt`;
+  }
+
+  private workspaceBase(workspaceId: string): string {
+    return `${environment.apiBaseUrl}/workspace/${workspaceId}/expense`;
+  }
+
+  getAllWorkspaceLevel(workspaceId: string): Observable<Expense[]> {
+    return this.http.get<ApiResponse<Expense[]>>(this.workspaceBase(workspaceId)).pipe(map(res => res.data));
+  }
+
+  createWorkspaceLevel(workspaceId: string, request: ExpenseRequest): Observable<Expense> {
+    return this.http.post<ApiResponse<Expense>>(this.workspaceBase(workspaceId), request).pipe(map(res => res.data));
+  }
+
+  updateWorkspaceLevel(workspaceId: string, expenseId: string, request: ExpenseRequest): Observable<Expense> {
+    return this.http.put<ApiResponse<Expense>>(`${this.workspaceBase(workspaceId)}/${expenseId}`, request).pipe(map(res => res.data));
+  }
+
+  deleteWorkspaceLevel(workspaceId: string, expenseId: string): Observable<void> {
+    return this.http.delete<void>(`${this.workspaceBase(workspaceId)}/${expenseId}`);
+  }
+
+  uploadWorkspaceLevelReceipt(workspaceId: string, expenseId: string, file: File): Observable<Expense> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http
+      .post<ApiResponse<Expense>>(`${this.workspaceBase(workspaceId)}/${expenseId}/receipt`, form)
+      .pipe(map(res => res.data));
+  }
+
+  workspaceLevelReceiptUrl(workspaceId: string, expenseId: string): string {
+    return `${this.workspaceBase(workspaceId)}/${expenseId}/receipt`;
   }
 }

@@ -5,10 +5,14 @@ import { map } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 
 export interface LineItem {
+  id?: string;
   description: string;
   quantity: number;
   unitPrice: number;
   milestoneId?: string;
+  quotationLineId?: string;
+  invoicedAmount?: number;
+  remainingAmount?: number;
 }
 
 export type QuotationStatus = 'Draft' | 'Sent' | 'Accepted' | 'Rejected' | 'Expired';
@@ -47,7 +51,6 @@ export interface Invoice {
   invoiceId: string;
   clientId: string;
   jobId: string;
-  quotationId: string | null;
   number: string;
   lineItems: LineItem[];
   taxRatePercent: number;
@@ -68,7 +71,6 @@ export interface Invoice {
 export interface InvoiceRequest {
   clientId: string;
   jobId: string;
-  quotationId?: string;
   lineItems: LineItem[];
   taxRatePercent: number;
   discountAmount: number;

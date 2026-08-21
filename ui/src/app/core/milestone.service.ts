@@ -18,6 +18,8 @@ export interface Milestone {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  committedAmount: number;
+  remainingAmount: number | null;
 }
 
 interface ApiResponse<T> {
@@ -31,11 +33,17 @@ export interface PaymentRequirement {
   requiredState: 'Invoiced' | 'PartiallyPaid' | 'FullyPaid';
 }
 
+export interface LinkedInvoiceSummary {
+  invoiceId: string;
+  number: string;
+  status: string;
+}
+
 export interface MilestonePaymentStatus {
   amount: number | null;
-  linkedInvoiceId: string | null;
-  linkedInvoiceNumber: string | null;
-  invoiceStatus: string | null;
+  committedAmount: number;
+  remainingAmount: number | null;
+  linkedInvoices: LinkedInvoiceSummary[];
   nextGate: string | null;
 }
 
