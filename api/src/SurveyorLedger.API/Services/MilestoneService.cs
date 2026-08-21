@@ -21,7 +21,6 @@ public interface IMilestoneService
     Task<MilestonePaymentStatus> GetPaymentStatusAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId);
     Task<decimal> GetCommittedAmountAsync(Guid jobId, Guid milestoneId, Guid? excludingQuotationId = null, Guid? excludingInvoiceId = null);
     Task EnsureWithinFeeCeilingAsync(Guid jobId, Guid milestoneId, decimal additionalAmount, Guid? excludingQuotationId = null, Guid? excludingInvoiceId = null);
-    Task<(decimal Revenue, decimal Expenses, decimal Profit)> ComputeProfitabilityAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId);
 }
 
 public record LinkedInvoiceSummary(Guid InvoiceId, string Number, string Status);
@@ -309,30 +308,6 @@ public class MilestoneService : IMilestoneService
         var total = committed + additionalAmount;
         if (total > milestone.Amount)
             throw new ValidationException($"Billing {total} against milestone '{milestone.Title}' would exceed its fee of {milestone.Amount}.");
-    }
-
-    /// <summary>Revenue is invoiced-amount, not paid-amount: Payment is recorded per
-    /// Invoice as a whole document, not per line, so there's no reliable way to know how
-    /// much of one milestone's line within a multi-line invoice has actually been
-    /// collected. Quotation lines are excluded - a quotation is a proposal, not revenue,
-    /// even though it counts toward the fee ceiling in GetCommittedAmountAsync.</summary>
-    public async Task<(decimal Revenue, decimal Expenses, decimal Profit)> ComputeProfitabilityAsync(Guid workspaceId, Guid callerUserId, Guid jobId, Guid milestoneId)
-    {
-        await FindJobAsync(workspaceId, jobId);
-        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, jobId, "view");
-        await FindMilestoneAsync(jobId, milestoneId);
-
-        var revenue = await _context.Invoices
-            .Where(i => i.IsActive && i.JobId == jobId)
-            .SelectMany(i => i.LineItems)
-            .Where(li => li.MilestoneId == milestoneId)
-            .SumAsync(li => (decimal?)(li.Quantity * li.UnitPrice)) ?? 0m;
-
-        var expenses = await _context.Expenses
-            .Where(e => e.JobId == jobId && e.MilestoneId == milestoneId)
-            .SumAsync(e => (decimal?)e.Amount) ?? 0m;
-
-        return (revenue, expenses, revenue - expenses);
     }
 
     /// <summary>Every active invoice carrying a line item tagged with this milestone -

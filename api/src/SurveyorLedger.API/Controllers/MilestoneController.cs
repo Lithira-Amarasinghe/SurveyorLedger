@@ -104,13 +104,6 @@ namespace SurveyorLedger.API.Controllers
             }));
         }
 
-        [HttpGet("{id}/profitability")]
-        public async Task<ActionResult<ApiResponse<MilestoneProfitabilityResponse>>> GetProfitability(Guid workspaceId, Guid jobId, Guid id)
-        {
-            var (revenue, expenses, profit) = await _milestoneService.ComputeProfitabilityAsync(workspaceId, CallerId(), jobId, id);
-            return Ok(ApiResponse<MilestoneProfitabilityResponse>.Ok(new MilestoneProfitabilityResponse { Revenue = revenue, Expenses = expenses, Profit = profit }));
-        }
-
         private Guid CallerId() => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
 
         // Note: sequential await in a loop, never Select(...).ToList() with an async lambda
