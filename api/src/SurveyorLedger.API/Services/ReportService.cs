@@ -43,7 +43,7 @@ public class ReportService : IReportService
         // Invoiced: invoices created within range (regardless of current status).
         var invoicesInRange = await _context.Invoices
             .Include(i => i.LineItems).Include(i => i.Payments)
-            .Where(i => i.Job.WorkspaceId == workspaceId)
+            .Where(i => i.WorkspaceId == workspaceId)
             .Where(i => from == null || i.CreatedAt >= from)
             .Where(i => to == null || i.CreatedAt < to.Value.Date.AddDays(1))
             .ToListAsync();
@@ -60,7 +60,7 @@ public class ReportService : IReportService
         // balance is a fact about today, not something that happened "in range".
         var allInvoices = await _context.Invoices
             .Include(i => i.LineItems).Include(i => i.Payments)
-            .Where(i => i.Job.WorkspaceId == workspaceId)
+            .Where(i => i.WorkspaceId == workspaceId)
             .ToListAsync();
         var totalOutstanding = allInvoices.Sum(i => _invoiceService.ComputeInvoiceTotals(i).Balance);
 
@@ -92,8 +92,7 @@ public class ReportService : IReportService
 
         var query = _context.Payments
             .Include(p => p.Invoice).ThenInclude(i => i.Job)
-            .Include(p => p.Invoice).ThenInclude(i => i.Client)
-            .Where(p => p.WorkspaceId == workspaceId)
+            .Where(p => p.WorkspaceId == workspaceId && p.Invoice.JobId != null)
             .Where(p => from == null || p.ReceivedAt >= from)
             .Where(p => to == null || p.ReceivedAt < to.Value.Date.AddDays(1))
             .OrderByDescending(p => p.ReceivedAt);
@@ -110,11 +109,10 @@ public class ReportService : IReportService
             {
                 PaymentId = p.Id,
                 ReceivedAt = p.ReceivedAt,
-                JobId = p.Invoice.JobId,
-                JobNumber = p.Invoice.Job.JobNumber,
+                JobId = p.Invoice.JobId!.Value,
+                JobNumber = p.Invoice.Job!.JobNumber,
                 JobTitle = p.Invoice.Job.Title,
                 InvoiceNumber = p.Invoice.Number,
-                ClientName = $"{p.Invoice.Client.FirstName} {p.Invoice.Client.LastName}",
                 Amount = p.Amount,
                 Method = p.Method
             }).ToList()
@@ -162,8 +160,8 @@ public class ReportService : IReportService
         await _access.EnsureAllowedAsync(callerUserId, "report", "view", workspaceId);
 
         var invoices = await _context.Invoices
-            .Include(i => i.LineItems).Include(i => i.Payments).Include(i => i.Job).Include(i => i.Client)
-            .Where(i => i.Job.WorkspaceId == workspaceId)
+            .Include(i => i.LineItems).Include(i => i.Payments).Include(i => i.Job)
+            .Where(i => i.WorkspaceId == workspaceId && i.JobId != null)
             .Where(i => i.Status != "Cancelled")
             .ToListAsync();
 
@@ -174,11 +172,10 @@ public class ReportService : IReportService
             .Select(x => new OutstandingInvoiceRow
             {
                 InvoiceId = x.Invoice.Id,
-                JobId = x.Invoice.JobId,
-                JobNumber = x.Invoice.Job.JobNumber,
+                JobId = x.Invoice.JobId!.Value,
+                JobNumber = x.Invoice.Job!.JobNumber,
                 JobTitle = x.Invoice.Job.Title,
                 InvoiceNumber = x.Invoice.Number,
-                ClientName = $"{x.Invoice.Client.FirstName} {x.Invoice.Client.LastName}",
                 Total = x.Totals.Total,
                 AmountPaid = x.Totals.AmountPaid,
                 Balance = x.Totals.Balance,

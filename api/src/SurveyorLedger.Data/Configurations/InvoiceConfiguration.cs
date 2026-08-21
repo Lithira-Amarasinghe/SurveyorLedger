@@ -37,12 +37,12 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
             i.Property(x => x.Amount).HasColumnType("decimal(18,2)");
         });
 
+        builder.HasIndex(x => x.WorkspaceId);
         builder.HasIndex(x => x.JobId);
-        builder.HasIndex(x => new { x.JobId, x.Number }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.Number }).IsUnique();
         builder.HasIndex(x => x.IsActive);
 
-        builder.HasOne(x => x.Client).WithMany().HasForeignKey(x => x.ClientId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne(x => x.Job).WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.Job).WithMany().HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Restrict).IsRequired(false);
         builder.HasMany(x => x.Payments).WithOne(x => x.Invoice).HasForeignKey(x => x.InvoiceId).OnDelete(DeleteBehavior.Restrict);
     }
 }

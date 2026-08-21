@@ -23,9 +23,9 @@ namespace SurveyorLedger.API.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<ApiResponse<List<QuotationResponse>>>> Search(Guid workspaceId, [FromQuery] Guid? clientId, [FromQuery] Guid? jobId)
+        public async Task<ActionResult<ApiResponse<List<QuotationResponse>>>> Search(Guid workspaceId, [FromQuery] Guid? jobId)
         {
-            var quotations = await _quotationService.SearchAsync(workspaceId, CallerId(), clientId, jobId);
+            var quotations = await _quotationService.SearchAsync(workspaceId, CallerId(), jobId);
             return Ok(ApiResponse<List<QuotationResponse>>.Ok(quotations.Select(q => ToResponse(q, _quotationService)).ToList()));
         }
 
@@ -75,13 +75,14 @@ namespace SurveyorLedger.API.Controllers
             return new QuotationResponse
             {
                 QuotationId = q.Id,
-                ClientId = q.ClientId,
                 JobId = q.JobId,
                 Number = q.Number,
                 LineItems = q.LineItems.Select(li =>
                 {
                     var lineAmount = li.Quantity * li.UnitPrice;
-                    var (lineInvoiced, lineRemaining) = quotationService.ComputeLineProgress(q.JobId, li.Id, lineAmount);
+                    var (lineInvoiced, lineRemaining) = q.JobId.HasValue
+                        ? quotationService.ComputeLineProgress(q.JobId.Value, li.Id, lineAmount)
+                        : (0m, lineAmount);
                     return new QuotationLineItemResponse
                     {
                         Id = li.Id,

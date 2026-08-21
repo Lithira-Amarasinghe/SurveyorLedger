@@ -3,15 +3,18 @@ namespace SurveyorLedger.Data.Entities;
 /// <summary>
 /// Draft/Sent/PartiallyPaid/Paid/Overdue/Cancelled. Total/AmountPaid/Balance/DaysOverdue
 /// are computed by InvoiceService from LineItems and Payments, never stored - see
-/// InvoiceService.ComputeInvoiceTotals for the single source of truth. No WorkspaceId
-/// column - tenant scoping goes through Job.WorkspaceId (see JobScopedBilling migration).
-/// Quotation linkage lives per-line only - see InvoiceLineItem.QuotationLineId.
+/// InvoiceService.ComputeInvoiceTotals for the single source of truth. JobId is nullable -
+/// null means workspace-level (not tied to any job). WorkspaceId is a first-class column
+/// (not derived through Job) so tenant isolation still works when JobId is null.
+/// Quotation linkage lives per-line only - see InvoiceLineItem.QuotationLineId. No
+/// ClientId - who can see this is governed by job-scoped or workspace-scoped permissions,
+/// not a stored client reference.
 /// </summary>
 public class Invoice
 {
     public Guid Id { get; set; }
-    public Guid ClientId { get; set; }
-    public Guid JobId { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid? JobId { get; set; }
     public string Number { get; set; }
     public List<InvoiceLineItem> LineItems { get; set; } = new();
     public List<InvoiceInstallment> Installments { get; set; } = new();
@@ -23,7 +26,6 @@ public class Invoice
     public DateTime UpdatedAt { get; set; }
     public bool IsActive { get; set; } = true;
 
-    public Person Client { get; set; }
-    public Job Job { get; set; }
+    public Job? Job { get; set; }
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
 }

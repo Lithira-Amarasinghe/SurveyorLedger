@@ -11,7 +11,7 @@ namespace SurveyorLedger.API.Services;
 public interface IQuotationService
 {
     Task<Quotation> CreateAsync(Guid workspaceId, Guid callerUserId, QuotationRequest request);
-    Task<List<Quotation>> SearchAsync(Guid workspaceId, Guid callerUserId, Guid? clientId, Guid? jobId = null);
+    Task<List<Quotation>> SearchAsync(Guid workspaceId, Guid callerUserId, Guid? jobId = null);
     Task<Quotation> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid quotationId);
     Task<Quotation> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, QuotationRequest request);
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid quotationId);
@@ -43,15 +43,17 @@ public class QuotationService : IQuotationService
 
     public async Task<Quotation> CreateAsync(Guid workspaceId, Guid callerUserId, QuotationRequest request)
     {
-        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, request.JobId, "create");
-        await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
+        if (request.JobId.HasValue)
+            await _access.EnsureJobAccessAsync(callerUserId, workspaceId, request.JobId.Value, "create");
+        else
+            await _access.EnsureAllowedAsync(callerUserId, "quotation", "create", workspaceId);
         await ValidateLineItemsAsync(request.LineItems, request.JobId, null);
         ValidateTaxRate(request.TaxRatePercent);
 
         var quotation = new Quotation
         {
             Id = Guid.NewGuid(),
-            ClientId = request.ClientId,
+            WorkspaceId = workspaceId,
             JobId = request.JobId,
             LineItems = ToEntities(request.LineItems),
             TaxRatePercent = request.TaxRatePercent,
@@ -73,23 +75,24 @@ public class QuotationService : IQuotationService
             await transaction.CommitAsync();
         });
 
-        _logger.LogInformation("Quotation {QuotationId} ({Number}) created on job {JobId} by {UserId}", quotation.Id, quotation.Number, quotation.JobId, callerUserId);
+        _logger.LogInformation("Quotation {QuotationId} ({Number}) created in workspace {WorkspaceId} (job {JobId}) by {UserId}", quotation.Id, quotation.Number, workspaceId, quotation.JobId, callerUserId);
         return quotation;
     }
 
-    public async Task<List<Quotation>> SearchAsync(Guid workspaceId, Guid callerUserId, Guid? clientId, Guid? jobId = null)
+    public async Task<List<Quotation>> SearchAsync(Guid workspaceId, Guid callerUserId, Guid? jobId = null)
     {
         await _access.EnsureListAllowedAsync(callerUserId, workspaceId);
 
-        var quotations = _context.Quotations.Include(q => q.LineItems).Where(q => q.Job.WorkspaceId == workspaceId);
+        var quotations = _context.Quotations.Include(q => q.LineItems).Where(q => q.WorkspaceId == workspaceId);
         if (!await _access.HasViewAllAsync(callerUserId, "job", workspaceId))
         {
             var accessibleJobIds = (await _access.GetAccessibleJobsAsync(callerUserId))
                 .Where(j => j.WorkspaceId == workspaceId).Select(j => j.JobId).ToHashSet();
-            quotations = quotations.Where(q => accessibleJobIds.Contains(q.JobId));
+            var canViewWorkspaceLevel = await _access.CanAsync(callerUserId, "quotation", "view", workspaceId);
+            quotations = quotations.Where(q =>
+                (q.JobId.HasValue && accessibleJobIds.Contains(q.JobId.Value)) ||
+                (!q.JobId.HasValue && canViewWorkspaceLevel));
         }
-        if (clientId.HasValue)
-            quotations = quotations.Where(q => q.ClientId == clientId.Value);
         if (jobId.HasValue)
             quotations = quotations.Where(q => q.JobId == jobId.Value);
 
@@ -99,15 +102,14 @@ public class QuotationService : IQuotationService
     public async Task<Quotation> GetByIdAsync(Guid workspaceId, Guid callerUserId, Guid quotationId)
     {
         var quotation = await FindQuotationAsync(workspaceId, quotationId);
-        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId, "view");
+        await EnsureAccessAsync(callerUserId, workspaceId, quotation, "view");
         return quotation;
     }
 
     public async Task<Quotation> UpdateAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, QuotationRequest request)
     {
         var quotation = await FindQuotationAsync(workspaceId, quotationId);
-        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId, "edit");
-        await EnsureClientHoldsBillingRoleOnJobAsync(request.ClientId, request.JobId);
+        await EnsureAccessAsync(callerUserId, workspaceId, quotation, "edit");
         await ValidateLineItemsAsync(request.LineItems, request.JobId, quotationId);
         ValidateTaxRate(request.TaxRatePercent);
         EnsureLineEditsPreserveInvoicedAmounts(quotation, request.LineItems);
@@ -117,7 +119,6 @@ public class QuotationService : IQuotationService
         if (quotation.Status is "Sent" or "Accepted" or "Rejected" or "Expired")
             quotation.RevisionNumber++;
 
-        quotation.ClientId = request.ClientId;
         quotation.JobId = request.JobId;
 
         // Update-in-place by Id so a line's identity survives an edit - once anything is
@@ -163,7 +164,7 @@ public class QuotationService : IQuotationService
     public async Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid quotationId)
     {
         var quotation = await FindQuotationAsync(workspaceId, quotationId);
-        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId, "delete");
+        await EnsureAccessAsync(callerUserId, workspaceId, quotation, "delete");
 
         quotation.IsActive = false;
         quotation.UpdatedAt = DateTime.UtcNow;
@@ -173,7 +174,7 @@ public class QuotationService : IQuotationService
     public async Task SendAsync(Guid workspaceId, Guid callerUserId, Guid quotationId, List<Guid> recipientPersonIds, string appBaseUrl)
     {
         var quotation = await FindQuotationAsync(workspaceId, quotationId);
-        await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId, "edit");
+        await EnsureAccessAsync(callerUserId, workspaceId, quotation, "edit");
 
         if (recipientPersonIds.Count == 0)
             throw new ValidationException("At least one recipient is required.");
@@ -184,19 +185,17 @@ public class QuotationService : IQuotationService
         if (recipients.Count != recipientPersonIds.Count)
             throw new NotFoundException("One or more recipients not found.");
 
-        var eligiblePersonIds = await _context.UserAccesses
-            .Include(ua => ua.User)
-            .Where(ua => ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == quotation.JobId)
-            .Where(ua => ua.Role.Name == Constants.SystemRoles.Client || ua.Role.Name == Constants.SystemRoles.Finance)
-            .Select(ua => ua.User.PersonId)
-            .ToListAsync();
-
+        var eligiblePersonIds = await ResolveEligibleRecipientPersonIdsAsync(workspaceId, quotation.JobId);
         var ineligible = recipientPersonIds.Except(eligiblePersonIds).ToList();
         if (ineligible.Count > 0)
-            throw new ValidationException("Every recipient must hold Client or Finance access on this quotation's job.");
+            throw new ValidationException(quotation.JobId.HasValue
+                ? "Every recipient must hold Client or Finance access on this quotation's job."
+                : "Every recipient must be able to view quotations in this workspace.");
 
         var pdfBytes = _pdfService.GenerateQuotationPdf(quotation);
-        var linkUrl = $"{appBaseUrl.TrimEnd('/')}/app/jobs/{quotation.JobId}";
+        var linkUrl = quotation.JobId.HasValue
+            ? $"{appBaseUrl.TrimEnd('/')}/app/jobs/{quotation.JobId}"
+            : $"{appBaseUrl.TrimEnd('/')}/app/workspace/{workspaceId}/billing/quotations";
 
         foreach (var recipient in recipients)
         {
@@ -221,10 +220,13 @@ public class QuotationService : IQuotationService
     /// Quotation linkage lives at the line level now, not on Invoice, so this is a sum of
     /// per-line progress rather than a query against a document-level QuotationId.
     /// Requires quotation.LineItems already loaded (FindQuotationAsync/GetByIdAsync/the
-    /// updated SearchAsync all do this).</summary>
+    /// updated SearchAsync all do this). A workspace-level quotation (JobId null) has no
+    /// lines that can carry a MilestoneId/QuotationLineId - always fully "invoiced" as $0.</summary>
     public (decimal InvoicedAmount, decimal RemainingAmount) ComputeBillingProgress(Quotation quotation)
     {
-        var invoicedAmount = quotation.LineItems.Sum(li => _invoiceService.GetAmountBilledAgainstQuotationLine(quotation.JobId, li.Id));
+        var invoicedAmount = quotation.JobId.HasValue
+            ? quotation.LineItems.Sum(li => _invoiceService.GetAmountBilledAgainstQuotationLine(quotation.JobId.Value, li.Id))
+            : 0m;
 
         var quotationSubtotal = quotation.LineItems.Sum(li => li.Quantity * li.UnitPrice);
         var quotationTax = quotationSubtotal * quotation.TaxRatePercent / 100m;
@@ -245,57 +247,89 @@ public class QuotationService : IQuotationService
 
     private async Task<string> NextNumberAsync(Guid workspaceId, string prefix)
     {
-        var count = await _context.Quotations.IgnoreQueryFilters().CountAsync(q => q.Job.WorkspaceId == workspaceId);
+        var count = await _context.Quotations.IgnoreQueryFilters().CountAsync(q => q.WorkspaceId == workspaceId);
         return $"{prefix}-{count + 1:D4}";
     }
 
-    /// <summary>Replaces EnsureClientExistsAsync - ClientId must resolve to a Person who holds
-    /// Client or Finance UserAccess on this specific JobId, not just any active Person.</summary>
-    private async Task EnsureClientHoldsBillingRoleOnJobAsync(Guid clientId, Guid jobId)
+    /// <summary>Job-scoped quotations use job-scoped access (covers Client/Finance role
+    /// holders on that job, same as before). Workspace-level quotations (JobId null) use the
+    /// plain workspace-wide quotation.* permission instead - there's no job to check against.</summary>
+    private async Task EnsureAccessAsync(Guid callerUserId, Guid workspaceId, Quotation quotation, string action)
     {
-        var personExists = await _context.People.AnyAsync(p => p.Id == clientId && p.IsActive);
-        if (!personExists)
-            throw new NotFoundException("Client not found");
+        if (quotation.JobId.HasValue)
+            await _access.EnsureJobAccessAsync(callerUserId, workspaceId, quotation.JobId.Value, action);
+        else
+            await _access.EnsureAllowedAsync(callerUserId, "quotation", action, workspaceId);
+    }
 
-        var holdsRole = await _context.UserAccesses
+    private async Task<List<Guid>> ResolveEligibleRecipientPersonIdsAsync(Guid workspaceId, Guid? jobId)
+    {
+        if (jobId.HasValue)
+        {
+            return await _context.UserAccesses
+                .Include(ua => ua.User)
+                .Where(ua => ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == jobId.Value)
+                .Where(ua => ua.Role.Name == Constants.SystemRoles.Client || ua.Role.Name == Constants.SystemRoles.Finance)
+                .Select(ua => ua.User.PersonId)
+                .ToListAsync();
+        }
+
+        // Workspace-level document: eligible recipients are anyone who could already view
+        // it via quotation.view, not a job-scoped role - there's no job to check.
+        var workspaceUsers = await _context.UserAccesses
             .Include(ua => ua.User)
-            .Where(ua => ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Job && ua.ScopeId == jobId)
-            .Where(ua => ua.Role.Name == Constants.SystemRoles.Client || ua.Role.Name == Constants.SystemRoles.Finance)
-            .AnyAsync(ua => ua.User.PersonId == clientId);
-
-        if (!holdsRole)
-            throw new ValidationException("ClientId must be a Person who holds Client or Finance access on this job.");
+            .Where(ua => ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == workspaceId)
+            .ToListAsync();
+        var eligible = new List<Guid>();
+        foreach (var ua in workspaceUsers)
+        {
+            if (await _access.CanAsync(ua.UserId, "quotation", "view", workspaceId))
+                eligible.Add(ua.User.PersonId);
+        }
+        return eligible;
     }
 
     /// <summary>Every line carrying a MilestoneId is grouped by milestone and checked
     /// against MilestoneService.EnsureWithinFeeCeilingAsync - the fee ceiling shared with
     /// whatever's already committed via direct-invoice lines for the same milestone.
     /// excludingQuotationId lets an update exclude this quotation's own current lines from
-    /// the sum before re-adding its (possibly changed) new amount.</summary>
-    private async Task ValidateLineItemsAsync(List<LineItemDto> items, Guid jobId, Guid? excludingQuotationId)
+    /// the sum before re-adding its (possibly changed) new amount. A workspace-level
+    /// quotation (jobId null) can't carry MilestoneId at all - milestones are job-scoped.</summary>
+    private async Task ValidateLineItemsAsync(List<LineItemDto> items, Guid? jobId, Guid? excludingQuotationId)
     {
         if (items.Count == 0)
             throw new ValidationException("At least one line item is required.");
         if (items.Any(i => i.Quantity <= 0 || i.UnitPrice < 0))
             throw new ValidationException("Line item quantity must be positive and unit price cannot be negative.");
 
+        if (!jobId.HasValue)
+        {
+            if (items.Any(i => i.MilestoneId.HasValue))
+                throw new ValidationException("A workspace-level quotation's lines cannot reference a milestone - milestones belong to a job.");
+            return;
+        }
+
         var milestoneGroups = items.Where(i => i.MilestoneId.HasValue).GroupBy(i => i.MilestoneId!.Value);
         foreach (var group in milestoneGroups)
         {
             var amount = group.Sum(i => i.Quantity * i.UnitPrice);
-            await _milestoneService.EnsureWithinFeeCeilingAsync(jobId, group.Key, amount, excludingQuotationId: excludingQuotationId);
+            await _milestoneService.EnsureWithinFeeCeilingAsync(jobId.Value, group.Key, amount, excludingQuotationId: excludingQuotationId);
         }
     }
 
     /// <summary>Rejects an update that would remove a quotation line, or shrink one below
     /// its already-invoiced amount, while any invoice is still actively billed against it.
-    /// Must run before the update-in-place loop mutates anything.</summary>
+    /// Must run before the update-in-place loop mutates anything. No-ops for a
+    /// workspace-level quotation - it never has invoiced lines (invoicing is job-scoped).</summary>
     private void EnsureLineEditsPreserveInvoicedAmounts(Quotation quotation, List<LineItemDto> requestItems)
     {
+        if (!quotation.JobId.HasValue)
+            return;
+
         var incomingById = requestItems.Where(i => i.Id.HasValue).ToDictionary(i => i.Id!.Value);
         foreach (var current in quotation.LineItems)
         {
-            var invoiced = _invoiceService.GetAmountBilledAgainstQuotationLine(quotation.JobId, current.Id);
+            var invoiced = _invoiceService.GetAmountBilledAgainstQuotationLine(quotation.JobId.Value, current.Id);
             if (invoiced <= 0)
                 continue;
             if (!incomingById.TryGetValue(current.Id, out var stillPresent))
@@ -317,8 +351,8 @@ public class QuotationService : IQuotationService
 
     private async Task<Quotation> FindQuotationAsync(Guid workspaceId, Guid quotationId)
     {
-        return await _context.Quotations.Include(q => q.LineItems).Include(q => q.Client)
-            .FirstOrDefaultAsync(q => q.Id == quotationId && q.Job.WorkspaceId == workspaceId)
+        return await _context.Quotations.Include(q => q.LineItems).Include(q => q.Job)
+            .FirstOrDefaultAsync(q => q.Id == quotationId && q.WorkspaceId == workspaceId)
             ?? throw new NotFoundException("Quotation not found");
     }
 }

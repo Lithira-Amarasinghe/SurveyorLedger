@@ -2,8 +2,7 @@ namespace SurveyorLedger.API.Models.Billing;
 
 public class InvoiceRequest
 {
-    public Guid ClientId { get; set; }
-    public Guid JobId { get; set; }
+    public Guid? JobId { get; set; }
     public List<LineItemDto> LineItems { get; set; } = new();
     public decimal TaxRatePercent { get; set; }
     public decimal DiscountAmount { get; set; }
@@ -54,8 +53,7 @@ public class PaymentResponse
 public class InvoiceResponse
 {
     public Guid InvoiceId { get; set; }
-    public Guid ClientId { get; set; }
-    public Guid JobId { get; set; }
+    public Guid? JobId { get; set; }
     public string Number { get; set; }
     public List<LineItemDto> LineItems { get; set; } = new();
     public decimal TaxRatePercent { get; set; }

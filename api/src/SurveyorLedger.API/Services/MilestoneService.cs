@@ -25,7 +25,9 @@ public interface IMilestoneService
 
 public record LinkedInvoiceSummary(Guid InvoiceId, string Number, string Status);
 
-public record MilestonePaymentStatus(decimal? Amount, decimal CommittedAmount, decimal? RemainingAmount, List<LinkedInvoiceSummary> LinkedInvoices, string? NextGate);
+public record LinkedQuotationSummary(Guid QuotationId, string Number, string Status);
+
+public record MilestonePaymentStatus(decimal? Amount, decimal CommittedAmount, decimal? RemainingAmount, List<LinkedInvoiceSummary> LinkedInvoices, List<LinkedQuotationSummary> LinkedQuotations, string? NextGate);
 
 /// <summary>
 /// Milestones are a job sub-resource: every action reuses JobService's job.view /
@@ -252,6 +254,7 @@ public class MilestoneService : IMilestoneService
         var milestone = await FindMilestoneAsync(jobId, milestoneId);
 
         var linkedInvoices = await FindLinkedInvoicesAsync(milestoneId);
+        var linkedQuotations = await FindLinkedQuotationsAsync(milestoneId);
         var committedAmount = await GetCommittedAmountAsync(jobId, milestoneId);
         var nextGate = await ResolveNextGateAsync(milestone, linkedInvoices, committedAmount);
 
@@ -260,6 +263,7 @@ public class MilestoneService : IMilestoneService
             committedAmount,
             milestone.Amount.HasValue ? milestone.Amount.Value - committedAmount : null,
             linkedInvoices.Select(i => new LinkedInvoiceSummary(i.Id, i.Number, i.Status)).ToList(),
+            linkedQuotations.Select(q => new LinkedQuotationSummary(q.Id, q.Number, q.Status)).ToList(),
             nextGate);
     }
 
@@ -316,6 +320,14 @@ public class MilestoneService : IMilestoneService
     private async Task<List<Invoice>> FindLinkedInvoicesAsync(Guid milestoneId) =>
         await _context.Invoices.Include(i => i.LineItems).Include(i => i.Payments)
             .Where(i => i.IsActive && i.LineItems.Any(li => li.MilestoneId == milestoneId))
+            .ToListAsync();
+
+    /// <summary>Every active quotation carrying a line item tagged with this milestone -
+    /// mirrors FindLinkedInvoicesAsync, surfaced in MilestonePaymentStatus so the milestone
+    /// panel can show quotation-side linkage too, not just invoices.</summary>
+    private async Task<List<Quotation>> FindLinkedQuotationsAsync(Guid milestoneId) =>
+        await _context.Quotations.Include(q => q.LineItems)
+            .Where(q => q.IsActive && q.LineItems.Any(li => li.MilestoneId == milestoneId))
             .ToListAsync();
 
     /// <summary>Human-readable description of the nearest unmet requirement for this

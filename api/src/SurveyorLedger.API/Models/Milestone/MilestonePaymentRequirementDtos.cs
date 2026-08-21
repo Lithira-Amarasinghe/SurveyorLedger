@@ -18,11 +18,19 @@ public class LinkedInvoiceSummaryDto
     public required string Status { get; set; }
 }
 
+public class LinkedQuotationSummaryDto
+{
+    public Guid QuotationId { get; set; }
+    public required string Number { get; set; }
+    public required string Status { get; set; }
+}
+
 public class MilestonePaymentStatusResponse
 {
     public decimal? Amount { get; set; }
     public decimal CommittedAmount { get; set; }
     public decimal? RemainingAmount { get; set; }
     public List<LinkedInvoiceSummaryDto> LinkedInvoices { get; set; } = new();
+    public List<LinkedQuotationSummaryDto> LinkedQuotations { get; set; } = new();
     public string? NextGate { get; set; }
 }

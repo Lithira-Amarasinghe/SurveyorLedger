@@ -12,8 +12,7 @@ public class LineItemDto
 
 public class QuotationRequest
 {
-    public Guid ClientId { get; set; }
-    public Guid JobId { get; set; }
+    public Guid? JobId { get; set; }
     public List<LineItemDto> LineItems { get; set; } = new();
     public decimal TaxRatePercent { get; set; }
     public DateTime? ValidUntil { get; set; }
@@ -39,8 +38,7 @@ public class QuotationLineItemResponse
 public class QuotationResponse
 {
     public Guid QuotationId { get; set; }
-    public Guid ClientId { get; set; }
-    public Guid JobId { get; set; }
+    public Guid? JobId { get; set; }
     public string Number { get; set; }
     public List<QuotationLineItemResponse> LineItems { get; set; } = new();
     public decimal TaxRatePercent { get; set; }

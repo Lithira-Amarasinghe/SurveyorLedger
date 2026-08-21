@@ -34,7 +34,8 @@ public class PdfService : IPdfService
                 page.Header().Text($"Invoice {invoice.Number}").FontSize(18).Bold();
                 page.Content().Column(col =>
                 {
-                    col.Item().Text($"Billed to: {invoice.Client.FirstName} {invoice.Client.LastName}");
+                    if (invoice.Job != null)
+                        col.Item().Text($"Job: {invoice.Job.JobNumber} - {invoice.Job.Title}");
                     col.Item().Text($"Status: {invoice.Status}");
                     if (invoice.DueDate.HasValue)
                         col.Item().Text($"Due: {invoice.DueDate.Value:yyyy-MM-dd}");
@@ -80,7 +81,8 @@ public class PdfService : IPdfService
                 page.Header().Text($"Quotation {quotation.Number}").FontSize(18).Bold();
                 page.Content().Column(col =>
                 {
-                    col.Item().Text($"Prepared for: {quotation.Client.FirstName} {quotation.Client.LastName}");
+                    if (quotation.Job != null)
+                        col.Item().Text($"Job: {quotation.Job.JobNumber} - {quotation.Job.Title}");
                     col.Item().Text($"Status: {quotation.Status}");
                     if (quotation.ValidUntil.HasValue)
                         col.Item().Text($"Valid until: {quotation.ValidUntil.Value:yyyy-MM-dd}");

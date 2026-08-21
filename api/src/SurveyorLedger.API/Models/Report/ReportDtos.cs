@@ -26,7 +26,6 @@ public class PaymentHistoryRow
     public string JobNumber { get; set; }
     public string JobTitle { get; set; }
     public string InvoiceNumber { get; set; }
-    public string ClientName { get; set; }
     public decimal Amount { get; set; }
     public string Method { get; set; }
 }
@@ -50,7 +49,6 @@ public class OutstandingInvoiceRow
     public string JobNumber { get; set; }
     public string JobTitle { get; set; }
     public string InvoiceNumber { get; set; }
-    public string ClientName { get; set; }
     public decimal Total { get; set; }
     public decimal AmountPaid { get; set; }
     public decimal Balance { get; set; }
