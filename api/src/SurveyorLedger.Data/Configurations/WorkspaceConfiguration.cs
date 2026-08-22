@@ -10,7 +10,6 @@ public class WorkspaceConfiguration : IEntityTypeConfiguration<Workspace>
     {
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Name).HasMaxLength(255).IsRequired();
-        builder.Property(x => x.SubscriptionTier).HasMaxLength(50).HasDefaultValue("Free");
         builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
         builder.Property(x => x.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
 
@@ -25,6 +24,6 @@ public class WorkspaceConfiguration : IEntityTypeConfiguration<Workspace>
         builder.HasIndex(x => x.CreatedAt);
         builder.HasIndex(x => x.IsActive);
 
-        builder.HasMany(x => x.Subscriptions).WithOne(x => x.Workspace).HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(x => x.Organization).WithMany(x => x.Workspaces).HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict).IsRequired();
     }
 }

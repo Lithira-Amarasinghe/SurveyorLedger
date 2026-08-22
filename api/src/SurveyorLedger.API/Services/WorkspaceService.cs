@@ -148,6 +148,7 @@ public class WorkspaceService : IWorkspaceService
         var workspaceIds = rolesByWorkspace.Keys.ToList();
 
         var workspaces = await _context.Workspaces
+            .Include(w => w.Organization).ThenInclude(o => o.Subscription)
             .Where(w => workspaceIds.Contains(w.Id) && w.IsActive)
             .ToListAsync();
 
@@ -158,7 +159,8 @@ public class WorkspaceService : IWorkspaceService
             if (!allowed)
                 continue;
 
-            result.Add(new WorkspaceWithAccess(w, w.SubscriptionTier, rolesByWorkspace[w.Id]));
+            var tier = w.Organization.Subscription?.Tier ?? Constants.OrganizationTiers.Free;
+            result.Add(new WorkspaceWithAccess(w, tier, rolesByWorkspace[w.Id]));
         }
 
         return result;
@@ -179,12 +181,14 @@ public class WorkspaceService : IWorkspaceService
             return null;
 
         var workspace = await _context.Workspaces
+            .Include(w => w.Organization).ThenInclude(o => o.Subscription)
             .FirstOrDefaultAsync(w => w.Id == workspaceId && w.IsActive);
 
         if (workspace == null)
             return null;
 
-        return new WorkspaceWithAccess(workspace, workspace.SubscriptionTier, roles);
+        var tier = workspace.Organization.Subscription?.Tier ?? Constants.OrganizationTiers.Free;
+        return new WorkspaceWithAccess(workspace, tier, roles);
     }
 
     public async Task<List<MemberInfo>> GetMembersAsync(Guid workspaceId, Guid callerUserId)

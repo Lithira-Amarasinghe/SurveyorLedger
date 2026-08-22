@@ -86,8 +86,8 @@ public class OrganizationService : IOrganizationService
             .ToListAsync();
 
         var workspaceCounts = await _context.Workspaces
-            .Where(w => w.OrganizationId != null && orgIds.Contains(w.OrganizationId.Value) && w.IsActive)
-            .GroupBy(w => w.OrganizationId!.Value)
+            .Where(w => orgIds.Contains(w.OrganizationId) && w.IsActive)
+            .GroupBy(w => w.OrganizationId)
             .Select(g => new { OrganizationId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.OrganizationId, x => x.Count);
 

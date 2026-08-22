@@ -137,12 +137,35 @@ public abstract class WorkspaceIntegrationTestBase : IAsyncLifetime
         AdminId = Guid.NewGuid();
         SurveyorId = Guid.NewGuid();
         ClientId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+
+        await Context.Organizations.AddAsync(new Organization
+        {
+            Id = organizationId,
+            Name = "Test Organization",
+            OwnerId = AdminId,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        await Context.OrganizationSubscriptions.AddAsync(new OrganizationSubscription
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = organizationId,
+            Tier = Constants.OrganizationTiers.Free,
+            Status = "Active",
+            StartDate = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
 
         await Context.Workspaces.AddAsync(new Workspace
         {
             Id = WorkspaceId,
             Name = "Test Workspace",
             OwnerId = AdminId,
+            OrganizationId = organizationId,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow

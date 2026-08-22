@@ -17,8 +17,6 @@ public interface IOrganizationBackfillService
 
 public class OrganizationBackfillService : IOrganizationBackfillService
 {
-    private static readonly string[] TierRank = { Constants.OrganizationTiers.Business, Constants.OrganizationTiers.Pro, Constants.OrganizationTiers.Free };
-
     private readonly ApplicationDbContext _context;
     private readonly IUserAccessGrantService _grantService;
     private readonly ICasbinService _casbinService;
@@ -34,8 +32,12 @@ public class OrganizationBackfillService : IOrganizationBackfillService
 
     public async Task RunAsync()
     {
+        // Workspace.OrganizationId is required now - CreateWorkspaceAsync always sets a real
+        // Organization, so Guid.Empty can only appear on rows this backfill hasn't reached yet.
+        // Kept as a no-op-forever-after safety net (same pattern as the Client->Member fixup
+        // above), not expected to find anything once every workspace has been backfilled once.
         var orphanOwnerIds = await _context.Workspaces
-            .Where(w => w.OrganizationId == null)
+            .Where(w => w.OrganizationId == Guid.Empty)
             .Select(w => w.OwnerId)
             .Distinct()
             .ToListAsync();
@@ -46,7 +48,7 @@ public class OrganizationBackfillService : IOrganizationBackfillService
         foreach (var ownerId in orphanOwnerIds)
         {
             var ownerWorkspaces = await _context.Workspaces
-                .Where(w => w.OwnerId == ownerId && w.OrganizationId == null)
+                .Where(w => w.OwnerId == ownerId && w.OrganizationId == Guid.Empty)
                 .ToListAsync();
 
             var owner = await _context.UserAccounts.Include(u => u.Person).FirstAsync(u => u.Id == ownerId);
@@ -65,18 +67,11 @@ public class OrganizationBackfillService : IOrganizationBackfillService
             foreach (var workspace in ownerWorkspaces)
                 workspace.OrganizationId = org.Id;
 
-            var workspaceIds = ownerWorkspaces.Select(w => w.Id).ToList();
-            var oldTiers = await _context.Subscriptions
-                .Where(s => workspaceIds.Contains(s.WorkspaceId))
-                .Select(s => s.Tier)
-                .ToListAsync();
-            var resolvedTier = TierRank.FirstOrDefault(t => oldTiers.Contains(t)) ?? Constants.OrganizationTiers.Free;
-
             await _context.OrganizationSubscriptions.AddAsync(new OrganizationSubscription
             {
                 Id = Guid.NewGuid(),
                 OrganizationId = org.Id,
-                Tier = resolvedTier,
+                Tier = Constants.OrganizationTiers.Free,
                 Status = "Active",
                 StartDate = DateTime.UtcNow,
                 CreatedAt = DateTime.UtcNow,
@@ -98,8 +93,8 @@ public class OrganizationBackfillService : IOrganizationBackfillService
             await _context.SaveChangesAsync();
             await _casbinService.AddRoleForUserAsync(ownerId.ToString(), Constants.SystemRoles.OrgOwner, org.Id.ToString());
 
-            _logger.LogInformation("Backfilled organization {OrganizationId} for owner {OwnerId} ({WorkspaceCount} workspaces, tier {Tier})",
-                org.Id, ownerId, ownerWorkspaces.Count, resolvedTier);
+            _logger.LogInformation("Backfilled organization {OrganizationId} for owner {OwnerId} ({WorkspaceCount} workspaces)",
+                org.Id, ownerId, ownerWorkspaces.Count);
         }
     }
 }

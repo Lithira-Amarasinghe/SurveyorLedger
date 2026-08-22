@@ -17,6 +17,7 @@ public class OrganizationConfiguration : IEntityTypeConfiguration<Organization>
         builder.HasIndex(x => x.IsActive);
 
         builder.HasOne(x => x.Owner).WithMany(x => x.OwnedOrganizations).HasForeignKey(x => x.OwnerId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasMany(x => x.Workspaces).WithOne(x => x.Organization).HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Restrict);
+        // Workspace <-> Organization relationship is configured on WorkspaceConfiguration's side
+        // (IsRequired there matters - Workspace.OrganizationId is non-nullable).
     }
 }

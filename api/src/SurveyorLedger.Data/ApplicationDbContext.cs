@@ -10,7 +10,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<Person> People { get; set; }
     public DbSet<UserAccount> UserAccounts { get; set; }
     public DbSet<Workspace> Workspaces { get; set; }
-    public DbSet<Subscription> Subscriptions { get; set; }
     public DbSet<Organization> Organizations { get; set; }
     public DbSet<OrganizationSubscription> OrganizationSubscriptions { get; set; }
     public DbSet<Role> Roles { get; set; }
