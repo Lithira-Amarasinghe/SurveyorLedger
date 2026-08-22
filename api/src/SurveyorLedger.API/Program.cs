@@ -91,6 +91,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 // Register workspace service
 builder.Services.AddScoped<IWorkspaceService, WorkspaceService>();
 builder.Services.AddScoped<IOrganizationBackfillService, OrganizationBackfillService>();
+builder.Services.AddScoped<IOrganizationService, OrganizationService>();
 
 // Register invitation service
 builder.Services.AddScoped<IInvitationService, InvitationService>();
