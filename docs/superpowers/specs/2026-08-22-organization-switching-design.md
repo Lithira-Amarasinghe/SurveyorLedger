@@ -149,7 +149,7 @@ needs a "no org" fallback path — single code path throughout.
   count/limit (`workspaceCount`/`maxWorkspaces` from `OrganizationInfo`), role.
   Click switches (same as topbar) and navigates to dashboard.
 - "New organization" button — name field, `POST /api/organization`.
-- Each card has a "Manage" link to `/app/organizations/:id` — rename, members
+- Each card has a "Manage" link to `/app/organizations/:id` — members
   list (add/remove via existing `GetMembersAsync`/`AddMemberAsync`/
   `RemoveMemberAsync`), subscription tier display + change (`PUT
   /api/organization/{id}/subscription`). Mirrors the existing workspace
@@ -178,6 +178,8 @@ needs a "no org" fallback path — single code path throughout.
 - No payment gateway UI — subscription tier change stays an admin field-flip.
 - No change to how Client/Finance job-scope access itself works — only the
   org-membership grant is new for them.
+- No organization rename — the shipped `OrganizationService` has no update-name
+  endpoint; adding one is a separate small backend addition, not bundled here.
 
 ## Testing
 
