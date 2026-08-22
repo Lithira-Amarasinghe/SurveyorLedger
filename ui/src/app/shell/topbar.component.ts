@@ -1,7 +1,9 @@
-import { Component, output, signal } from '@angular/core';
+import { Component, OnInit, output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../core/auth.service';
+import { OrganizationService, Organization } from '../core/organization.service';
+import { CurrentOrganizationService } from '../core/current-organization.service';
 
 @Component({
   selector: 'app-topbar',
@@ -17,6 +19,43 @@ import { AuthService } from '../core/auth.service';
       >
         ☰
       </button>
+
+      @if (currentOrg.current(); as org) {
+        <div class="relative">
+          <button
+            type="button"
+            class="flex items-center gap-xs px-md py-xs rounded text-sm text-neutral-700 hover:bg-neutral-100"
+            (click)="orgMenuOpen.set(!orgMenuOpen())"
+          >
+            <span class="font-medium">{{ org.name }}</span>
+            <span class="text-xs px-xs py-[1px] rounded bg-neutral-100 text-neutral-600">{{ org.tier }}</span>
+            <span class="text-neutral-400">▾</span>
+          </button>
+
+          @if (orgMenuOpen()) {
+            <div class="absolute left-0 mt-xs w-64 card p-xs shadow-lg z-10" (mouseleave)="orgMenuOpen.set(false)">
+              @for (o of organizations(); track o.id) {
+                <button
+                  type="button"
+                  class="w-full text-left px-md py-sm text-sm rounded hover:bg-neutral-100 flex items-center justify-between"
+                  [class.bg-primary-50]="o.id === org.id"
+                  (click)="switchTo(o)"
+                >
+                  <span>{{ o.name }}</span>
+                  @if (o.id === org.id) {
+                    <span class="text-primary-500">✓</span>
+                  }
+                </button>
+              }
+              <div class="border-t border-neutral-100 mt-xs pt-xs">
+                <a routerLink="/app/organizations" class="block px-md py-sm text-sm text-neutral-700 hover:bg-neutral-100 rounded" (click)="orgMenuOpen.set(false)">
+                  Manage organizations
+                </a>
+              </div>
+            </div>
+          }
+        </div>
+      }
 
       <button
         type="button"
@@ -47,15 +86,32 @@ import { AuthService } from '../core/auth.service';
     </header>
   `
 })
-export class TopbarComponent {
+export class TopbarComponent implements OnInit {
   paletteOpen = output<void>();
   menuToggle = output<void>();
   menuOpen = signal(false);
+  orgMenuOpen = signal(false);
+  organizations = signal<Organization[]>([]);
 
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private organizationService: OrganizationService,
+    protected currentOrg: CurrentOrganizationService,
+    private router: Router
+  ) {}
+
+  ngOnInit(): void {
+    this.organizationService.list().subscribe(orgs => this.organizations.set(orgs));
+  }
 
   initials(): string {
     return 'U';
+  }
+
+  switchTo(org: Organization): void {
+    this.currentOrg.set(org);
+    this.orgMenuOpen.set(false);
+    this.router.navigate(['/app/dashboard']);
   }
 
   logout(): void {
