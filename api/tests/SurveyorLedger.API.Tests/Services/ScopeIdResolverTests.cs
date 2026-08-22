@@ -82,4 +82,15 @@ public class ScopeIdResolverTests
         Assert.Equal(workspaceId, jobParent);
         Assert.Equal(orgId, workspaceParent);
     }
+
+    [Fact]
+    public void GetParentScopeType_Workspace_ReturnsOrganization_WhenProviderRegistered()
+    {
+        var workspaceProvider = MakeProvider("Workspace", "Organization", Guid.NewGuid());
+        var resolver = new ScopeIdResolver([workspaceProvider.Object], Mock.Of<ILogger<ScopeIdResolver>>());
+
+        var parentType = resolver.GetParentScopeType("Workspace");
+
+        Assert.Equal("Organization", parentType);
+    }
 }

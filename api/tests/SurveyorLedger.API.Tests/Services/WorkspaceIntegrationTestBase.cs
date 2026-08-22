@@ -84,6 +84,7 @@ public abstract class WorkspaceIntegrationTestBase : IAsyncLifetime
         services.AddDbContext<ApplicationDbContext>(o => o.UseSqlServer(connectionString));
         services.AddSingleton<ICasbinService, CasbinService>();
         services.AddScoped<IScopeLinkProvider, JobWorkspaceScopeLinkProvider>();
+        services.AddScoped<IScopeLinkProvider, WorkspaceOrganizationScopeLinkProvider>();
         services.AddScoped<IScopeIdResolver, ScopeIdResolver>();
         services.AddScoped<IUserAccessGrantService, UserAccessGrantService>();
         services.AddScoped<IScopedAccessService, ScopedAccessService>();

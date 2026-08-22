@@ -130,6 +130,7 @@ builder.Services.AddScoped<IReportService, ReportService>();
 // new scope level (e.g. Organization above Workspace) means registering one more provider here,
 // not editing ScopeIdResolver.
 builder.Services.AddScoped<IScopeLinkProvider, JobWorkspaceScopeLinkProvider>();
+builder.Services.AddScoped<IScopeLinkProvider, WorkspaceOrganizationScopeLinkProvider>();
 builder.Services.AddScoped<IScopeIdResolver, ScopeIdResolver>();
 
 // Register the shared UserAccess grant/revoke service (workspace-scope and job-scope

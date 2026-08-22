@@ -14,7 +14,8 @@ public class ScopeParentTypeConfiguration : IEntityTypeConfiguration<ScopeParent
         builder.Property(x => x.ParentScopeType).HasMaxLength(50);
 
         builder.HasData(
-            new ScopeParentType { ScopeType = Constants.ScopeTypes.Job, ParentScopeType = Constants.ScopeTypes.Workspace }
+            new ScopeParentType { ScopeType = Constants.ScopeTypes.Job, ParentScopeType = Constants.ScopeTypes.Workspace },
+            new ScopeParentType { ScopeType = Constants.ScopeTypes.Workspace, ParentScopeType = Constants.ScopeTypes.Organization }
         );
     }
 }
