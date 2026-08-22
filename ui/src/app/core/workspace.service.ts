@@ -92,8 +92,8 @@ export class WorkspaceService {
     return this.http.get<ApiResponse<Workspace[]>>(this.apiUrl).pipe(map(res => res.data));
   }
 
-  create(name: string, description: string, tier: string): Observable<Workspace> {
-    return this.http.post<ApiResponse<Workspace>>(this.apiUrl, { name, description, tier }).pipe(map(res => res.data));
+  create(name: string, description: string, organizationId: string): Observable<Workspace> {
+    return this.http.post<ApiResponse<Workspace>>(this.apiUrl, { name, description, organizationId }).pipe(map(res => res.data));
   }
 
   getById(id: string): Observable<Workspace> {
