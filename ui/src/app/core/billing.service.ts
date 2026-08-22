@@ -93,6 +93,11 @@ export interface Payment {
   hasProofFile: boolean;
   receiptNumber: string;
   createdAt: string;
+  recordedByName: string | null;
+  isRefund: boolean;
+  isVoided: boolean;
+  voidedAt: string | null;
+  voidReason: string | null;
 }
 
 export interface PaymentRequest {
@@ -185,6 +190,30 @@ export class InvoiceService {
 
   getPayments(workspaceId: string, invoiceId: string): Observable<Payment[]> {
     return this.http.get<ApiResponse<Payment[]>>(`${this.base(workspaceId)}/${invoiceId}/payments`).pipe(map(res => res.data));
+  }
+
+  voidPayment(workspaceId: string, invoiceId: string, paymentId: string, reason?: string): Observable<Payment> {
+    return this.http
+      .post<ApiResponse<Payment>>(`${this.base(workspaceId)}/${invoiceId}/payments/${paymentId}/void`, { reason })
+      .pipe(map(res => res.data));
+  }
+
+  recordRefund(workspaceId: string, invoiceId: string, request: PaymentRequest, proofFile?: File): Observable<Payment> {
+    const form = new FormData();
+    form.append('amount', String(request.amount));
+    form.append('method', request.method);
+    form.append('receivedAt', request.receivedAt);
+    if (request.referenceNumber) form.append('referenceNumber', request.referenceNumber);
+    if (proofFile) form.append('proofFile', proofFile);
+    return this.http.post<ApiResponse<Payment>>(`${this.base(workspaceId)}/${invoiceId}/refunds`, form).pipe(map(res => res.data));
+  }
+
+  paymentProofUrl(workspaceId: string, invoiceId: string, paymentId: string): string {
+    return `${this.base(workspaceId)}/${invoiceId}/payments/${paymentId}/proof`;
+  }
+
+  getPaymentProofBlob(workspaceId: string, invoiceId: string, paymentId: string): Observable<Blob> {
+    return this.http.get(this.paymentProofUrl(workspaceId, invoiceId, paymentId), { responseType: 'blob' });
   }
 
   send(workspaceId: string, invoiceId: string, recipientPersonIds: string[]): Observable<void> {

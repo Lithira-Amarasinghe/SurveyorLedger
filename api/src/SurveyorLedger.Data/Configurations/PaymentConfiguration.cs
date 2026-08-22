@@ -15,10 +15,12 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(x => x.ProofFilePath).HasMaxLength(500);
         builder.Property(x => x.ReceiptNumber).HasMaxLength(20).IsRequired();
         builder.Property(x => x.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+        builder.Property(x => x.VoidReason).HasMaxLength(500);
 
         builder.HasIndex(x => x.WorkspaceId);
         builder.HasIndex(x => new { x.WorkspaceId, x.ReceiptNumber }).IsUnique();
 
         builder.HasOne(x => x.RecordedByUser).WithMany().HasForeignKey(x => x.RecordedBy).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.VoidedByUser).WithMany().HasForeignKey(x => x.VoidedBy).OnDelete(DeleteBehavior.Restrict);
     }
 }

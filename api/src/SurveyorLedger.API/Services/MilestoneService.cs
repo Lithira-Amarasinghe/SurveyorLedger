@@ -344,7 +344,7 @@ public class MilestoneService : IMilestoneService
         var committed = await GetCommittedAmountAsync(jobId, milestoneId, excludingQuotationId, excludingInvoiceId);
         var total = committed + additionalAmount;
         if (total > milestone.Amount)
-            throw new ValidationException($"Billing {total} against milestone '{milestone.Title}' would exceed its fee of {milestone.Amount}.");
+            throw new ValidationException($"Billing {total:0.00} against milestone '{milestone.Title}' would exceed its fee of {milestone.Amount:0.00}.");
     }
 
     /// <summary>Every active invoice carrying a line item tagged with this milestone -

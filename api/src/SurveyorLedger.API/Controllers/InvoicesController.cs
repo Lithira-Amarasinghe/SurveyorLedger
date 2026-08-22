@@ -71,6 +71,34 @@ namespace SurveyorLedger.API.Controllers
             return Ok(ApiResponse<List<PaymentResponse>>.Ok(payments.Select(ToResponse).ToList()));
         }
 
+        [HttpPost("{id}/payments/{paymentId}/void")]
+        public async Task<ActionResult<ApiResponse<PaymentResponse>>> VoidPayment(Guid workspaceId, Guid id, Guid paymentId, [FromBody] VoidPaymentRequest? request)
+        {
+            var payment = await _invoiceService.VoidPaymentAsync(workspaceId, CallerId(), id, paymentId, request?.Reason);
+            return Ok(ApiResponse<PaymentResponse>.Ok(ToResponse(payment)));
+        }
+
+        [HttpPost("{id}/refunds")]
+        public async Task<ActionResult<ApiResponse<PaymentResponse>>> RecordRefund(Guid workspaceId, Guid id, [FromForm] PaymentRequest request, IFormFile? proofFile)
+        {
+            var refund = await _invoiceService.RecordRefundAsync(workspaceId, CallerId(), id, request, proofFile);
+            return Ok(ApiResponse<PaymentResponse>.Ok(ToResponse(refund)));
+        }
+
+        [HttpGet("{id}/payments/{paymentId}/proof")]
+        public async Task<IActionResult> GetPaymentProof(Guid workspaceId, Guid id, Guid paymentId)
+        {
+            var (content, path) = await _invoiceService.GetPaymentProofFileAsync(workspaceId, CallerId(), id, paymentId);
+            var contentType = Path.GetExtension(path).ToLowerInvariant() switch
+            {
+                ".png" => "image/png",
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".pdf" => "application/pdf",
+                _ => "application/octet-stream"
+            };
+            return File(content, contentType);
+        }
+
         [HttpPost("{id}/send")]
         public async Task<IActionResult> Send(Guid workspaceId, Guid id, [FromBody] SendInvoiceRequest request)
         {
@@ -119,7 +147,12 @@ namespace SurveyorLedger.API.Controllers
             ReferenceNumber = p.ReferenceNumber,
             HasProofFile = p.ProofFilePath != null,
             ReceiptNumber = p.ReceiptNumber,
-            CreatedAt = p.CreatedAt
+            CreatedAt = p.CreatedAt,
+            RecordedByName = p.RecordedByUser != null ? $"{p.RecordedByUser.FirstName} {p.RecordedByUser.LastName}" : null,
+            IsRefund = p.IsRefund,
+            IsVoided = p.IsVoided,
+            VoidedAt = p.VoidedAt,
+            VoidReason = p.VoidReason
         };
     }
 }

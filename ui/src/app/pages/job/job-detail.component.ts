@@ -425,11 +425,11 @@ const MILESTONE_STATUSES = ['Pending', 'InProgress', 'Completed'];
                 <div class="grid grid-cols-2 gap-sm">
                   <div>
                     <label class="block text-xs font-medium text-neutral-700 mb-xs">Estimated fee</label>
-                    <input class="input-field" type="number" min="0" step="0.01" [(ngModel)]="budgetFeeDraft" />
+                    <input class="input-field" type="number" min="0" step="1" [(ngModel)]="budgetFeeDraft" />
                   </div>
                   <div>
                     <label class="block text-xs font-medium text-neutral-700 mb-xs">Estimated cost</label>
-                    <input class="input-field" type="number" min="0" step="0.01" [(ngModel)]="budgetCostDraft" />
+                    <input class="input-field" type="number" min="0" step="1" [(ngModel)]="budgetCostDraft" />
                   </div>
                 </div>
                 @if (budgetError()) {

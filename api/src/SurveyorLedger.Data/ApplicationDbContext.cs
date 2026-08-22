@@ -54,5 +54,6 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Milestone>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<Quotation>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<Invoice>().HasQueryFilter(x => x.IsActive);
+        modelBuilder.Entity<Payment>().HasQueryFilter(x => !x.IsVoided);
     }
 }

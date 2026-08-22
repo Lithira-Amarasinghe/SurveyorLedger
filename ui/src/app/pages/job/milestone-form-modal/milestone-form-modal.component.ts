@@ -30,7 +30,7 @@ import { Milestone, MilestoneService } from '../../../core/milestone.service';
             </div>
             <div>
               <label class="block text-xs font-medium text-neutral-700 mb-xs">Fee amount (optional)</label>
-              <input class="input-field" type="number" min="0" step="0.01" placeholder="0.00" name="amount" [(ngModel)]="amount" />
+              <input class="input-field" type="number" min="0" step="1" placeholder="0.00" name="amount" [(ngModel)]="amount" />
               <span class="block text-xs text-neutral-500 mt-2xs">What this milestone is worth to bill against, if any.</span>
             </div>
           </div>

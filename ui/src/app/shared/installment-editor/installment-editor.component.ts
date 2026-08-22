@@ -24,7 +24,7 @@ import { Installment } from '../../core/billing.service';
               class="input-field w-28"
               type="number"
               min="0.01"
-              step="0.01"
+              step="1"
               placeholder="Amount"
               [ngModel]="item.amount"
               (ngModelChange)="updateItem(i, 'amount', $event)"

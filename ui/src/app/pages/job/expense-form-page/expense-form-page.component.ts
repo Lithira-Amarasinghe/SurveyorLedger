@@ -7,11 +7,12 @@ import { JobParticipant, JobService } from '../../../core/job.service';
 import { Milestone, MilestonePaymentStatus, MilestoneService } from '../../../core/milestone.service';
 import { PayeePickerModalComponent, PayeeOption } from '../payee-picker-modal/payee-picker-modal.component';
 import { MilestonePickerModalComponent } from '../milestone-picker-modal/milestone-picker-modal.component';
+import { FilePickerFieldComponent } from '../../../shared/file-picker-field/file-picker-field.component';
 
 @Component({
   selector: 'app-expense-form-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, PayeePickerModalComponent, MilestonePickerModalComponent],
+  imports: [CommonModule, FormsModule, PayeePickerModalComponent, MilestonePickerModalComponent, FilePickerFieldComponent],
   template: `
     <div class="p-lg max-w-2xl mx-auto space-y-lg">
       <div class="flex items-center justify-between">
@@ -101,7 +102,7 @@ import { MilestonePickerModalComponent } from '../milestone-picker-modal/milesto
             <div class="grid grid-cols-2 gap-sm">
               <div>
                 <label class="block text-xs font-medium text-neutral-700 mb-xs">Amount</label>
-                <input class="input-field" type="number" min="0.01" step="0.01" name="amount" [(ngModel)]="amount" />
+                <input class="input-field" type="number" min="0.01" step="1" name="amount" [(ngModel)]="amount" />
               </div>
               <div>
                 <label class="block text-xs font-medium text-neutral-700 mb-xs">Incurred date</label>
@@ -119,7 +120,7 @@ import { MilestonePickerModalComponent } from '../milestone-picker-modal/milesto
               @if (editing()?.hasReceipt) {
                 <p class="text-xs text-neutral-500 mb-xs">A receipt is already attached. Choosing a new file replaces it.</p>
               }
-              <input type="file" accept=".pdf,.jpg,.jpeg,.png" (change)="onFileChange($event)" />
+              <app-file-picker-field label="Attach receipt" accept=".pdf,.jpg,.jpeg,.png" (fileChange)="receiptFile = $event" />
             </div>
 
             @if (error()) {
@@ -276,11 +277,6 @@ export class ExpenseFormPageComponent implements OnInit {
     if (!m?.amount || this.amount <= 0) return null;
     if (this.amount > m.amount) return `This expense (${this.amount.toFixed(2)}) exceeds the milestone fee (${m.amount.toFixed(2)}).`;
     return null;
-  }
-
-  onFileChange(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.receiptFile = input.files?.[0] ?? null;
   }
 
   goBack(): void {

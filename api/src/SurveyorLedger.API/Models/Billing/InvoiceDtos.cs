@@ -48,6 +48,16 @@ public class PaymentResponse
     public bool HasProofFile { get; set; }
     public string ReceiptNumber { get; set; }
     public DateTime CreatedAt { get; set; }
+    public string? RecordedByName { get; set; }
+    public bool IsRefund { get; set; }
+    public bool IsVoided { get; set; }
+    public DateTime? VoidedAt { get; set; }
+    public string? VoidReason { get; set; }
+}
+
+public class VoidPaymentRequest
+{
+    public string? Reason { get; set; }
 }
 
 public class InvoiceResponse

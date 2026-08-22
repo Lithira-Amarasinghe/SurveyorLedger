@@ -66,7 +66,7 @@ type DocumentType = 'invoice' | 'quotation';
                 @if (documentType === 'invoice') {
                   <div>
                     <label class="block text-xs font-medium text-neutral-700 mb-xs">Discount</label>
-                    <input class="input-field" type="number" min="0" step="0.01" name="discount" [(ngModel)]="discountAmount" />
+                    <input class="input-field" type="number" min="0" step="1" name="discount" [(ngModel)]="discountAmount" />
                   </div>
                 } @else {
                   <div>

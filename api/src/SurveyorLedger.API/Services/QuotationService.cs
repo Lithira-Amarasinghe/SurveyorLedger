@@ -336,10 +336,10 @@ public class QuotationService : IQuotationService
             if (invoiced <= 0)
                 continue;
             if (!incomingById.TryGetValue(current.Id, out var stillPresent))
-                throw new ValidationException($"Cannot remove quotation line '{current.Description}' - {invoiced} is already invoiced against it.");
+                throw new ValidationException($"Cannot remove quotation line '{current.Description}' - {invoiced:0.00} is already invoiced against it.");
             var newAmount = stillPresent.Quantity * stillPresent.UnitPrice;
             if (newAmount < invoiced)
-                throw new ValidationException($"Cannot reduce quotation line '{current.Description}' below its invoiced amount of {invoiced}.");
+                throw new ValidationException($"Cannot reduce quotation line '{current.Description}' below its invoiced amount of {invoiced:0.00}.");
         }
     }
 

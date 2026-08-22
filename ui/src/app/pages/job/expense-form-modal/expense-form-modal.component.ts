@@ -4,11 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { EXPENSE_CATEGORIES, Expense, ExpenseCategory, ExpenseRequest, ExpenseService, PAYEE_TYPES, PayeeType } from '../../../core/expense.service';
 import { JobParticipant } from '../../../core/job.service';
 import { Milestone } from '../../../core/milestone.service';
+import { FilePickerFieldComponent } from '../../../shared/file-picker-field/file-picker-field.component';
 
 @Component({
   selector: 'app-expense-form-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, FilePickerFieldComponent],
   template: `
     <div class="fixed inset-0 z-50 bg-neutral-900/40 flex items-center justify-center px-lg" (click)="cancel.emit()">
       <div class="card w-full max-w-md" (click)="$event.stopPropagation()">
@@ -61,7 +62,7 @@ import { Milestone } from '../../../core/milestone.service';
           <div class="grid grid-cols-2 gap-sm">
             <div>
               <label class="block text-xs font-medium text-neutral-700 mb-xs">Amount</label>
-              <input class="input-field" type="number" min="0.01" step="0.01" name="amount" [(ngModel)]="amount" />
+              <input class="input-field" type="number" min="0.01" step="1" name="amount" [(ngModel)]="amount" />
             </div>
             <div>
               <label class="block text-xs font-medium text-neutral-700 mb-xs">Incurred date</label>
@@ -80,7 +81,7 @@ import { Milestone } from '../../../core/milestone.service';
 
           <div>
             <label class="block text-xs font-medium text-neutral-700 mb-xs">Receipt (optional)</label>
-            <input type="file" accept=".pdf,.jpg,.jpeg,.png" (change)="onFileChange($event)" />
+            <app-file-picker-field label="Attach receipt" accept=".pdf,.jpg,.jpeg,.png" (fileChange)="receiptFile = $event" />
           </div>
 
           @if (error()) {
@@ -144,11 +145,6 @@ export class ExpenseFormModalComponent implements OnInit {
     if (!m?.amount) return null;
     if (this.amount > m.amount) return `This expense (${this.amount.toFixed(2)}) exceeds the milestone fee (${m.amount.toFixed(2)}).`;
     return null;
-  }
-
-  onFileChange(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.receiptFile = input.files?.[0] ?? null;
   }
 
   submit(): void {

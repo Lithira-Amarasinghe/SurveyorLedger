@@ -172,6 +172,91 @@ public class InvoiceServiceTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
+    public async Task VoidPaymentAsync_RevertsAmountPaidAndStatus()
+    {
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
+        var payment = await _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 100000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null);
+
+        await _invoiceService.VoidPaymentAsync(WorkspaceId, AdminId, invoiceId, payment.Id, "recorded in error");
+
+        var invoice = await _invoiceService.GetByIdAsync(WorkspaceId, AdminId, invoiceId);
+        var (_, amountPaid, balance, _, _) = _invoiceService.ComputeInvoiceTotals(invoice);
+        Assert.Equal("Sent", invoice.Status);
+        Assert.Equal(0m, amountPaid);
+        Assert.Equal(100000m, balance);
+    }
+
+    [Fact]
+    public async Task VoidPaymentAsync_ThenNewPaymentAllowed_BalanceRestored()
+    {
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
+        var payment = await _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 100000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null);
+        await _invoiceService.VoidPaymentAsync(WorkspaceId, AdminId, invoiceId, payment.Id, null);
+
+        // The voided payment must no longer count against the balance ceiling.
+        var corrected = await _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 100000m, Method = "BankTransfer", ReceivedAt = DateTime.UtcNow }, null);
+
+        var invoice = await _invoiceService.GetByIdAsync(WorkspaceId, AdminId, invoiceId);
+        Assert.Equal("Paid", invoice.Status);
+        Assert.NotEqual(payment.ReceiptNumber, corrected.ReceiptNumber);
+    }
+
+    [Fact]
+    public async Task VoidPaymentAsync_AlreadyVoided_Throws()
+    {
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
+        var payment = await _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 50000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null);
+        await _invoiceService.VoidPaymentAsync(WorkspaceId, AdminId, invoiceId, payment.Id, null);
+
+        await Assert.ThrowsAsync<NotFoundException>(() => _invoiceService.VoidPaymentAsync(WorkspaceId, AdminId, invoiceId, payment.Id, null));
+    }
+
+    [Fact]
+    public async Task RecordRefundAsync_ReducesAmountPaidAndRevertsStatus()
+    {
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
+        await _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 100000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null);
+
+        var refund = await _invoiceService.RecordRefundAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 100000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null);
+
+        var invoice = await _invoiceService.GetByIdAsync(WorkspaceId, AdminId, invoiceId);
+        var (_, amountPaid, balance, _, _) = _invoiceService.ComputeInvoiceTotals(invoice);
+        Assert.Equal("Sent", invoice.Status);
+        Assert.Equal(0m, amountPaid);
+        Assert.Equal(100000m, balance);
+        Assert.StartsWith("RFD-", refund.ReceiptNumber);
+    }
+
+    [Fact]
+    public async Task RecordRefundAsync_MoreThanPaid_Throws()
+    {
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
+        await _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 40000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null);
+
+        await Assert.ThrowsAsync<ValidationException>(
+            () => _invoiceService.RecordRefundAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 50000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null));
+    }
+
+    [Fact]
+    public async Task GetPaymentsAsync_IncludesVoidedForLedgerVisibility()
+    {
+        var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();
+        var invoiceId = await SeedInvoiceOnJobAsync(job.Id, clientPersonId);
+        var payment = await _invoiceService.RecordPaymentAsync(WorkspaceId, AdminId, invoiceId, new PaymentRequest { Amount = 50000m, Method = "Cash", ReceivedAt = DateTime.UtcNow }, null);
+        await _invoiceService.VoidPaymentAsync(WorkspaceId, AdminId, invoiceId, payment.Id, "test");
+
+        var payments = await _invoiceService.GetPaymentsAsync(WorkspaceId, AdminId, invoiceId);
+
+        Assert.Single(payments);
+        Assert.True(payments[0].IsVoided);
+    }
+
+    [Fact]
     public async Task DeleteAsync_WithPayments_Throws409()
     {
         var (job, clientPersonId, _) = await SeedJobWithClientParticipantAsync();

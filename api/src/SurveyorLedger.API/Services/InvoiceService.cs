@@ -18,6 +18,9 @@ public interface IInvoiceService
     Task DeleteAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId);
     Task<Payment> RecordPaymentAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, PaymentRequest request, IFormFile? proofFile);
     Task<List<Payment>> GetPaymentsAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId);
+    Task<Payment> VoidPaymentAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, Guid paymentId, string? reason);
+    Task<Payment> RecordRefundAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, PaymentRequest request, IFormFile? proofFile);
+    Task<(Stream Content, string Path)> GetPaymentProofFileAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, Guid paymentId);
     Task SendAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, List<Guid> recipientPersonIds, string appBaseUrl);
     (decimal Total, decimal AmountPaid, decimal Balance, bool IsOverdue, int DaysOverdue) ComputeInvoiceTotals(Invoice invoice);
     List<(InvoiceInstallment Installment, string Status)> ComputeInstallmentStatuses(Invoice invoice);
@@ -129,7 +132,9 @@ public class InvoiceService : IInvoiceService
         // (negative balance) or silently reverting a PartiallyPaid/Paid invoice back to
         // Draft. Same "no touching it once paid" principle DeleteAsync already enforces
         // for the delete path.
-        if (invoice.Payments.Count > 0)
+        // A payment that's since been voided no longer counts - voiding is exactly the
+        // "undo this" path, so a fully-voided invoice must go back to being editable.
+        if (invoice.Payments.Any(p => !p.IsVoided))
             EnsureOnlyDueDateChanged(invoice, request);
 
         await ValidateLineItemsAsync(request.LineItems, request.JobId, invoiceId);
@@ -174,7 +179,7 @@ public class InvoiceService : IInvoiceService
         var invoice = await FindInvoiceAsync(workspaceId, invoiceId);
         await EnsureAccessAsync(callerUserId, workspaceId, invoice, "delete");
 
-        if (invoice.Payments.Count > 0)
+        if (invoice.Payments.Any(p => !p.IsVoided))
             throw new ConflictException("Cannot delete an invoice with recorded payments. Cancel it instead.");
 
         invoice.IsActive = false;
@@ -195,22 +200,9 @@ public class InvoiceService : IInvoiceService
 
         var (total, amountPaid, balance, _, _) = ComputeInvoiceTotals(invoice);
         if (request.Amount > balance)
-            throw new ValidationException($"Amount {request.Amount} exceeds the outstanding balance of {balance}.");
+            throw new ValidationException($"Amount {request.Amount:0.00} exceeds the outstanding balance of {balance:0.00}.");
 
-        string? proofPath = null;
-        if (proofFile != null)
-        {
-            var extension = Path.GetExtension(proofFile.FileName);
-            if (!AllowedProofExtensions.Contains(extension))
-                throw new ValidationException($"File type '{extension}' is not allowed. Allowed types: {string.Join(", ", AllowedProofExtensions)}.");
-            if (proofFile.Length > DocumentService.MaxFileSizeBytes)
-                throw new ValidationException($"File exceeds the {DocumentService.MaxFileSizeBytes / (1024 * 1024)}MB size limit.");
-
-            var storedFileName = $"{Guid.NewGuid():N}_{proofFile.FileName}";
-            proofPath = $"{workspaceId}/invoices/{invoiceId}/payments/{storedFileName}";
-            await using var stream = proofFile.OpenReadStream();
-            await _fileStorage.SaveAsync(stream, proofPath, CancellationToken.None);
-        }
+        var proofPath = await SaveProofFileAsync(workspaceId, invoiceId, proofFile);
 
         var payment = new Payment
         {
@@ -230,7 +222,7 @@ public class InvoiceService : IInvoiceService
         await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
-            payment.ReceiptNumber = await NextReceiptNumberAsync(workspaceId);
+            payment.ReceiptNumber = await NextReceiptNumberAsync(workspaceId, "RCP");
             await _context.Payments.AddAsync(payment);
 
             var newAmountPaid = amountPaid + request.Amount;
@@ -245,15 +237,138 @@ public class InvoiceService : IInvoiceService
         return payment;
     }
 
+    public async Task<Payment> RecordRefundAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, PaymentRequest request, IFormFile? proofFile)
+    {
+        var invoice = await FindInvoiceAsync(workspaceId, invoiceId);
+        await EnsureAccessAsync(callerUserId, workspaceId, invoice, "create");
+        if (!AllowedMethods.Contains(request.Method))
+            throw new ValidationException($"Method must be one of: {string.Join(", ", AllowedMethods)}.");
+        if (request.Amount <= 0)
+            throw new ValidationException("Amount must be positive.");
+        if (request.ReceivedAt.Date > DateTime.UtcNow.Date)
+            throw new ValidationException("Refund date cannot be in the future.");
+
+        var (total, amountPaid, _, _, _) = ComputeInvoiceTotals(invoice);
+        if (request.Amount > amountPaid)
+            throw new ValidationException($"Refund amount {request.Amount:0.00} exceeds the {amountPaid:0.00} actually paid on this invoice.");
+
+        var proofPath = await SaveProofFileAsync(workspaceId, invoiceId, proofFile);
+
+        var refund = new Payment
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = workspaceId,
+            InvoiceId = invoiceId,
+            Amount = request.Amount,
+            IsRefund = true,
+            Method = request.Method,
+            ReceivedAt = request.ReceivedAt,
+            ReferenceNumber = request.ReferenceNumber?.Trim(),
+            ProofFilePath = proofPath,
+            RecordedBy = await _access.ResolvePersonIdAsync(callerUserId),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var strategy = _context.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            refund.ReceiptNumber = await NextReceiptNumberAsync(workspaceId, "RFD");
+            await _context.Payments.AddAsync(refund);
+
+            var newAmountPaid = amountPaid - request.Amount;
+            invoice.Status = newAmountPaid >= total ? "Paid" : newAmountPaid > 0 ? "PartiallyPaid" : "Sent";
+            invoice.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+        });
+
+        _logger.LogInformation("Refund {PaymentId} ({ReceiptNumber}) of {Amount} recorded for Invoice {InvoiceId}", refund.Id, refund.ReceiptNumber, refund.Amount, invoiceId);
+        return refund;
+    }
+
+    public async Task<Payment> VoidPaymentAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, Guid paymentId, string? reason)
+    {
+        var invoice = await FindInvoiceAsync(workspaceId, invoiceId);
+        await EnsureAccessAsync(callerUserId, workspaceId, invoice, "create");
+
+        var payment = invoice.Payments.FirstOrDefault(p => p.Id == paymentId)
+            ?? throw new NotFoundException("Payment not found.");
+        if (payment.IsVoided)
+            throw new NotFoundException("Payment not found.");
+
+        var strategy = _context.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+
+            payment.IsVoided = true;
+            payment.VoidedAt = DateTime.UtcNow;
+            payment.VoidedBy = await _access.ResolvePersonIdAsync(callerUserId);
+            payment.VoidReason = reason?.Trim();
+
+            // Recompute from the in-memory collection - the entity is already marked voided
+            // here but the DB-level query filter only excludes it on a *fresh* query, so the
+            // exclusion in ComputeInvoiceTotals's Sum is what makes this correct right now.
+            var (total, amountPaid, _, _, _) = ComputeInvoiceTotals(invoice);
+            if (invoice.Status is "Paid" or "PartiallyPaid")
+                invoice.Status = amountPaid >= total ? "Paid" : amountPaid > 0 ? "PartiallyPaid" : "Sent";
+            invoice.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+        });
+
+        _logger.LogInformation("Payment {PaymentId} voided on Invoice {InvoiceId}", payment.Id, invoiceId);
+        return payment;
+    }
+
     public async Task<List<Payment>> GetPaymentsAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId)
     {
         var invoice = await FindInvoiceAsync(workspaceId, invoiceId);
         await EnsureAccessAsync(callerUserId, workspaceId, invoice, "view");
 
-        return await _context.Payments
+        // IgnoreQueryFilters: this is the ledger view, where a voided payment stays visible
+        // (marked voided) rather than disappearing - the query filter only protects totals
+        // math elsewhere from silently counting one.
+        return await _context.Payments.IgnoreQueryFilters()
+            .Include(p => p.RecordedByUser)
             .Where(p => p.InvoiceId == invoiceId && p.WorkspaceId == workspaceId)
             .OrderByDescending(p => p.ReceivedAt)
             .ToListAsync();
+    }
+
+    public async Task<(Stream Content, string Path)> GetPaymentProofFileAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, Guid paymentId)
+    {
+        var invoice = await FindInvoiceAsync(workspaceId, invoiceId);
+        await EnsureAccessAsync(callerUserId, workspaceId, invoice, "view");
+
+        var payment = await _context.Payments.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.Id == paymentId && p.InvoiceId == invoiceId && p.WorkspaceId == workspaceId)
+            ?? throw new NotFoundException("Payment not found.");
+        if (payment.ProofFilePath == null)
+            throw new NotFoundException("No proof file attached to this payment.");
+
+        var content = await _fileStorage.OpenAsync(payment.ProofFilePath, CancellationToken.None);
+        return (content, payment.ProofFilePath);
+    }
+
+    private async Task<string?> SaveProofFileAsync(Guid workspaceId, Guid invoiceId, IFormFile? proofFile)
+    {
+        if (proofFile == null) return null;
+
+        var extension = Path.GetExtension(proofFile.FileName);
+        if (!AllowedProofExtensions.Contains(extension))
+            throw new ValidationException($"File type '{extension}' is not allowed. Allowed types: {string.Join(", ", AllowedProofExtensions)}.");
+        if (proofFile.Length > DocumentService.MaxFileSizeBytes)
+            throw new ValidationException($"File exceeds the {DocumentService.MaxFileSizeBytes / (1024 * 1024)}MB size limit.");
+
+        var storedFileName = $"{Guid.NewGuid():N}_{proofFile.FileName}";
+        var proofPath = $"{workspaceId}/invoices/{invoiceId}/payments/{storedFileName}";
+        await using var stream = proofFile.OpenReadStream();
+        await _fileStorage.SaveAsync(stream, proofPath, CancellationToken.None);
+        return proofPath;
     }
 
     public async Task SendAsync(Guid workspaceId, Guid callerUserId, Guid invoiceId, List<Guid> recipientPersonIds, string appBaseUrl)
@@ -306,7 +421,7 @@ public class InvoiceService : IInvoiceService
         var subtotal = invoice.LineItems.Sum(li => li.Quantity * li.UnitPrice);
         var tax = subtotal * invoice.TaxRatePercent / 100m;
         var total = subtotal - invoice.DiscountAmount + tax;
-        var amountPaid = invoice.Payments.Sum(p => p.Amount);
+        var amountPaid = invoice.Payments.Where(p => !p.IsVoided).Sum(p => p.IsRefund ? -p.Amount : p.Amount);
         var balance = total - amountPaid;
 
         var isOverdue = invoice.Status is "Sent" or "PartiallyPaid" && invoice.DueDate.HasValue && invoice.DueDate.Value.Date < DateTime.UtcNow.Date;
@@ -321,10 +436,10 @@ public class InvoiceService : IInvoiceService
         return $"INV-{count + 1:D4}";
     }
 
-    private async Task<string> NextReceiptNumberAsync(Guid workspaceId)
+    private async Task<string> NextReceiptNumberAsync(Guid workspaceId, string prefix)
     {
         var count = await _context.Payments.IgnoreQueryFilters().CountAsync(p => p.WorkspaceId == workspaceId);
-        return $"RCP-{count + 1:D4}";
+        return $"{prefix}-{count + 1:D4}";
     }
 
     /// <summary>Job-scoped invoices use job-scoped access (covers Client/Finance role
@@ -407,7 +522,7 @@ public class InvoiceService : IInvoiceService
             var otherInvoicesAmount = GetAmountBilledAgainstQuotationLine(jobId.Value, group.Key, excludingInvoiceId);
             var totalBilled = thisInvoiceAmount + otherInvoicesAmount;
             if (totalBilled > quotationLine.Value.Amount)
-                throw new ValidationException($"Billing {totalBilled} against this quotation line would exceed its total of {quotationLine.Value.Amount}.");
+                throw new ValidationException($"Billing {totalBilled:0.00} against this quotation line would exceed its total of {quotationLine.Value.Amount:0.00}.");
         }
 
         var directMilestoneGroups = items.Where(i => i.MilestoneId.HasValue && !i.QuotationLineId.HasValue).GroupBy(i => i.MilestoneId!.Value);
@@ -461,7 +576,7 @@ public class InvoiceService : IInvoiceService
 
         var subtotal = lineItems.Sum(li => li.Quantity * li.UnitPrice);
         if (discountAmount > subtotal)
-            throw new ValidationException($"Discount ({discountAmount}) cannot exceed the subtotal ({subtotal}).");
+            throw new ValidationException($"Discount ({discountAmount:0.00}) cannot exceed the subtotal ({subtotal:0.00}).");
     }
 
     /// <summary>Once a payment exists, only DueDate may change - everything that affects
@@ -500,7 +615,7 @@ public class InvoiceService : IInvoiceService
         var total = subtotal - discountAmount + subtotal * taxRatePercent / 100m;
         var scheduled = installments.Sum(i => i.Amount);
         if (scheduled != total)
-            throw new ValidationException($"Installments must sum to the invoice total ({total}), got {scheduled}.");
+            throw new ValidationException($"Installments must sum to the invoice total ({total:0.00}), got {scheduled:0.00}.");
     }
 
     /// <summary>Ordered by due date, walks cumulative installment amount against the
