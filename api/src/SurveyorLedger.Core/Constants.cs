@@ -37,6 +37,7 @@ public static class Constants
         public const string EmailAlreadySet = "EMAIL_ALREADY_SET";
         public const string AccountLocked = "ACCOUNT_LOCKED";
         public const string TooManyRequests = "TOO_MANY_REQUESTS";
+        public const string WorkspaceLimitReached = "WORKSPACE_LIMIT_REACHED";
     }
 
     public static class Permissions
@@ -48,6 +49,14 @@ public static class Constants
         public const string ManageWorkspaceMembers = "workspace.manage_members";
     }
 
+    public static class OrganizationPermissions
+    {
+        public const string ViewOrganization = "organization.view";
+        public const string ManageOrganizationMembers = "organization.manage_members";
+        public const string ManageSubscription = "organization.manage_subscription";
+        public const string CreateWorkspaceInOrg = "organization.create_workspace";
+    }
+
     public static class SystemRoles
     {
         public const string Admin = "Admin";
@@ -55,6 +64,8 @@ public static class Constants
         public const string Client = "Client";
         public const string Member = "Member";
         public const string Finance = "Finance";
+        public const string OrgOwner = "OrgOwner";
+        public const string OrgMember = "OrgMember";
     }
 
     public static class ScopeTypes
@@ -68,4 +79,20 @@ public static class Constants
     /// declared. GetAccessibleJobsAsync (ScopedAccessService) walks it broadest-first.</summary>
     public static readonly string[] ScopeHierarchy =
         { ScopeTypes.Organization, ScopeTypes.Workspace, ScopeTypes.Job };
+
+    /// <summary>Hardcoded subscription tiers - max active Workspaces an Organization on
+    /// that tier may hold. int.MaxValue stands in for "unlimited".</summary>
+    public static class OrganizationTiers
+    {
+        public const string Free = "Free";
+        public const string Pro = "Pro";
+        public const string Business = "Business";
+
+        public static readonly IReadOnlyDictionary<string, int> MaxWorkspaces = new Dictionary<string, int>
+        {
+            [Free] = 1,
+            [Pro] = 5,
+            [Business] = int.MaxValue
+        };
+    }
 }

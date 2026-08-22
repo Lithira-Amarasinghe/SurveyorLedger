@@ -124,7 +124,13 @@ public class RolePermissionConfiguration : IEntityTypeConfiguration<RolePermissi
             Grant(new Guid("00000000-0000-0000-0000-000000000290"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewAllExpenseId),
             // Reports - Admin only, single view permission covering all four report
             // endpoints (one page, one access level).
-            Grant(new Guid("00000000-0000-0000-0000-000000000291"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewReportId)
+            Grant(new Guid("00000000-0000-0000-0000-000000000291"), RoleConfiguration.AdminRoleId, PermissionConfiguration.ViewReportId),
+            // Organization - OrgOwner: full control. OrgMember: view only.
+            Grant(new Guid("00000000-0000-0000-0000-000000000292"), RoleConfiguration.OrgOwnerRoleId, PermissionConfiguration.ViewOrganizationId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000293"), RoleConfiguration.OrgOwnerRoleId, PermissionConfiguration.ManageOrgMembersId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000294"), RoleConfiguration.OrgOwnerRoleId, PermissionConfiguration.ManageSubscriptionId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000295"), RoleConfiguration.OrgOwnerRoleId, PermissionConfiguration.CreateWorkspaceInOrgId),
+            Grant(new Guid("00000000-0000-0000-0000-000000000296"), RoleConfiguration.OrgMemberRoleId, PermissionConfiguration.ViewOrganizationId)
         );
     }
 }

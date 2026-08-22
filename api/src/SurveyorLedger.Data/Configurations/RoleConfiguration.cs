@@ -14,6 +14,8 @@ public class RoleConfiguration : IEntityTypeConfiguration<Role>
     public static readonly Guid MemberRoleId = new("00000000-0000-0000-0000-000000000005");
     public static readonly Guid FinanceRoleId = new("00000000-0000-0000-0000-000000000006");
     public static readonly Guid WorkspaceMemberRoleId = new("00000000-0000-0000-0000-000000000801");
+    public static readonly Guid OrgOwnerRoleId = new("00000000-0000-0000-0000-000000000009");
+    public static readonly Guid OrgMemberRoleId = new("00000000-0000-0000-0000-000000000010");
 
     public void Configure(EntityTypeBuilder<Role> builder)
     {
@@ -35,7 +37,9 @@ public class RoleConfiguration : IEntityTypeConfiguration<Role>
             new Role { Id = ClientRoleId, Name = Constants.SystemRoles.Client, Description = "Views job status and results for their organization.", IsSystem = true, PolicyId = AssignmentPolicyConfiguration.SingleScopeId, CreatedAt = seededAt, UpdatedAt = seededAt },
             new Role { Id = MemberRoleId, Name = Constants.SystemRoles.Member, Description = "Workspace membership only. No access to jobs or land until assigned.", IsSystem = true, PolicyId = AssignmentPolicyConfiguration.FullChainId, CreatedAt = seededAt, UpdatedAt = seededAt },
             new Role { Id = FinanceRoleId, Name = Constants.SystemRoles.Finance, Description = "Job-scoped view of invoices and quotations for that job only.", IsSystem = true, PolicyId = AssignmentPolicyConfiguration.SingleScopeId, CreatedAt = seededAt, UpdatedAt = seededAt },
-            new Role { Id = WorkspaceMemberRoleId, Name = "WorkspaceMember", Description = "Least-privilege membership granted automatically when a role requires workspace-level presence.", IsSystem = true, PolicyId = AssignmentPolicyConfiguration.SingleScopeId, CreatedAt = seededAt, UpdatedAt = seededAt }
+            new Role { Id = WorkspaceMemberRoleId, Name = "WorkspaceMember", Description = "Least-privilege membership granted automatically when a role requires workspace-level presence.", IsSystem = true, PolicyId = AssignmentPolicyConfiguration.SingleScopeId, CreatedAt = seededAt, UpdatedAt = seededAt },
+            new Role { Id = OrgOwnerRoleId, Name = Constants.SystemRoles.OrgOwner, Description = "Owns an organization: manages its subscription, workspaces, and members.", IsSystem = true, PolicyId = AssignmentPolicyConfiguration.SingleScopeId, CreatedAt = seededAt, UpdatedAt = seededAt },
+            new Role { Id = OrgMemberRoleId, Name = Constants.SystemRoles.OrgMember, Description = "Member of an organization. Workspace access is separate and granted per workspace.", IsSystem = true, PolicyId = AssignmentPolicyConfiguration.SingleScopeId, CreatedAt = seededAt, UpdatedAt = seededAt }
         );
     }
 }
