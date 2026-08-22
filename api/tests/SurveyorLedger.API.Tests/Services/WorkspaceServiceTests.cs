@@ -70,4 +70,14 @@ public class WorkspaceServiceTests : WorkspaceIntegrationTestBase
 
         Assert.Equal(Constants.ErrorCodes.WorkspaceLimitReached, ex.Code);
     }
+
+    [Fact]
+    public async Task GetUserWorkspacesAsync_IncludesOrganizationId()
+    {
+        var svc = GetService<IWorkspaceService>();
+        var workspaces = await svc.GetUserWorkspacesAsync(AdminId);
+
+        var workspace = workspaces.Single(w => w.Workspace.Id == WorkspaceId);
+        Assert.NotEqual(Guid.Empty, workspace.Workspace.OrganizationId);
+    }
 }

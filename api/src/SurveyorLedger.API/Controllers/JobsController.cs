@@ -39,6 +39,7 @@ namespace SurveyorLedger.API.Controllers
                 Status = j.Status,
                 WorkspaceId = j.WorkspaceId,
                 WorkspaceName = j.WorkspaceName,
+                OrganizationId = j.OrganizationId,
                 AccessScopeType = j.AccessScopeType
             }).ToList();
 

@@ -18,7 +18,7 @@ namespace SurveyorLedger.API.Services;
 /// </summary>
 public record AccessibleJob(
     Guid JobId, string JobNumber, string Title, string Status,
-    Guid WorkspaceId, string WorkspaceName, string AccessScopeType);
+    Guid WorkspaceId, string WorkspaceName, Guid OrganizationId, string AccessScopeType);
 
 public interface IScopedAccessService
 {
@@ -361,14 +361,15 @@ public class ScopedAccessService : IScopedAccessService
             .ToList();
 
         var workspaceIds = tagged.Select(t => t.Job.WorkspaceId).Distinct().ToList();
-        var workspaceNames = await _context.Workspaces
+        var workspaceInfo = await _context.Workspaces
             .Where(w => workspaceIds.Contains(w.Id))
-            .ToDictionaryAsync(w => w.Id, w => w.Name);
+            .ToDictionaryAsync(w => w.Id, w => new { w.Name, w.OrganizationId });
 
         return tagged
             .Select(t => new AccessibleJob(
                 t.Job.Id, t.Job.JobNumber, t.Job.Title, t.Job.Status,
-                t.Job.WorkspaceId, workspaceNames.GetValueOrDefault(t.Job.WorkspaceId, "Unknown workspace"),
+                t.Job.WorkspaceId, workspaceInfo.GetValueOrDefault(t.Job.WorkspaceId)?.Name ?? "Unknown workspace",
+                workspaceInfo.GetValueOrDefault(t.Job.WorkspaceId)?.OrganizationId ?? Guid.Empty,
                 t.Scope))
             .ToList();
     }

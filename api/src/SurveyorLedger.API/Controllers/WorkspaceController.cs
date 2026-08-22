@@ -210,7 +210,9 @@ namespace SurveyorLedger.API.Controllers
             CreatedAt = w.Workspace.CreatedAt,
             IsActive = w.Workspace.IsActive,
             Tier = w.Tier,
-            Roles = w.Roles
+            Roles = w.Roles,
+            OrganizationId = w.Workspace.OrganizationId,
+            OrganizationName = w.Workspace.Organization?.Name ?? ""
         };
     }
 }

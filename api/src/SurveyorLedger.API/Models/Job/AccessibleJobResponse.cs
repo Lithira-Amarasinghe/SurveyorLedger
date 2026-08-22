@@ -9,6 +9,7 @@ public class AccessibleJobResponse
     public required string Status { get; set; }
     public Guid WorkspaceId { get; set; }
     public required string WorkspaceName { get; set; }
+    public Guid OrganizationId { get; set; }
 
     /// <summary>The real scope-type value (Constants.ScopeTypes) the access was found at - "Workspace" or "Job" today, "Organization" later.</summary>
     public required string AccessScopeType { get; set; }

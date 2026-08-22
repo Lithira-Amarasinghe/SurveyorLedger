@@ -39,4 +39,10 @@ public class WorkspaceResponse
     /// The caller's role name(s) on this workspace.
     /// </summary>
     public required List<string> Roles { get; set; }
+
+    /// <summary>The organization this workspace belongs to.</summary>
+    public Guid OrganizationId { get; set; }
+
+    /// <summary>The organization's name, for display without a second lookup.</summary>
+    public required string OrganizationName { get; set; }
 }

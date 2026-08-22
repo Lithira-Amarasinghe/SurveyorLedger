@@ -45,6 +45,20 @@ public class AccessibleJobsTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
+    public async Task GetAccessibleJobsAsync_IncludesOrganizationId()
+    {
+        _jobService = GetService<IJobService>();
+        _access = GetService<IScopedAccessService>();
+        var job = await _jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Job A" });
+
+        var jobs = await _access.GetAccessibleJobsAsync(AdminId);
+
+        var result = Assert.Single(jobs);
+        Assert.Equal(job.Id, result.JobId);
+        Assert.NotEqual(Guid.Empty, result.OrganizationId);
+    }
+
+    [Fact]
     public async Task PlainMember_WithNoJobViewAll_AndNoDirectGrant_SeesNoJobs()
     {
         // ClientId from the base fixture is a plain workspace Member - has a Workspace-scope
