@@ -1,7 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SurveyorLedger.API.Models.Organization;
+using SurveyorLedger.API.Models.Workspace;
 using SurveyorLedger.API.Services;
 using SurveyorLedger.Core;
+using SurveyorLedger.Core.Exceptions;
 using SurveyorLedger.Data.Configurations;
 using Xunit;
 
@@ -17,6 +20,7 @@ public class WorkspaceServiceTests : WorkspaceIntegrationTestBase
     protected override void ConfigureServices(IServiceCollection services)
     {
         services.AddScoped<IWorkspaceService, WorkspaceService>();
+        services.AddScoped<IOrganizationService, OrganizationService>();
     }
 
     [Fact]
@@ -48,5 +52,22 @@ public class WorkspaceServiceTests : WorkspaceIntegrationTestBase
 
         Assert.Contains("organization.create_workspace", ownerPermissions);
         Assert.Contains("organization.manage_subscription", ownerPermissions);
+    }
+
+    [Fact]
+    public async Task CreateWorkspaceAsync_beyond_tier_limit_throws_WorkspaceLimitReached()
+    {
+        var orgService = GetService<IOrganizationService>();
+        var workspaceService = GetService<IWorkspaceService>();
+        var owner = await CreateUserAccountAsync("Cap", "Owner", "cap-owner@test.local");
+
+        var org = await orgService.CreateOrganizationAsync(owner, new OrganizationRequest { Name = "Cap Org" });
+        // Free tier caps at 1 workspace (Constants.OrganizationTiers.MaxWorkspaces[Free] == 1).
+        await workspaceService.CreateWorkspaceAsync(owner, org.Id, new WorkspaceRequest { Name = "First", OrganizationId = org.Id });
+
+        var ex = await Assert.ThrowsAsync<AppException>(() =>
+            workspaceService.CreateWorkspaceAsync(owner, org.Id, new WorkspaceRequest { Name = "Second", OrganizationId = org.Id }));
+
+        Assert.Equal(Constants.ErrorCodes.WorkspaceLimitReached, ex.Code);
     }
 }

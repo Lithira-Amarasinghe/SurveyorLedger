@@ -21,8 +21,9 @@ public class WorkspaceRequest
     public string? Description { get; set; }
 
     /// <summary>
-    /// Subscription tier for the new workspace. "Free" or "Pro".
+    /// The organization this workspace belongs to. Its subscription tier caps how many
+    /// workspaces it may hold.
     /// </summary>
-    [RegularExpression("^(Free|Pro)$", ErrorMessage = "Tier must be 'Free' or 'Pro'.")]
-    public string Tier { get; set; } = "Free";
+    [Required(ErrorMessage = "OrganizationId is required.")]
+    public required Guid OrganizationId { get; set; }
 }
