@@ -36,6 +36,7 @@ import { unsavedChangesGuard } from './core/unsaved-changes.guard';
 import { jobAccessGuard } from './core/job-access.guard';
 import { guestGuard } from './core/guest.guard';
 import { workspaceResolveGuard } from './core/workspace-resolve.guard';
+import { organizationResolveGuard } from './core/organization-resolve.guard';
 
 export const routes: Routes = [
   { path: '', component: LandingComponent },
@@ -62,7 +63,7 @@ export const routes: Routes = [
   {
     path: 'app',
     component: AppShellComponent,
-    canActivate: [authGuard],
+    canActivate: [authGuard, organizationResolveGuard],
     children: [
       { path: 'dashboard', component: DashboardComponent },
       { path: 'job/:workspaceId/:jobId', component: JobDetailComponent, canActivate: [jobAccessGuard], canDeactivate: [unsavedChangesGuard] },
