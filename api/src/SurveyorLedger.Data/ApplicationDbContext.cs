@@ -11,6 +11,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserAccount> UserAccounts { get; set; }
     public DbSet<Workspace> Workspaces { get; set; }
     public DbSet<Subscription> Subscriptions { get; set; }
+    public DbSet<Organization> Organizations { get; set; }
+    public DbSet<OrganizationSubscription> OrganizationSubscriptions { get; set; }
     public DbSet<Role> Roles { get; set; }
     public DbSet<RoleScope> RoleScopes { get; set; }
     public DbSet<ScopeParentType> ScopeParentTypes { get; set; }
@@ -48,6 +50,7 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Person>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<UserAccount>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<Workspace>().HasQueryFilter(x => x.IsActive);
+        modelBuilder.Entity<Organization>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<UserAccess>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<Land>().HasQueryFilter(x => x.IsActive);
         modelBuilder.Entity<Job>().HasQueryFilter(x => x.IsActive);

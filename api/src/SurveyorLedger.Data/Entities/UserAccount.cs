@@ -32,6 +32,7 @@ public class UserAccount
 
     public Person Person { get; set; }
     public ICollection<Workspace> OwnedWorkspaces { get; set; } = new List<Workspace>();
+    public ICollection<Organization> OwnedOrganizations { get; set; } = new List<Organization>();
     public ICollection<UserAccess> UserAccesses { get; set; } = new List<UserAccess>();
     public ICollection<AuthToken> AuthTokens { get; set; } = new List<AuthToken>();
     public ICollection<AuditLog> AuditLogs { get; set; } = new List<AuditLog>();
