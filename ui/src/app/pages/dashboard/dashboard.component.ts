@@ -5,6 +5,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { WorkspaceService, Workspace } from '../../core/workspace.service';
 import { JobService, AccessibleJob } from '../../core/job.service';
 import { CurrentWorkspaceService } from '../../core/current-workspace.service';
+import { CurrentOrganizationService } from '../../core/current-organization.service';
 import { CreateWorkspaceModalComponent } from '../workspace/create-modal/create-modal.component';
 
 type ViewMode = 'both' | 'jobs' | 'workspace';
@@ -122,8 +123,8 @@ type ViewMode = 'both' | 'jobs' | 'workspace';
   `
 })
 export class DashboardComponent implements OnInit {
-  workspaces = signal<Workspace[]>([]);
-  jobs = signal<AccessibleJob[]>([]);
+  allWorkspaces = signal<Workspace[]>([]);
+  allJobs = signal<AccessibleJob[]>([]);
   loading = signal(true);
   modalOpen = signal(false);
   notFoundError = signal(false);
@@ -132,6 +133,16 @@ export class DashboardComponent implements OnInit {
   workspaceFilter = '';
   statusFilter = '';
   accessTypeFilter = '';
+
+  workspaces = computed(() => {
+    const orgId = this.currentOrg.current()?.id;
+    return orgId ? this.allWorkspaces().filter(w => w.organizationId === orgId) : this.allWorkspaces();
+  });
+
+  jobs = computed(() => {
+    const orgId = this.currentOrg.current()?.id;
+    return orgId ? this.allJobs().filter(j => j.organizationId === orgId) : this.allJobs();
+  });
 
   /** Job-level-only jobs - no workspace access, shown separately below the Workspaces section. */
   directAccessJobs = computed(() => this.jobs().filter(j => j.accessScopeType === 'Job'));
@@ -152,6 +163,7 @@ export class DashboardComponent implements OnInit {
     private workspaceService: WorkspaceService,
     private jobService: JobService,
     private currentWorkspace: CurrentWorkspaceService,
+    protected currentOrg: CurrentOrganizationService,
     private route: ActivatedRoute,
     private router: Router
   ) {}
@@ -171,11 +183,11 @@ export class DashboardComponent implements OnInit {
     const done = () => { if (--remaining === 0) this.loading.set(false); };
 
     this.workspaceService.list().subscribe({
-      next: (workspaces) => { this.workspaces.set(workspaces); done(); },
+      next: (workspaces) => { this.allWorkspaces.set(workspaces); done(); },
       error: () => done()
     });
     this.jobService.getMine().subscribe({
-      next: (jobs) => { this.jobs.set(jobs); done(); },
+      next: (jobs) => { this.allJobs.set(jobs); done(); },
       error: () => done()
     });
   }

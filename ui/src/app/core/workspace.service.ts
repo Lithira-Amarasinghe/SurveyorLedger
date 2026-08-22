@@ -12,6 +12,8 @@ export interface Workspace {
   isActive: boolean;
   tier: string;
   roles: string[];
+  organizationId: string;
+  organizationName: string;
 }
 
 /** An extra scope a member holds access to beyond the workspace itself - today, a specific job. */

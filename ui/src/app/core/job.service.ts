@@ -53,6 +53,7 @@ export interface AccessibleJob {
   status: string;
   workspaceId: string;
   workspaceName: string;
+  organizationId: string;
   accessScopeType: string;
 }
 
