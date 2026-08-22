@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SurveyorLedger.API.Services;
+using SurveyorLedger.Core;
 using Xunit;
 
 namespace SurveyorLedger.API.Tests.Services;
@@ -42,5 +43,28 @@ public class OrganizationBackfillServiceTests : WorkspaceIntegrationTestBase
         var orgCountAfterSecondRun = await Context.Organizations.CountAsync();
 
         Assert.Equal(orgCountAfterFirstRun, orgCountAfterSecondRun);
+    }
+
+    [Fact]
+    public async Task RunAsync_grants_OrgMember_to_a_preexisting_workspace_member_without_org_access()
+    {
+        // Simulates data from before this feature: SurveyorId has active Workspace-scope
+        // access (seeded by WorkspaceIntegrationTestBase) but no Organization-scope grant -
+        // the base seed's direct GrantAsync call now chain-grants OrgMember automatically
+        // (Surveyor's policy reaches Organization as of this feature), so remove that grant
+        // here to reproduce the actual pre-existing-data scenario this backfill exists for.
+        await Context.UserAccesses
+            .Where(ua => ua.UserId == SurveyorId && ua.ScopeType == Constants.ScopeTypes.Organization)
+            .ExecuteDeleteAsync();
+
+        var backfill = GetService<IOrganizationBackfillService>();
+        await backfill.RunAsync();
+
+        var organizationId = await Context.Workspaces.Where(w => w.Id == WorkspaceId).Select(w => w.OrganizationId).FirstAsync();
+        var org = await Context.Organizations.SingleAsync(o => o.Id == organizationId);
+
+        var hasOrgMember = await Context.UserAccesses.AnyAsync(ua =>
+            ua.UserId == SurveyorId && ua.ScopeType == Constants.ScopeTypes.Organization && ua.ScopeId == org.Id && ua.IsActive);
+        Assert.True(hasOrgMember);
     }
 }

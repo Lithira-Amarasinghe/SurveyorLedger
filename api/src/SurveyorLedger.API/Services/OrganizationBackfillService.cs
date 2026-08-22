@@ -42,9 +42,6 @@ public class OrganizationBackfillService : IOrganizationBackfillService
             .Distinct()
             .ToListAsync();
 
-        if (orphanOwnerIds.Count == 0)
-            return;
-
         foreach (var ownerId in orphanOwnerIds)
         {
             var ownerWorkspaces = await _context.Workspaces
@@ -95,6 +92,63 @@ public class OrganizationBackfillService : IOrganizationBackfillService
 
             _logger.LogInformation("Backfilled organization {OrganizationId} for owner {OwnerId} ({WorkspaceCount} workspaces)",
                 org.Id, ownerId, ownerWorkspaces.Count);
+        }
+
+        await BackfillMemberOrgAccessAsync();
+    }
+
+    /// <summary>
+    /// Idempotent: for every active Workspace-scope or Job-scope UserAccess row whose user has
+    /// no Organization-scope grant on that workspace's org yet, grants OrgMember there directly.
+    /// Covers data from before invites/direct grants started reaching Organization (this
+    /// feature's rollout) - safe to call on every startup, a no-op once every member has caught up.
+    /// </summary>
+    private async Task BackfillMemberOrgAccessAsync()
+    {
+        var workspaceScopeUserWorkspacePairs = await _context.UserAccesses
+            .Where(ua => ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Workspace)
+            .Select(ua => new { ua.UserId, WorkspaceId = ua.ScopeId })
+            .Distinct()
+            .ToListAsync();
+
+        var jobScopeUserJobPairs = await _context.UserAccesses
+            .Where(ua => ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Job)
+            .Select(ua => new { ua.UserId, ua.ScopeId })
+            .Distinct()
+            .ToListAsync();
+        var jobWorkspaceIds = jobScopeUserJobPairs.Select(p => p.ScopeId).Distinct().ToList();
+        var jobToWorkspace = await _context.Jobs
+            .Where(j => jobWorkspaceIds.Contains(j.Id))
+            .ToDictionaryAsync(j => j.Id, j => j.WorkspaceId);
+
+        var userWorkspacePairs = workspaceScopeUserWorkspacePairs
+            .Select(p => (p.UserId, WorkspaceId: p.WorkspaceId))
+            .Concat(jobScopeUserJobPairs
+                .Where(p => jobToWorkspace.ContainsKey(p.ScopeId))
+                .Select(p => (p.UserId, WorkspaceId: jobToWorkspace[p.ScopeId])))
+            .Distinct()
+            .ToList();
+
+        if (userWorkspacePairs.Count == 0)
+            return;
+
+        var workspaceIds = userWorkspacePairs.Select(p => p.WorkspaceId).Distinct().ToList();
+        var workspaceToOrg = await _context.Workspaces
+            .Where(w => workspaceIds.Contains(w.Id))
+            .ToDictionaryAsync(w => w.Id, w => w.OrganizationId);
+
+        foreach (var (userId, workspaceId) in userWorkspacePairs)
+        {
+            if (!workspaceToOrg.TryGetValue(workspaceId, out var organizationId))
+                continue;
+
+            var alreadyMember = await _context.UserAccesses.AnyAsync(ua =>
+                ua.UserId == userId && ua.IsActive && ua.ScopeType == Constants.ScopeTypes.Organization && ua.ScopeId == organizationId);
+            if (alreadyMember)
+                continue;
+
+            await _grantService.GrantAsync(userId, RoleConfiguration.OrgMemberRoleId, Constants.ScopeTypes.Organization, organizationId, userId);
+            _logger.LogInformation("Backfilled OrgMember for user {UserId} on organization {OrganizationId}", userId, organizationId);
         }
     }
 }
