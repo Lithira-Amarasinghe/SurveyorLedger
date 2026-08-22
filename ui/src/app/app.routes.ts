@@ -37,6 +37,8 @@ import { jobAccessGuard } from './core/job-access.guard';
 import { guestGuard } from './core/guest.guard';
 import { workspaceResolveGuard } from './core/workspace-resolve.guard';
 import { organizationResolveGuard } from './core/organization-resolve.guard';
+import { OrganizationsListComponent } from './pages/organization/organizations-list.component';
+import { OrganizationSettingsComponent } from './pages/organization/organization-settings.component';
 
 export const routes: Routes = [
   { path: '', component: LandingComponent },
@@ -69,6 +71,8 @@ export const routes: Routes = [
       { path: 'job/:workspaceId/:jobId', component: JobDetailComponent, canActivate: [jobAccessGuard], canDeactivate: [unsavedChangesGuard] },
       { path: 'profile', component: ProfileComponent, canDeactivate: [unsavedChangesGuard] },
       { path: 'invitations', component: InvitationsComponent },
+      { path: 'organizations', component: OrganizationsListComponent },
+      { path: 'organizations/:id', component: OrganizationSettingsComponent },
       {
         path: 'workspace/:id',
         canActivate: [workspaceResolveGuard],
