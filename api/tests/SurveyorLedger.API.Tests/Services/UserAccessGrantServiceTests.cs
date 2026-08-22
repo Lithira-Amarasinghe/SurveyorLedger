@@ -62,13 +62,13 @@ public class UserAccessGrantServiceTests : IAsyncLifetime
         {
             Id = _fullChainPolicyId,
             Name = "FullChain",
-            RulesJson = "{\"ancestors\":[{\"scopeType\":\"Workspace\",\"grantRoleId\":\"" + _workspaceMemberRoleId + "\"}]}"
+            RulesJson = "{\"grants\":{\"Workspace\":\"" + _workspaceMemberRoleId + "\"}}"
         };
         var singleScopePolicy = new AssignmentPolicy
         {
             Id = _singleScopePolicyId,
             Name = "SingleScope",
-            RulesJson = "{\"ancestors\":[]}"
+            RulesJson = "{\"grants\":{}}"
         };
 
         // Seed roles
@@ -136,6 +136,15 @@ public class UserAccessGrantServiceTests : IAsyncLifetime
         _scopeIdResolverMock
             .Setup(x => x.GetChildIdsAsync(Constants.ScopeTypes.Workspace, Constants.ScopeTypes.Job, _workspaceId))
             .ReturnsAsync(new List<Guid> { _jobId });
+        // The rewritten grants-map walk resolves the real parent TYPE at each hop (not a fixed
+        // array position) - by default this file's world has no Organization level, so Workspace
+        // is the top. Individual tests below override this to add an Organization hop.
+        _scopeIdResolverMock
+            .Setup(x => x.GetParentScopeType(Constants.ScopeTypes.Job))
+            .Returns(Constants.ScopeTypes.Workspace);
+        _scopeIdResolverMock
+            .Setup(x => x.GetParentScopeType(Constants.ScopeTypes.Workspace))
+            .Returns((string?)null);
 
         _loggerMock = new Mock<ILogger<UserAccessGrantService>>();
 
@@ -287,5 +296,87 @@ public class UserAccessGrantServiceTests : IAsyncLifetime
             .ToListAsync();
         Assert.Single(workspaceAccesses);
         Assert.True(workspaceAccesses[0].IsActive);
+    }
+
+    /// <summary>Seeds a role using a two-hop grants map (Workspace + Organization) and points
+    /// the mocked resolver's Workspace hop at a real Organization, for the three tests below
+    /// that verify the walk correctly reaches Organization.</summary>
+    private async Task<(Guid RoleId, Guid OrgMemberRoleId, Guid OrgId)> SeedTwoHopRoleAsync()
+    {
+        var orgId = Guid.NewGuid();
+        var orgMemberRoleId = Guid.NewGuid();
+        var twoHopPolicyId = Guid.NewGuid();
+        var twoHopRoleId = Guid.NewGuid();
+
+        _context.AssignmentPolicies.Add(new AssignmentPolicy
+        {
+            Id = twoHopPolicyId,
+            Name = "TwoHopTestPolicy",
+            RulesJson = "{\"grants\":{\"Workspace\":\"" + _workspaceMemberRoleId + "\",\"Organization\":\"" + orgMemberRoleId + "\"}}"
+        });
+        _context.Roles.Add(new Role
+        {
+            Id = twoHopRoleId, Name = "TwoHopTestRole", Description = "test", IsSystem = false, PolicyId = twoHopPolicyId,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        _scopeIdResolverMock.Setup(x => x.GetParentScopeType(Constants.ScopeTypes.Workspace)).Returns(Constants.ScopeTypes.Organization);
+        _scopeIdResolverMock.Setup(x => x.GetParentScopeType(Constants.ScopeTypes.Organization)).Returns((string?)null);
+        _scopeIdResolverMock.Setup(x => x.GetParentIdAsync(Constants.ScopeTypes.Workspace, _workspaceId)).ReturnsAsync(orgId);
+
+        return (twoHopRoleId, orgMemberRoleId, orgId);
+    }
+
+    [Fact]
+    public async Task GrantAsync_JobStart_GrantsMapWalksToWorkspaceThenOrganization()
+    {
+        var (roleId, orgMemberRoleId, orgId) = await SeedTwoHopRoleAsync();
+
+        await _service.GrantAsync(_userId, roleId, Constants.ScopeTypes.Job, _jobId, _assignedBy);
+
+        var workspaceGrant = await _context.UserAccesses.SingleOrDefaultAsync(ua =>
+            ua.UserId == _userId && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == _workspaceId && ua.IsActive);
+        Assert.NotNull(workspaceGrant);
+        Assert.Equal(_workspaceMemberRoleId, workspaceGrant!.RoleId);
+
+        var orgGrant = await _context.UserAccesses.SingleOrDefaultAsync(ua =>
+            ua.UserId == _userId && ua.ScopeType == Constants.ScopeTypes.Organization && ua.ScopeId == orgId && ua.IsActive);
+        Assert.NotNull(orgGrant);
+        Assert.Equal(orgMemberRoleId, orgGrant!.RoleId);
+    }
+
+    [Fact]
+    public async Task GrantAsync_WorkspaceStart_SkipsWorkspaceHopGrantsOnlyOrganization()
+    {
+        // The same two-hop policy, but granted directly AT Workspace scope (mirrors
+        // WorkspaceService.AddMemberRoleAsync) - must not create a corrupted UserAccess row at
+        // Workspace scope using the Organization's guid as the scope id.
+        var (roleId, orgMemberRoleId, orgId) = await SeedTwoHopRoleAsync();
+
+        await _service.GrantAsync(_userId, roleId, Constants.ScopeTypes.Workspace, _workspaceId, _assignedBy);
+
+        var corrupted = await _context.UserAccesses.AnyAsync(ua =>
+            ua.UserId == _userId && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == orgId);
+        Assert.False(corrupted);
+
+        var orgGrant = await _context.UserAccesses.SingleOrDefaultAsync(ua =>
+            ua.UserId == _userId && ua.ScopeType == Constants.ScopeTypes.Organization && ua.ScopeId == orgId && ua.IsActive);
+        Assert.NotNull(orgGrant);
+        Assert.Equal(orgMemberRoleId, orgGrant!.RoleId);
+    }
+
+    [Fact]
+    public async Task ResolveTopAncestorAsync_WithStopAtScopeType_CapsWalkAtThatLevel()
+    {
+        var (roleId, _, _) = await SeedTwoHopRoleAsync();
+
+        var top = await _service.ResolveTopAncestorAsync(
+            Constants.ScopeTypes.Job, _jobId, roleId, stopAtScopeType: Constants.ScopeTypes.Workspace);
+
+        Assert.NotNull(top);
+        Assert.Equal(Constants.ScopeTypes.Workspace, top!.Value.ScopeType);
+        Assert.Equal(_workspaceId, top.Value.ScopeId);
+        Assert.Equal(_workspaceMemberRoleId, top.Value.RoleId);
     }
 }
