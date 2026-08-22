@@ -90,6 +90,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 
 // Register workspace service
 builder.Services.AddScoped<IWorkspaceService, WorkspaceService>();
+builder.Services.AddScoped<IOrganizationBackfillService, OrganizationBackfillService>();
 
 // Register invitation service
 builder.Services.AddScoped<IInvitationService, InvitationService>();
@@ -176,6 +177,9 @@ using (var scope = app.Services.CreateScope())
     await dbContext.Database.ExecuteSqlRawAsync(
         "UPDATE UserAccesses SET RoleId = '00000000-0000-0000-0000-000000000005' " +
         "WHERE ScopeType = 'Workspace' AND RoleId = '00000000-0000-0000-0000-000000000004'");
+
+    var backfillService = scope.ServiceProvider.GetRequiredService<IOrganizationBackfillService>();
+    await backfillService.RunAsync();
 
     var casbinService = scope.ServiceProvider.GetRequiredService<ICasbinService>();
     await casbinService.InitializeAsync();
