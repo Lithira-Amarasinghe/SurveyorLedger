@@ -406,6 +406,63 @@ public class InvitationFlowTests : WorkspaceIntegrationTestBase
     }
 
     [Fact]
+    public async Task PendingInvitationsList_StillShowsAChainingRoleInvite_AfterOrganizationHopAdded()
+    {
+        // Regression guard: before this feature, a Surveyor job-invite's primary scope was
+        // Workspace (chained from Job). The grants-map walk now reaches Organization too - this
+        // confirms ResolveTopAncestorAsync's stopAtScopeType cap keeps the invite's PRIMARY scope
+        // at Workspace, so it still shows up in the workspace's pending-invitations list.
+        _invitationService = GetService<IInvitationService>();
+        var jobService = GetService<IJobService>();
+
+        var job = await jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Guard job" });
+        var result = await jobService.InviteParticipantByEmailAsync(
+            WorkspaceId, AdminId, job.Id, "Surveyor", "guard.surveyor@test.local", "Guard", "Surveyor", null, null);
+
+        Assert.Equal(Constants.ScopeTypes.Workspace, result.ScopeType);
+
+        var pending = await _invitationService.GetPendingInvitationsAsync(WorkspaceId, AdminId);
+
+        Assert.Contains(pending, i => i.Email == "guard.surveyor@test.local" && i.ScopeType == Constants.ScopeTypes.Workspace);
+    }
+
+    [Fact]
+    public async Task AcceptingClientInvite_GrantsOrgMember_NeverGrantsWorkspaceMember()
+    {
+        _invitationService = GetService<IInvitationService>();
+        var jobService = GetService<IJobService>();
+
+        var job = await jobService.CreateAsync(WorkspaceId, AdminId, new JobRequest { Title = "Client boundary job" });
+        var result = await jobService.InviteParticipantByEmailAsync(
+            WorkspaceId, AdminId, job.Id, "Client", "new.client@test.local", "New", "Client", null, null);
+
+        // Client's OrgOnly policy has no ancestor at Workspace scope, so unlike a chaining role
+        // the invite's primary scope is Job itself, not Workspace.
+        Assert.Equal(Constants.ScopeTypes.Job, result.ScopeType);
+
+        await _invitationService.CompleteInvitationAsync(result.Token, new CompleteInvitationRequest
+        {
+            Password = "SomePassword123!",
+            ConfirmPassword = "SomePassword123!",
+            FirstName = "New",
+            LastName = "Client"
+        });
+        var accountId = await GetAccountIdAsync(result.UserId) ?? throw new Exception("Account should exist after completing invitation.");
+
+        await _invitationService.AcceptInvitationAsync(result.Id, accountId);
+
+        var organizationId = await Context.Workspaces.Where(w => w.Id == WorkspaceId).Select(w => w.OrganizationId).FirstAsync();
+
+        var hasWorkspaceMember = await Context.UserAccesses.AnyAsync(ua =>
+            ua.UserId == accountId && ua.ScopeType == Constants.ScopeTypes.Workspace && ua.ScopeId == WorkspaceId && ua.IsActive);
+        Assert.False(hasWorkspaceMember);
+
+        var hasOrgMember = await Context.UserAccesses.AnyAsync(ua =>
+            ua.UserId == accountId && ua.ScopeType == Constants.ScopeTypes.Organization && ua.ScopeId == organizationId && ua.IsActive);
+        Assert.True(hasOrgMember);
+    }
+
+    [Fact]
     public async Task GetMyInvitations_ReturnsInvitationsForThatUserOnly()
     {
         _invitationService = GetService<IInvitationService>();

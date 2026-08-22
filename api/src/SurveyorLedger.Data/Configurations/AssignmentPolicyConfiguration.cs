@@ -8,6 +8,7 @@ public class AssignmentPolicyConfiguration : IEntityTypeConfiguration<Assignment
 {
     public static readonly Guid SingleScopeId = new("00000000-0000-0000-0000-000000000701");
     public static readonly Guid FullChainId = new("00000000-0000-0000-0000-000000000702");
+    public static readonly Guid OrgOnlyId = new("00000000-0000-0000-0000-000000000703");
 
     public void Configure(EntityTypeBuilder<AssignmentPolicy> builder)
     {
@@ -22,13 +23,19 @@ public class AssignmentPolicyConfiguration : IEntityTypeConfiguration<Assignment
             {
                 Id = SingleScopeId,
                 Name = "SingleScope",
-                RulesJson = "{\"ancestors\":[]}"
+                RulesJson = "{\"grants\":{}}"
             },
             new AssignmentPolicy
             {
                 Id = FullChainId,
                 Name = "FullChain",
-                RulesJson = "{\"ancestors\":[{\"scopeType\":\"Workspace\",\"grantRoleId\":\"00000000-0000-0000-0000-000000000801\"}]}"
+                RulesJson = "{\"grants\":{\"Workspace\":\"00000000-0000-0000-0000-000000000801\",\"Organization\":\"00000000-0000-0000-0000-000000000010\"}}"
+            },
+            new AssignmentPolicy
+            {
+                Id = OrgOnlyId,
+                Name = "OrgOnly",
+                RulesJson = "{\"grants\":{\"Organization\":\"00000000-0000-0000-0000-000000000010\"}}"
             }
         );
     }

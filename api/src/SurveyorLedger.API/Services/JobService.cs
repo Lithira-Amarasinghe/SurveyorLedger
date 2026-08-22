@@ -259,7 +259,12 @@ public class JobService : IJobService
         string? DescendantScopeType, Guid? DescendantScopeId, Guid? DescendantRoleId)>
         ResolveInvitationTargetAsync(Guid workspaceId, Guid jobId, Role jobRole, Job job)
     {
-        var topAncestor = await _grantService.ResolveTopAncestorAsync(Constants.ScopeTypes.Job, jobId, jobRole.Id);
+        // Capped at Workspace: an invitation's primary scope must stay at the level pending-
+        // invitation lists actually filter by (InvitationService.GetPendingInvitationsAsync
+        // queries ScopeType == Workspace) - the grant-time walk still reaches Organization on
+        // accept regardless, this cap only affects where the INVITE ITSELF is targeted.
+        var topAncestor = await _grantService.ResolveTopAncestorAsync(
+            Constants.ScopeTypes.Job, jobId, jobRole.Id, stopAtScopeType: Constants.ScopeTypes.Workspace);
         if (topAncestor == null)
             return (Constants.ScopeTypes.Job, jobId, jobRole.Id, JobDisplayName(job), null, null, null);
 
