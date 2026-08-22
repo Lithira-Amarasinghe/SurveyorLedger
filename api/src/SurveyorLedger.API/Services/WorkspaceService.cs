@@ -31,7 +31,7 @@ public record WorkspaceLetterhead(
 
 public interface IWorkspaceService
 {
-    Task<WorkspaceWithAccess> CreateWorkspaceAsync(Guid userId, WorkspaceRequest request);
+    Task<WorkspaceWithAccess> CreateWorkspaceAsync(Guid userId, Guid organizationId, WorkspaceRequest request);
     Task<List<WorkspaceWithAccess>> GetUserWorkspacesAsync(Guid userId);
     Task<WorkspaceWithAccess?> GetWorkspaceByIdAsync(Guid workspaceId, Guid userId);
     Task<List<MemberInfo>> GetMembersAsync(Guid workspaceId, Guid callerUserId);
@@ -76,15 +76,30 @@ public class WorkspaceService : IWorkspaceService
         _logger = logger;
     }
 
-    public async Task<WorkspaceWithAccess> CreateWorkspaceAsync(Guid userId, WorkspaceRequest request)
+    public async Task<WorkspaceWithAccess> CreateWorkspaceAsync(Guid userId, Guid organizationId, WorkspaceRequest request)
     {
+        var allowed = await _casbinService.EnforceAsync(userId.ToString(), "organization", "create_workspace", organizationId.ToString());
+        if (!allowed)
+            throw new ForbiddenException("You do not have permission to create a workspace in this organization.");
+
+        var organization = await _context.Organizations.Include(o => o.Subscription)
+            .FirstOrDefaultAsync(o => o.Id == organizationId && o.IsActive)
+            ?? throw new NotFoundException("Organization not found");
+
+        var tier = organization.Subscription?.Tier ?? Constants.OrganizationTiers.Free;
+        var maxWorkspaces = Constants.OrganizationTiers.MaxWorkspaces[tier];
+        var currentCount = await _context.Workspaces.CountAsync(w => w.OrganizationId == organizationId && w.IsActive);
+        if (currentCount >= maxWorkspaces)
+            throw new AppException(Constants.ErrorCodes.WorkspaceLimitReached,
+                $"This organization's {tier} plan allows at most {maxWorkspaces} workspace(s).", 409);
+
         var workspace = new Workspace
         {
             Id = Guid.NewGuid(),
             Name = request.Name,
             Description = request.Description,
             OwnerId = userId,
-            SubscriptionTier = request.Tier,
+            OrganizationId = organizationId,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -114,25 +129,12 @@ public class WorkspaceService : IWorkspaceService
         };
 
         await _context.UserAccesses.AddAsync(userAccess);
-
-        var subscription = new Subscription
-        {
-            Id = Guid.NewGuid(),
-            WorkspaceId = workspace.Id,
-            Tier = request.Tier,
-            Status = "Active",
-            StartDate = DateTime.UtcNow,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
-
-        await _context.Subscriptions.AddAsync(subscription);
         await _context.SaveChangesAsync();
 
         await _casbinService.AddRoleForUserAsync(userId.ToString(), adminRole.Name, workspace.Id.ToString());
 
-        _logger.LogInformation("Workspace created: {WorkspaceId} by {UserId}", workspace.Id, userId);
-        return new WorkspaceWithAccess(workspace, workspace.SubscriptionTier, new List<string> { adminRole.Name });
+        _logger.LogInformation("Workspace created: {WorkspaceId} by {UserId} in organization {OrganizationId}", workspace.Id, userId, organizationId);
+        return new WorkspaceWithAccess(workspace, tier, new List<string> { adminRole.Name });
     }
 
     public async Task<List<WorkspaceWithAccess>> GetUserWorkspacesAsync(Guid userId)
@@ -146,6 +148,7 @@ public class WorkspaceService : IWorkspaceService
         var workspaceIds = rolesByWorkspace.Keys.ToList();
 
         var workspaces = await _context.Workspaces
+            .Include(w => w.Organization).ThenInclude(o => o.Subscription)
             .Where(w => workspaceIds.Contains(w.Id) && w.IsActive)
             .ToListAsync();
 
@@ -156,7 +159,8 @@ public class WorkspaceService : IWorkspaceService
             if (!allowed)
                 continue;
 
-            result.Add(new WorkspaceWithAccess(w, w.SubscriptionTier, rolesByWorkspace[w.Id]));
+            var tier = w.Organization.Subscription?.Tier ?? Constants.OrganizationTiers.Free;
+            result.Add(new WorkspaceWithAccess(w, tier, rolesByWorkspace[w.Id]));
         }
 
         return result;
@@ -177,12 +181,14 @@ public class WorkspaceService : IWorkspaceService
             return null;
 
         var workspace = await _context.Workspaces
+            .Include(w => w.Organization).ThenInclude(o => o.Subscription)
             .FirstOrDefaultAsync(w => w.Id == workspaceId && w.IsActive);
 
         if (workspace == null)
             return null;
 
-        return new WorkspaceWithAccess(workspace, workspace.SubscriptionTier, roles);
+        var tier = workspace.Organization.Subscription?.Tier ?? Constants.OrganizationTiers.Free;
+        return new WorkspaceWithAccess(workspace, tier, roles);
     }
 
     public async Task<List<MemberInfo>> GetMembersAsync(Guid workspaceId, Guid callerUserId)

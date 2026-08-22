@@ -6,7 +6,7 @@ public class Workspace
     public string Name { get; set; }
     public string? Description { get; set; }
     public Guid OwnerId { get; set; }
-    public string SubscriptionTier { get; set; } = "Free";
+    public Guid OrganizationId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public bool IsActive { get; set; } = true;
@@ -19,7 +19,7 @@ public class Workspace
     public string? LetterheadLogoPath { get; set; }
 
     public UserAccount Owner { get; set; }
-    public ICollection<Subscription> Subscriptions { get; set; } = new List<Subscription>();
+    public Organization Organization { get; set; }
     public ICollection<UserAccess> UserAccesses { get; set; } = new List<UserAccess>();
     public ICollection<AuditLog> AuditLogs { get; set; } = new List<AuditLog>();
 }

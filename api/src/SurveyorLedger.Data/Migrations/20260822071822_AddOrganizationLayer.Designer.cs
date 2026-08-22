@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SurveyorLedger.Data;
 
@@ -11,9 +12,11 @@ using SurveyorLedger.Data;
 namespace SurveyorLedger.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260822071822_AddOrganizationLayer")]
+    partial class AddOrganizationLayer
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2484,6 +2487,54 @@ namespace SurveyorLedger.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SurveyorLedger.Data.Entities.Subscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<DateTime?>("EndDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("StartDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Active");
+
+                    b.Property<string>("Tier")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Free");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("WorkspaceId");
+
+                    b.ToTable("Subscriptions");
+                });
+
             modelBuilder.Entity("SurveyorLedger.Data.Entities.UserAccess", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2646,11 +2697,18 @@ namespace SurveyorLedger.Data.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
 
-                    b.Property<Guid>("OrganizationId")
+                    b.Property<Guid?>("OrganizationId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SubscriptionTier")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("Free");
 
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
@@ -3316,6 +3374,17 @@ namespace SurveyorLedger.Data.Migrations
                     b.Navigation("Role");
                 });
 
+            modelBuilder.Entity("SurveyorLedger.Data.Entities.Subscription", b =>
+                {
+                    b.HasOne("SurveyorLedger.Data.Entities.Workspace", "Workspace")
+                        .WithMany("Subscriptions")
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Workspace");
+                });
+
             modelBuilder.Entity("SurveyorLedger.Data.Entities.UserAccess", b =>
                 {
                     b.HasOne("SurveyorLedger.Data.Entities.Role", "Role")
@@ -3355,8 +3424,7 @@ namespace SurveyorLedger.Data.Migrations
                     b.HasOne("SurveyorLedger.Data.Entities.Organization", "Organization")
                         .WithMany("Workspaces")
                         .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SurveyorLedger.Data.Entities.UserAccount", "Owner")
                         .WithMany("OwnedWorkspaces")
@@ -3437,6 +3505,8 @@ namespace SurveyorLedger.Data.Migrations
             modelBuilder.Entity("SurveyorLedger.Data.Entities.Workspace", b =>
                 {
                     b.Navigation("AuditLogs");
+
+                    b.Navigation("Subscriptions");
 
                     b.Navigation("UserAccesses");
                 });

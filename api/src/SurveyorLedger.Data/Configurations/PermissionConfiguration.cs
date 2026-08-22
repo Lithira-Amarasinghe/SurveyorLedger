@@ -41,6 +41,10 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
     public static readonly Guid DeleteBudgetId = new("00000000-0000-0000-0000-000000000142");
     public static readonly Guid ViewAllExpenseId = new("00000000-0000-0000-0000-000000000143");
     public static readonly Guid ViewReportId = new("00000000-0000-0000-0000-000000000144");
+    public static readonly Guid ViewOrganizationId = new("00000000-0000-0000-0000-000000000145");
+    public static readonly Guid ManageOrgMembersId = new("00000000-0000-0000-0000-000000000146");
+    public static readonly Guid ManageSubscriptionId = new("00000000-0000-0000-0000-000000000147");
+    public static readonly Guid CreateWorkspaceInOrgId = new("00000000-0000-0000-0000-000000000148");
 
     public void Configure(EntityTypeBuilder<Permission> builder)
     {
@@ -95,7 +99,11 @@ public class PermissionConfiguration : IEntityTypeConfiguration<Permission>
             new Permission { Id = EditBudgetId, Name = "budget.edit", Description = "Edit a job's existing budget.", Resource = "budget", Action = "edit", Scope = null, CreatedAt = seededAt },
             new Permission { Id = DeleteBudgetId, Name = "budget.delete", Description = "Clear a job's budget.", Resource = "budget", Action = "delete", Scope = null, CreatedAt = seededAt },
             new Permission { Id = ViewAllExpenseId, Name = "expense.view_all", Description = "View every StaffCost expense on a job, not just the caller's own payee rows.", Resource = "expense", Action = "view_all", Scope = null, CreatedAt = seededAt },
-            new Permission { Id = ViewReportId, Name = "report.view", Description = "View workspace-wide financial reports.", Resource = "report", Action = "view", Scope = null, CreatedAt = seededAt }
+            new Permission { Id = ViewReportId, Name = "report.view", Description = "View workspace-wide financial reports.", Resource = "report", Action = "view", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = ViewOrganizationId, Name = "organization.view", Description = "View organization details and its workspaces.", Resource = "organization", Action = "view", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = ManageOrgMembersId, Name = "organization.manage_members", Description = "Add and remove organization members.", Resource = "organization", Action = "manage_members", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = ManageSubscriptionId, Name = "organization.manage_subscription", Description = "Change the organization's subscription tier.", Resource = "organization", Action = "manage_subscription", Scope = null, CreatedAt = seededAt },
+            new Permission { Id = CreateWorkspaceInOrgId, Name = "organization.create_workspace", Description = "Create a new workspace under the organization, subject to its tier's workspace limit.", Resource = "organization", Action = "create_workspace", Scope = null, CreatedAt = seededAt }
         );
     }
 }

@@ -36,7 +36,7 @@ namespace SurveyorLedger.API.Controllers
         public async Task<ActionResult<ApiResponse<WorkspaceResponse>>> CreateWorkspace([FromBody] WorkspaceRequest request)
         {
             var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
-            var workspace = await _workspaceService.CreateWorkspaceAsync(userId, request);
+            var workspace = await _workspaceService.CreateWorkspaceAsync(userId, request.OrganizationId, request);
 
             return CreatedAtAction(nameof(GetWorkspaceById), new { id = workspace.Workspace.Id },
                 ApiResponse<WorkspaceResponse>.Ok(ToResponse(workspace)));
