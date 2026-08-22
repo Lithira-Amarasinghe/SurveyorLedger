@@ -11,24 +11,70 @@ users currently never get organization membership at all, breaking the invariant
 
 ## Invariant: every user belongs to ≥1 organization
 
-**Backend additions (small, on top of the already-shipped org layer):**
+The codebase already has a declarative engine for exactly this — an
+`AssignmentPolicy.RulesJson` ancestor chain, walked by
+`UserAccessGrantService.GrantAncestorRolesAsync`/`ResolveTopAncestorAsync`, resolving
+parent scopes through registered `IScopeLinkProvider`s (see
+`JobWorkspaceScopeLinkProvider`). `ScopeParentType.cs` has an existing comment
+anticipating this exact extension: *"Adding Organization above Workspace later is one
+new row here, nothing else changes."* This design reuses that engine rather than
+adding a special-case grant in `InvitationService` — three additions:
 
-1. **`InvitationService.GrantAndMarkAcceptedAsync`** — after the existing
-   workspace/job role grant (unchanged, still gated by the role's assignment
-   policy), unconditionally also grants `OrgMember` at the workspace's
-   `OrganizationId`, regardless of role or policy. This is deliberate: workspace
-   access stays internal and policy-gated (Client/Finance still never get
-   `WorkspaceMember` — that boundary is unchanged and intentional), but org
-   membership is just "which company are you working for," which an external
-   party already knows. Skip the grant if the user already holds `OrgMember` on
-   that org.
-2. **`OrganizationBackfillService`** — extended with a second pass for
-   pre-existing data: for every active Workspace-scope or Job-scope `UserAccess`
-   row whose user has no Organization-scope grant on that workspace's org yet,
-   grant `OrgMember`. Same idempotent, no-op-forever-after pattern as the
-   existing owner-org backfill pass; runs in the same startup hook.
-3. **Net effect:** every user is guaranteed ≥1 org from this point forward. The
-   UI never needs a "no org" fallback path — single code path throughout.
+1. **`ScopeParentType` row**: `{ ScopeType: "Workspace", ParentScopeType:
+   "Organization" }`.
+2. **New `IScopeLinkProvider`**: `WorkspaceOrganizationScopeLinkProvider`
+   (`ChildScopeType = "Workspace"`, `ParentScopeType = "Organization"`),
+   resolving via `Workspace.OrganizationId` — same shape as
+   `JobWorkspaceScopeLinkProvider`.
+3. **Policy schema gets one small, backward-compatible extension**: an
+   ancestor-rule entry may now omit `grantRoleId` (or set it `null`) to mean
+   "resolve this hop's parent id to keep walking the chain, but grant nothing
+   here" — a *transit* hop. Existing policies are untouched (they always
+   specify a real `grantRoleId`), so this is additive, not a breaking format
+   change.
+
+**Policy changes:**
+
+- **`FullChain`** (Admin, Surveyor, Member — roles that legitimately get
+  workspace-wide presence) gains a second ancestor entry:
+  `[{ "scopeType": "Workspace", "grantRoleId": WorkspaceMemberRoleId }, { "scopeType": "Organization", "grantRoleId": OrgMemberRoleId }]`.
+  Job→Workspace→Organization, granting at both hops.
+- **New `OrgOnly` policy**, replacing `SingleScope` for Client and Finance:
+  `[{ "scopeType": "Workspace", "grantRoleId": null }, { "scopeType": "Organization", "grantRoleId": OrgMemberRoleId }]`.
+  Transits through Workspace (resolves the parent id, grants nothing —
+  Client/Finance still never get `WorkspaceMember`, that boundary is
+  unchanged and intentional) and grants only at Organization. Reasoning:
+  workspace internals stay closed to externals, but org identity is just
+  "which company you're working for," which an external party already knows.
+  (`SingleScope` itself — `{"ancestors":[]}` — stays as-is for any future role
+  that genuinely needs zero ancestor presence.)
+
+**Regression guard — invitation targeting must not shift:**
+`JobService.ResolveInvitationTargetAsync` uses `ResolveTopAncestorAsync` to
+decide an invitation's *primary* scope (e.g. a chaining Surveyor invite
+targets Workspace, not Job, with Job as the descendant). Naively walking the
+now-longer `FullChain` array would shift that primary target from Workspace
+to Organization, and `InvitationService.GetPendingInvitationsForWorkspaceAsync`
+filters pending invitations by `ScopeType == Workspace` — such an invite
+would silently vanish from the workspace's pending-invitations list. Fix:
+`ResolveTopAncestorAsync` gains an optional `stopAtScopeType` parameter;
+`JobService` calls it with `stopAtScopeType: "Workspace"`, capping the walk
+exactly where it stops today. Invitation targeting behavior is unchanged
+byte-for-byte. The *grant-time* walk (`GrantAncestorRolesAsync`, used on
+accept) is uncapped and reaches Organization as designed — it's a different
+method, not affected by the cap.
+
+**`OrganizationBackfillService`** gets a second pass for pre-existing data:
+for every active Workspace-scope or Job-scope `UserAccess` row whose user has
+no Organization-scope grant on that workspace's org yet, call the same
+`GrantAsync` path (which triggers `GrantAncestorRolesAsync` under the policy
+above) rather than reimplementing the grant logic — reuses the exact same
+code the invite-accept path uses. Idempotent, no-op-forever-after, runs in
+the same startup hook as the existing owner-org backfill pass.
+
+**Net effect:** every user is guaranteed ≥1 org from this point forward,
+achieved entirely through the existing declarative RBAC engine. The UI never
+needs a "no org" fallback path — single code path throughout.
 
 ## DTO additions
 
@@ -98,10 +144,22 @@ users currently never get organization membership at all, breaking the invariant
 
 ## Testing
 
-- Backend: invite-accept test confirming `OrgMember` granted regardless of
-  role policy (Client role case specifically — asserts no `WorkspaceMember`
-  grant, but `OrgMember` present). Backfill test for pre-existing
-  workspace/job-scope-only members.
+- Backend:
+  - `WorkspaceOrganizationScopeLinkProvider` resolves a workspace's
+    organization id correctly.
+  - `GrantAncestorRolesAsync` golden path: granting `Surveyor` at Job scope
+    ends up with both `WorkspaceMember` (Workspace) and `OrgMember`
+    (Organization) active. Edge case: a transit hop (`grantRoleId: null`)
+    resolves the parent without creating a `UserAccess` row there.
+  - Client invite-accept: `OrgMember` granted at Organization, **no**
+    `WorkspaceMember` row created at Workspace — the two-boundary guarantee.
+  - `ResolveTopAncestorAsync` with `stopAtScopeType: "Workspace"` still
+    returns the Workspace-level ancestor for a chaining role (unchanged from
+    today), not Organization — regression guard for invitation targeting.
+  - `GetPendingInvitationsForWorkspaceAsync` still lists a chaining role's
+    pending invite (confirms the targeting regression didn't happen).
+  - Backfill: pre-existing workspace/job-scope-only members without an org
+    grant get one on the next startup pass.
 - Frontend: `CurrentOrganizationService` persistence/restore (valid id,
   stale/invalid id, empty storage). Dashboard filtering by active org for both
   workspace grid and direct-access jobs.
