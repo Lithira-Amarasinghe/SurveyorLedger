@@ -18,7 +18,26 @@ parent scopes through registered `IScopeLinkProvider`s (see
 `JobWorkspaceScopeLinkProvider`). `ScopeParentType.cs` has an existing comment
 anticipating this exact extension: *"Adding Organization above Workspace later is one
 new row here, nothing else changes."* This design reuses that engine rather than
-adding a special-case grant in `InvitationService` — three additions:
+adding a special-case grant in `InvitationService`.
+
+**A real conflict surfaced while designing this, worth recording:** `Surveyor` isn't
+only granted at Job scope — `WorkspaceService.AddMemberRoleAsync` also grants it
+*directly at Workspace scope* (a workspace member invited straight in as Surveyor,
+no job). The original single-hop `FullChain` policy's sequential ancestor array
+(`[{"scopeType":"Workspace","grantRoleId":...}]`) only worked for both starting
+depths *by accident*: `GetParentIdAsync("Workspace", ...)` returned `null` (no
+provider registered for Workspace's parent), so a Workspace-start grant's ancestor
+walk broke immediately and harmlessly. Once a Workspace→Organization provider
+exists, that same call stops returning `null` — a naive extension of the array
+would then try to grant `WorkspaceMemberRoleId` using the *organization's* guid as
+the scope id, corrupting `UserAccess` data for every Surveyor granted directly at
+Workspace scope (a path several existing tests exercise). **Fix:** the policy shape
+changes from a sequential array to a scope-type-keyed map, and the walk resolves
+the *real* parent scope type at each hop (via `IScopeIdResolver.GetParentScopeType`,
+which already exists) rather than trusting a fixed array position — self-adjusting
+for either starting depth.
+
+**Three additions to the engine:**
 
 1. **`ScopeParentType` row**: `{ ScopeType: "Workspace", ParentScopeType:
    "Organization" }`.
@@ -26,43 +45,61 @@ adding a special-case grant in `InvitationService` — three additions:
    (`ChildScopeType = "Workspace"`, `ParentScopeType = "Organization"`),
    resolving via `Workspace.OrganizationId` — same shape as
    `JobWorkspaceScopeLinkProvider`.
-3. **Policy schema gets one small, backward-compatible extension**: an
-   ancestor-rule entry may now omit `grantRoleId` (or set it `null`) to mean
-   "resolve this hop's parent id to keep walking the chain, but grant nothing
-   here" — a *transit* hop. Existing policies are untouched (they always
-   specify a real `grantRoleId`), so this is additive, not a breaking format
-   change.
+3. **`AssignmentPolicy.RulesJson` schema change**: `{"ancestors":[...]}` (array,
+   position-dependent) becomes `{"grants":{"<ScopeType>": "<RoleId or omitted>"}}`
+   (map, keyed by the actual scope type reached). The walk now always follows the
+   *real* hierarchy (`GetParentScopeType`/`GetParentIdAsync`) all the way to its
+   top, granting only at scope types present in the map; a scope type absent from
+   the map is a transit hop — resolved to keep walking, nothing granted there.
+   This is a breaking schema-shape change (not additive), but every existing
+   policy row is reseeded in the same migration, so no stale-shape row survives.
 
-**Policy changes:**
+**Policy reassignment (all seeded, no app code reads `RulesJson` directly except
+the two engine methods above):**
 
-- **`FullChain`** (Admin, Surveyor, Member — roles that legitimately get
-  workspace-wide presence) gains a second ancestor entry:
-  `[{ "scopeType": "Workspace", "grantRoleId": WorkspaceMemberRoleId }, { "scopeType": "Organization", "grantRoleId": OrgMemberRoleId }]`.
-  Job→Workspace→Organization, granting at both hops.
-- **New `OrgOnly` policy**, replacing `SingleScope` for Client and Finance:
-  `[{ "scopeType": "Workspace", "grantRoleId": null }, { "scopeType": "Organization", "grantRoleId": OrgMemberRoleId }]`.
-  Transits through Workspace (resolves the parent id, grants nothing —
-  Client/Finance still never get `WorkspaceMember`, that boundary is
-  unchanged and intentional) and grants only at Organization. Reasoning:
-  workspace internals stay closed to externals, but org identity is just
-  "which company you're working for," which an external party already knows.
-  (`SingleScope` itself — `{"ancestors":[]}` — stays as-is for any future role
-  that genuinely needs zero ancestor presence.)
+| Policy | RulesJson (`grants` map) | Roles |
+|---|---|---|
+| `SingleScope` | `{}` (empty) | OrgOwner, OrgMember — top of the hierarchy, no ancestor to reach |
+| `FullChain` | `{"Workspace": WorkspaceMemberRoleId, "Organization": OrgMemberRoleId}` | Admin, Surveyor, Member, **WorkspaceMember** (was `SingleScope` — see below) |
+| `OrgOnly` (new) | `{"Organization": OrgMemberRoleId}` | Client, Finance (was `SingleScope`) |
+
+- Job-start walk (Surveyor via job assignment): Job→Workspace (grants
+  `WorkspaceMember`, map has a `"Workspace"` entry) →Organization (grants
+  `OrgMember`) →no further parent, stop.
+- Workspace-start walk (Admin/Surveyor/Member via direct workspace grant): first
+  hop resolves straight to Organization (Workspace's only registered parent) —
+  the map's `"Workspace"` key is simply never looked up in this case, since a role
+  never grants at its *own* starting scope, only at ancestors. Grants `OrgMember`
+  directly. No corruption, no accidental double-grant.
+- `WorkspaceMember` moves from `SingleScope` to `FullChain` too: whether it's
+  chain-granted (from a Job-start Surveyor walk) or granted directly (an Admin
+  hand-picks "WorkspaceMember" for someone at Workspace scope — a valid pick per
+  `RoleScope`), its own grant now also reaches Organization. Reusing `FullChain`
+  rather than adding a fourth policy works because the map only ever grants at
+  *ancestors* of wherever the walk starts — never at the starting scope itself.
+- Job-start walk (Client/Finance, `OrgOnly`): Job→Workspace (no `"Workspace"` key
+  in the map — transit, resolves the parent id, grants nothing, so `WorkspaceMember`
+  is never created) →Organization (grants `OrgMember`) →stop. Workspace internals
+  stay closed to externals; org identity is just "which company you're working
+  for," which an external party already knows.
 
 **Regression guard — invitation targeting must not shift:**
 `JobService.ResolveInvitationTargetAsync` uses `ResolveTopAncestorAsync` to
 decide an invitation's *primary* scope (e.g. a chaining Surveyor invite
-targets Workspace, not Job, with Job as the descendant). Naively walking the
-now-longer `FullChain` array would shift that primary target from Workspace
-to Organization, and `InvitationService.GetPendingInvitationsForWorkspaceAsync`
+targets Workspace, not Job, with Job as the descendant). Now that the walk
+reaches all the way to Organization, that primary target would silently shift
+from Workspace to Organization, and `InvitationService.GetPendingInvitationsAsync`
 filters pending invitations by `ScopeType == Workspace` — such an invite
-would silently vanish from the workspace's pending-invitations list. Fix:
-`ResolveTopAncestorAsync` gains an optional `stopAtScopeType` parameter;
-`JobService` calls it with `stopAtScopeType: "Workspace"`, capping the walk
-exactly where it stops today. Invitation targeting behavior is unchanged
+would vanish from the workspace's pending-invitations list. Fix:
+`ResolveTopAncestorAsync` gains an optional `stopAtScopeType` parameter —
+the walk still visits every hop up to and including that scope type (so a
+transit-only hop below it is still correctly skipped, same as today's `null`
+result for Client/Finance), but stops immediately after reaching it, never
+considering anything above. `JobService` calls it with
+`stopAtScopeType: "Workspace"`. Invitation targeting behavior is unchanged
 byte-for-byte. The *grant-time* walk (`GrantAncestorRolesAsync`, used on
-accept) is uncapped and reaches Organization as designed — it's a different
-method, not affected by the cap.
+accept) has no such cap and reaches Organization as designed — it's a
+different method, unaffected.
 
 **`OrganizationBackfillService`** gets a second pass for pre-existing data:
 for every active Workspace-scope or Job-scope `UserAccess` row whose user has
@@ -149,8 +186,10 @@ needs a "no org" fallback path — single code path throughout.
     organization id correctly.
   - `GrantAncestorRolesAsync` golden path: granting `Surveyor` at Job scope
     ends up with both `WorkspaceMember` (Workspace) and `OrgMember`
-    (Organization) active. Edge case: a transit hop (`grantRoleId: null`)
-    resolves the parent without creating a `UserAccess` row there.
+    (Organization) active. Edge case: granting `Surveyor` directly at
+    Workspace scope (the `WorkspaceService.AddMemberRoleAsync` path) ends up
+    with only `OrgMember` — no `UserAccess` row is (re-)created at Workspace,
+    since a role never grants at its own starting scope.
   - Client invite-accept: `OrgMember` granted at Organization, **no**
     `WorkspaceMember` row created at Workspace — the two-boundary guarantee.
   - `ResolveTopAncestorAsync` with `stopAtScopeType: "Workspace"` still
